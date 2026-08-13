@@ -18,12 +18,13 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M11 — Phase 3 (insulin-injection dosing) in progress.
-  Specs: `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
-  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13).
-- **Next up:** M13 — "Type 1 morning" scenario button, "Juice box (15 g)"
-  rescue button, glucose readout status colors (HYPO < 70, severe < 54,
-  HYPER > 180). Then the Phase 3 checkpoint STOP.
+- **Committed:** M13 — **Phase 3 complete.** Specs:
+  `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
+  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13). All milestones
+  shipped and verified.
+- **Next up:** awaiting the human's Phase 4 decision. Candidates (Phase 3
+  kickoff): named disease presets, water/ADH loop, closed-loop pump (the
+  feedback-restored callback), scenario challenges, game layer.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,7 +37,25 @@ Entry format:
 
 ## Milestones
 
-## 2026-08-13 — M12: The dosing panel
+## 2026-08-13 — M13: The type 1 day, one click (Phase 3 complete)
+- Shipped: "Type 1 morning" scenario (beta off + exercise off + 16×, never
+  resets the run), "Juice box (15 g) — hypo rescue" eat-preset button,
+  patient status on the glucose readout (label gains — HYPO / — SEVERE
+  HYPO / — HYPER; value colors red / white-on-red chip / amber; clears on
+  the temp loop). Verified live end to end through the production path:
+  one click set the stage; sugary drink → HYPER at 200+; 8 U overdose →
+  the long delayed plunge (peak 263 before the insulin bit) → SEVERE HYPO
+  chip at 37; juice-box rescue took THREE boxes over ~90 sim-min against
+  the 8 U tail (glucose sawtoothing, glucagon holding a ~66 plateau until
+  the tail decayed) — the 15/15 rule emerged from the model, unscripted.
+- Deferred: nothing. Phase 4 candidates listed under Current state.
+- Open bugs: none.
+- Decisions: severe-hypo line at 54 mg/dL (clinical level-2 threshold);
+  status thresholds live only in the UI readout — the engine stays
+  judgment-free (sandbox, no win/lose). Flask caches templates outside
+  debug mode: after editing templates/, restart the server before
+  verifying in the browser (verify.py's staleness check catches exactly
+  this; the dev-server restart is the fix, not a bug).
 - Shipped: Insulin card on the glucose page (2/4/8 U bolus buttons, basal
   selector Off–2.0 U/h, live insulin-on-board readout), hormone panel now
   draws endogenous insulin, dashed injected insulin, and a wide soft

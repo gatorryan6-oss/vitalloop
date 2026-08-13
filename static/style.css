@@ -218,6 +218,19 @@ main {
 }
 .iob-readout { margin-left: auto; }
 
+/* --- patient status on the glucose readout (M13) --- */
+
+#r1Value.hypo { color: #d03b3b; }
+#r1Value.severe {
+  color: #fff;
+  background: #d03b3b;
+  padding: 0 0.45rem;
+  border-radius: 8px;
+}
+#r1Value.hyper { color: #b45309; }
+
+.rescue { border-color: #d03b3b; }
+
 #tooltip {
   position: fixed;
   pointer-events: none;

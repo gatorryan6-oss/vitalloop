@@ -90,8 +90,20 @@ function updateReadouts(now) {
   setText("clockReadout", `${mm}:${ss}`);
 
   if (activeLoop === "glucose") {
-    setText("r1Label", "glucose");
+    // Patient status, legible from the back row (M13): the label carries
+    // the word, the value carries the color. Thresholds are the chart's
+    // reference lines (70 / 180) plus the clinical severe-hypo line (54).
+    const g = now.glucose;
+    const status = g < 54 ? "severe" : g < 70 ? "hypo"
+                 : g > 180 ? "hyper" : "";
+    setText("r1Label", "glucose" + (status === "severe" ? " — SEVERE HYPO"
+      : status === "hypo" ? " — HYPO"
+      : status === "hyper" ? " — HYPER" : ""));
     setText("r1Value", now.glucose.toFixed(0) + " mg/dL");
+    const r1 = document.getElementById("r1Value");
+    r1.classList.toggle("hypo", status === "hypo");
+    r1.classList.toggle("severe", status === "severe");
+    r1.classList.toggle("hyper", status === "hyper");
     setText("r2Label", "gut carbs");
     setText("r2Value", now.gut_carbs.toFixed(0) + " g");
     setText("iobReadout", now.iob_units.toFixed(1) + " U");
@@ -119,6 +131,8 @@ function updateReadouts(now) {
 
   setText("r1Label", "core temp");
   setText("r1Value", now.core_temp.toFixed(2) + " °C");
+  document.getElementById("r1Value")
+    .classList.remove("hypo", "severe", "hyper");
   setText("r2Label", "room");
   setText("r2Value", now.env_temp.toFixed(1) + " °C");
 

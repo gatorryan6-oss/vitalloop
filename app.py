@@ -218,6 +218,14 @@ def control():
                 # un-eat.)
                 runner.sim.set_exercise(False)
                 runner.speed = 16
+            elif name == "t1_morning":
+                # Type 1 morning (M13): the beta cells are gone and the
+                # day starts moving. Basal, breakfast, and boluses are the
+                # class's decisions from here — this button only sets the
+                # stage, it never resets the run.
+                runner.sim.set_effector_enabled("beta", False)
+                runner.sim.set_exercise(False)
+                runner.speed = 16
             else:
                 return jsonify({"error": f"unknown scenario {name!r}"}), 400
             runner.running = True   # a scenario should visibly happen
