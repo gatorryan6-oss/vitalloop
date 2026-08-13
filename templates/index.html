@@ -133,6 +133,22 @@
   </section>
 
   <section class="chart-card">
+    <h2>Break the loop</h2>
+    <div class="disturb-row">
+      <button class="breaker" data-part="beta" type="button">
+        Beta cells (insulin)</button>
+      <button class="breaker" data-part="alpha" type="button">
+        Alpha cells (glucagon)</button>
+      <button class="breaker" data-part="liver" type="button">
+        Liver response</button>
+      <button class="breaker" data-part="sensor" type="button">
+        Glucose sensors</button>
+      <a class="export-link" href="/export.csv?loop=glucose" download>
+        Export run (CSV)</a>
+    </div>
+  </section>
+
+  <section class="chart-card">
     <h2>The feedback loop, live</h2>
     <svg id="glucoseDiagram" viewBox="0 0 960 400"
          aria-label="Glucose negative feedback loop: stimulus, islet cells, beta and alpha cells, muscle and liver, response"></svg>

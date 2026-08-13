@@ -188,22 +188,31 @@ def control():
     return jsonify(runner.snapshot(since=float("inf")))
 
 
-# Column order for the CSV: the frozen record fields (kickoff SS5), time
+# Column order for the CSVs: the frozen record fields (kickoff SS5), time
 # first, then the story left to right. The values come straight from
 # engine history — the spreadsheet a student opens matches the charts.
-CSV_FIELDS = ["t", "core_temp", "env_temp", "exercise", "error",
-              "sweat", "shiver", "vaso", "sweat_enabled", "shiver_enabled",
-              "vaso_enabled", "sensor_enabled"]
+CSV_FIELDS = {
+    "temp": ["t", "core_temp", "env_temp", "exercise", "error",
+             "sweat", "shiver", "vaso", "sweat_enabled", "shiver_enabled",
+             "vaso_enabled", "sensor_enabled"],
+    "glucose": ["t", "glucose", "gut_carbs", "exercise", "error",
+                "insulin", "glucagon", "uptake", "liver_flux",
+                "beta_enabled", "alpha_enabled", "liver_enabled",
+                "sensor_enabled"],
+}
 
 
 @app.route("/export.csv")
 def export_csv():
-    runner = runners["temp"]     # glucose export arrives at M10
+    loop = request.args.get("loop", "temp")
+    runner = runners.get(loop)
+    if runner is None:
+        return jsonify({"error": "unknown loop"}), 400
     runner.advance()
     with runner.lock:
         records = runner.sim.history()
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=CSV_FIELDS)
+    writer = csv.DictWriter(buf, fieldnames=CSV_FIELDS[loop])
     writer.writeheader()
     for r in records:
         row = dict(r)
@@ -214,7 +223,8 @@ def export_csv():
                 row[k] = round(v, 4)
         writer.writerow(row)
     return Response(buf.getvalue(), mimetype="text/csv", headers={
-        "Content-Disposition": "attachment; filename=vital_loop_run.csv"})
+        "Content-Disposition":
+            f"attachment; filename=vital_loop_{loop}_run.csv"})
 
 
 if __name__ == "__main__":

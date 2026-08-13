@@ -18,11 +18,12 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M9. Phase 2 spec is `vital_loop_phase2_kickoff.md`
-  (M6–M10): the blood glucose loop.
-- **Next up:** M10 — break the glucose loop (beta/alpha/liver/sensor
-  toggles, grayed diagram parts) + `/export.csv?loop=glucose`. End of
-  Phase 2 — STOP for confirmation after.
+- **Committed:** M10 — **Phase 2 complete.** Specs:
+  `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
+  (M6–M10). All milestones shipped and verified.
+- **Next up:** awaiting the human's Phase 3 decision. Candidates:
+  insulin-injection dosing, named disease presets, water/ADH loop,
+  scenario challenges, game layer.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -34,6 +35,21 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M10: Break the glucose loop + CSV (Phase 2 complete)
+- Shipped: glucose break card (beta/alpha/liver/sensor toggles, status
+  colors, grayed dashed diagram parts, breaker selectors scoped per
+  page), `/export.csv?loop=` for both loops with per-loop frozen columns
+  and filenames. Verified live through the production poll() path: beta
+  off + sugary drink → glucose climbing with insulin 0, glucagon
+  disinhibited at 0.55, liver pouring 2.59 mg/dL·min — type 1 emerges;
+  liver off grays the box and flips the label; both CSV headers exact.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: added a visibilitychange → poll() refresh: browsers freeze
+  interval timers in hidden tabs (cost a debugging detour this session —
+  frozen readouts in a hidden pane are throttling, not an app bug; the
+  projected classroom tab is visible and unaffected).
 
 ## 2026-08-13 — M9: Glucose loop diagram
 - Shipped: `diagram.js` refactored into a per-svg kit (scoped marker ids)

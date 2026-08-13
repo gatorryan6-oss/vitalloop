@@ -96,6 +96,18 @@ function updateReadouts(now) {
     gex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
     gex.setAttribute("aria-pressed", String(now.exercise));
     lastExercise = now.exercise;
+    gPartEnabled = {
+      beta: now.beta_enabled,
+      alpha: now.alpha_enabled,
+      liver: now.liver_enabled,
+      sensor: now.sensor_enabled,
+    };
+    document.querySelectorAll("#page-glucose .breaker").forEach(b => {
+      const on = gPartEnabled[b.dataset.part];
+      b.classList.toggle("broken", !on);
+      b.textContent = G_BREAKER_LABELS[b.dataset.part] +
+        (on ? "" : " — DISABLED");
+    });
     return;
   }
 
@@ -122,7 +134,7 @@ function updateReadouts(now) {
     vaso: now.vaso_enabled,
     sensor: now.sensor_enabled,
   };
-  document.querySelectorAll(".breaker").forEach(b => {
+  document.querySelectorAll("#page-temp .breaker").forEach(b => {
     const on = partEnabled[b.dataset.part];
     b.classList.toggle("broken", !on);
     b.textContent = BREAKER_LABELS[b.dataset.part] +
@@ -199,10 +211,29 @@ const BREAKER_LABELS = {
 };
 let partEnabled = { sweat: true, shiver: true, vaso: true, sensor: true };
 
-document.querySelectorAll(".breaker").forEach(b =>
+document.querySelectorAll("#page-temp .breaker").forEach(b =>
   b.addEventListener("click", () => {
     const part = b.dataset.part;
     const wantEnabled = !partEnabled[part];
+    control(part === "sensor"
+      ? { action: "sensor", value: wantEnabled }
+      : { action: "effector", name: part, value: wantEnabled });
+  }));
+
+/* --- break the glucose loop (M10) --- */
+
+const G_BREAKER_LABELS = {
+  beta: "Beta cells (insulin)",
+  alpha: "Alpha cells (glucagon)",
+  liver: "Liver response",
+  sensor: "Glucose sensors",
+};
+let gPartEnabled = { beta: true, alpha: true, liver: true, sensor: true };
+
+document.querySelectorAll("#page-glucose .breaker").forEach(b =>
+  b.addEventListener("click", () => {
+    const part = b.dataset.part;
+    const wantEnabled = !gPartEnabled[part];
     control(part === "sensor"
       ? { action: "sensor", value: wantEnabled }
       : { action: "effector", name: part, value: wantEnabled });
@@ -428,6 +459,11 @@ document.querySelectorAll(".loop-tab").forEach(b =>
       activeLoop !== "glucose";
     poll();                      // refresh the newly visible loop now
   }));
+
+// Browsers freeze timers in hidden tabs; refresh the moment we're back.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) poll();
+});
 
 setInterval(poll, POLL_MS);
 poll();
