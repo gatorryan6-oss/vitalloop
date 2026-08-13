@@ -18,10 +18,10 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M0. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
-- **Next up:** M1 — the thermoregulation engine (`engine/sim.py`) built to
-  the API contract in `tests/test_invariants.py`'s docstring, plus
-  `python -m engine.demo` (cold-room story as a console table).
+- **Committed:** M1. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
+- **Next up:** M2 — Flask app: engine ticking server-side, live strip chart
+  of core + env temp, pause/resume/reset, speed 1×/4×/16×. verify.py becomes
+  a real end-to-end check.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -33,3 +33,26 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M1: Thermoregulation engine + console demo
+- Shipped: `engine/sim.py` (heat-budget model + proportional hypothalamus,
+  frozen history records) and `python -m engine.demo` (cold-snap story:
+  dip → vasoconstriction → shiver → recovery). All 11 invariants pass.
+- Deferred: nothing.
+- Open bugs: none. (One caught pre-commit: demo's cold snap at t=300 never
+  fired because the loop stepped in 120 s chunks — trigger must sit on a
+  chunk boundary; comment added.)
+- Decisions: proportional-only control, so the loop holds a small honest
+  steady-state error (~0.15 °C at 5 °C ambient) rather than snapping exactly
+  to 37 — kept deliberately, it's real physiology and visible in the data.
+  Constants sized for a ~70 kg adult (100 W basal, 245 kJ/°C, sweat max
+  650 W, shiver max 300 W).
+
+## 2026-08-13 — M0: Repo scaffolding
+- Shipped: standing kit configured (port 5083, marker "Vital Loop");
+  `tests/test_invariants.py` pins kickoff §2/§5 AND freezes the M1 engine
+  API contract in its docstring. Venv created, git repo, first commit.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: engine API + history record fields frozen before the engine
+  exists, so tests are the contract, not an afterthought.
