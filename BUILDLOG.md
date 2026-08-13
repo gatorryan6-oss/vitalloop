@@ -21,9 +21,9 @@ Entry format:
 - **Committed:** M11 — Phase 3 (insulin-injection dosing) in progress.
   Specs: `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
   (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13).
-- **Next up:** M12 — the dosing panel UI (bolus buttons, basal selector,
-  IOB readout, injected/total insulin chart series, dose markers, syringe
-  box in the diagram, CSV columns, /control inject+basal actions).
+- **Next up:** M13 — "Type 1 morning" scenario button, "Juice box (15 g)"
+  rescue button, glucose readout status colors (HYPO < 70, severe < 54,
+  HYPER > 180). Then the Phase 3 checkpoint STOP.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -35,6 +35,32 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M12: The dosing panel
+- Shipped: Insulin card on the glucose page (2/4/8 U bolus buttons, basal
+  selector Off–2.0 U/h, live insulin-on-board readout), hormone panel now
+  draws endogenous insulin, dashed injected insulin, and a wide soft
+  total-insulin envelope, bolus markers on the glucose chart read from the
+  engine's doses() log via /state, syringe box in the loop diagram
+  ("INJECTION — YOU", outside the loop, arcing into the muscle pathway),
+  `/control` actions inject (server-capped 15 U) + basal (allowed set),
+  glucose CSV grew the four new columns (appended; Phase 2 positions
+  unchanged). Verified live through the production poll path: beta off +
+  sugary drink + 4 U → spike 219 with injected activity still tiny (the
+  delay), activity peaking 0.515 at ~55 min post-dose, glucose landing at
+  95 in the band; syringe box glowing green while beta sat gray-dashed;
+  both CSV headers exact.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) downstream diagram effects (muscle glow, insulin→liver
+  inhibition bar) run on total_insulin while each source box glows with
+  its own output — the body can't tell insulins apart, the boxes can.
+  (2) Injected insulin draws in the same green as endogenous but dashed —
+  same hormone, artificial source; total is a 30 %-opacity width-6
+  envelope under both. (3) An injection or basal change auto-resumes a
+  paused sim, same rule as eating. (4) Verification note: with the app in
+  a hidden pane, in-flight /control fetches abort if the page reloads —
+  re-verify server truth after driving the UI, don't trust the click.
 
 ## 2026-08-13 — M11: Dosing contract + engine + console demo (Phase 3 starts)
 - Shipped: Phase 3 contract in `tests/test_invariants.py` (record grows

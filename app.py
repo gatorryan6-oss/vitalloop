@@ -62,17 +62,23 @@ class Runner:
         with self.lock:
             records = self.sim.history()
             state = records[-1]
+            # Dose events are a data product (Phase 3 kickoff SS5): the
+            # chart markers read the engine's log, never infer from curves.
+            doses = self.sim.doses() if hasattr(self.sim, "doses") else None
         points = [r for r in records if r["t"] > since]
         if len(points) > MAX_POINTS_PER_RESPONSE:
             stride = -(-len(points) // MAX_POINTS_PER_RESPONSE)  # ceil div
             # Keep the newest point exact so the readout matches the chart.
             points = points[::stride] + [points[-1]]
-        return {
+        out = {
             "running": self.running,
             "speed": self.speed,
             "now": state,
             "points": points,
         }
+        if doses is not None:
+            out["doses"] = doses
+        return out
 
 
 runners = {
@@ -109,6 +115,10 @@ SCENARIOS = {
     "freezer": (-10.0, False),   # step into a freezer
     "hot_run": (38.0, True),     # run a mile on a hot day
 }
+
+# Insulin dosing (M12): the UI offers real-world sizes; the cap is policy.
+MAX_SINGLE_DOSE_U = 15.0
+ALLOWED_BASAL_RATES = {0, 0.5, 1.0, 1.5, 2.0}   # U/h, matching the buttons
 
 
 @app.route("/control", methods=["POST"])
@@ -165,6 +175,34 @@ def control():
             except (TypeError, ValueError) as e:
                 return jsonify({"error": str(e)}), 400
             runner.running = True   # a meal should visibly happen
+        elif action == "inject":
+            if not hasattr(runner.sim, "inject"):
+                return jsonify({"error": "inject is a glucose-loop "
+                                         "action"}), 400
+            try:
+                units = float(cmd.get("units"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "inject needs a number of "
+                                         "units"}), 400
+            # Sane single-dose cap is server policy; the engine is a model
+            # and accepts any positive dose (BUILDLOG M11 decision 4).
+            units = min(units, MAX_SINGLE_DOSE_U)
+            try:
+                runner.sim.inject(units)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+            runner.running = True   # an injection should visibly happen
+        elif action == "basal":
+            if not hasattr(runner.sim, "set_basal_rate"):
+                return jsonify({"error": "basal is a glucose-loop "
+                                         "action"}), 400
+            value = cmd.get("value")
+            if value not in ALLOWED_BASAL_RATES:
+                return jsonify({"error": f"basal rate must be one of "
+                                         f"{sorted(ALLOWED_BASAL_RATES)}, "
+                                         f"got {value!r}"}), 400
+            runner.sim.set_basal_rate(float(value))
+            runner.running = True   # so is a basal change
         elif action == "scenario":
             name = cmd.get("value")
             if hasattr(runner.sim, "set_env_temp"):
@@ -198,7 +236,11 @@ CSV_FIELDS = {
     "glucose": ["t", "glucose", "gut_carbs", "exercise", "error",
                 "insulin", "glucagon", "uptake", "liver_flux",
                 "beta_enabled", "alpha_enabled", "liver_enabled",
-                "sensor_enabled"],
+                "sensor_enabled",
+                # grown at M12 with the Phase 3 dosing fields — appended so
+                # Phase 2 spreadsheets keep their column positions
+                "injected_insulin", "total_insulin", "iob_units",
+                "basal_rate"],
 }
 
 

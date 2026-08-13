@@ -191,6 +191,32 @@ main {
 .dot-glucagon { background: var(--series-shiver); } /* slots 3-5: pages are */
 .dot-liver { background: var(--series-vaso); }      /* never shown together */
 .dot-uptake { background: var(--series-uptake); }
+/* injected insulin is the same hormone from a syringe: same green, hollow
+   ring; total insulin is the soft sum-envelope behind both lines */
+.dot-injected {
+  background: var(--surface);
+  border: 2.5px solid var(--series-sweat);
+}
+.dot-total { background: rgba(27, 175, 122, 0.35); }
+
+/* --- the insulin card (M12) --- */
+
+.dose { font-weight: 600; }
+.basal-block { display: flex; align-items: center; gap: 0.7rem; }
+.basal-label { font-size: 0.95rem; color: var(--ink-2); }
+.basal-group { display: flex; }
+.basal-group .basal { border-radius: 0; border-right-width: 0; }
+.basal-group .basal:first-child { border-radius: 8px 0 0 8px; }
+.basal-group .basal:last-child {
+  border-radius: 0 8px 8px 0;
+  border-right-width: 1px;
+}
+.basal-group .basal.active {
+  background: var(--series-sweat);
+  color: var(--surface);
+  border-color: var(--series-sweat);
+}
+.iob-readout { margin-left: auto; }
 
 #tooltip {
   position: fixed;

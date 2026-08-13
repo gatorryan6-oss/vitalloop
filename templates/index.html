@@ -133,6 +133,34 @@
   </section>
 
   <section class="chart-card">
+    <h2>Insulin &mdash; you are the control center now</h2>
+    <div class="disturb-row">
+      <div class="scenarios">
+        <button class="dose" data-units="2" type="button">
+          Inject 2&nbsp;U</button>
+        <button class="dose" data-units="4" type="button">
+          Inject 4&nbsp;U</button>
+        <button class="dose" data-units="8" type="button">
+          Inject 8&nbsp;U</button>
+      </div>
+      <div class="basal-block">
+        <span class="basal-label">Basal drip (U/h)</span>
+        <div class="basal-group" role="group" aria-label="basal drip rate">
+          <button class="basal" data-rate="0" type="button">Off</button>
+          <button class="basal" data-rate="0.5" type="button">0.5</button>
+          <button class="basal" data-rate="1" type="button">1.0</button>
+          <button class="basal" data-rate="1.5" type="button">1.5</button>
+          <button class="basal" data-rate="2" type="button">2.0</button>
+        </div>
+      </div>
+      <div class="readout iob-readout">
+        <span class="readout-label">insulin on board</span>
+        <span class="readout-value small" id="iobReadout">0.0 U</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="chart-card">
     <h2>Break the loop</h2>
     <div class="disturb-row">
       <button class="breaker" data-part="beta" type="button">
@@ -164,7 +192,10 @@
     <h2>Hormones &mdash; the antagonistic pair
       <span class="legend">
         <span class="chip"><span class="dot dot-insulin"></span>insulin
-          (lowers glucose)</span>
+          (own)</span>
+        <span class="chip"><span class="dot dot-injected"></span>injected</span>
+        <span class="chip"><span class="dot dot-total"></span>total
+          insulin</span>
         <span class="chip"><span class="dot dot-glucagon"></span>glucagon
           (raises glucose)</span>
       </span>

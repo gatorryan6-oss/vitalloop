@@ -208,6 +208,11 @@
   G.box("stim", 15, 155, 140, 84, "stimulus", ["Blood glucose", "changes"]);
   G.box("recep", 185, 155, 150, 84, "receptor",
         ["Islet cells", "(pancreas)"]);
+  // Phase 3: the syringe sits OUTSIDE the loop — an exogenous input a
+  // person pushes in by hand. Its arrow arcs over the beta cells into the
+  // same effector pathway their insulin would have driven.
+  G.box("syringe", 100, 25, 170, 70, "injection — you",
+        ["Injected insulin", "bolus & basal"]);
   G.box("beta", 375, 60, 180, 74, "control center",
         ["Beta cells", "release insulin"]);
   G.box("alpha", 375, 260, 180, 74, "control center",
@@ -222,6 +227,7 @@
   G.arrow("a-stim", 155, 197, 183, 197);
   G.arrow("a-r-beta", 335, 180, 373, 105);
   G.arrow("a-r-alpha", 335, 215, 373, 290);
+  G.pathArrow("a-inject", "M 272 57 C 400 15, 560 15, 665 56");
   G.arrow("a-beta-muscle", 555, 97, 608, 97);
   G.arrow("a-alpha-liver", 555, 297, 608, 297);
   // insulin INHIBITS liver release: bar end, not arrowhead
@@ -245,18 +251,23 @@
     G.setGlow("recep", sensedAct, dirSensed);
     G.setGlow("beta", r.insulin, C_INSULIN);
     G.setGlow("alpha", r.glucagon, C_GLUCAGON);
-    G.setGlow("muscle", r.insulin, C_UPTAKE);
+    G.setGlow("syringe", r.injected_insulin, C_INSULIN);
+    // Effects downstream of the hormone run on TOTAL insulin — the body
+    // can't tell the beta cells' insulin from the syringe's (engine truth,
+    // M11). Each SOURCE box still glows with its own output only.
+    G.setGlow("muscle", r.total_insulin, C_UPTAKE);
     G.setGlow("liver", liverAct, C_LIVER);
-    const respAct = Math.max(r.insulin, liverAct);
+    const respAct = Math.max(r.total_insulin, liverAct);
     G.setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
 
     G.setArrow("a-stim", stimAct, dirTrue);
     G.setArrow("a-r-beta", r.insulin, C_INSULIN);
     G.setArrow("a-r-alpha", r.glucagon, C_GLUCAGON);
+    G.setArrow("a-inject", r.injected_insulin, C_INSULIN);
     G.setArrow("a-beta-muscle", r.insulin, C_INSULIN);
-    G.setArrow("a-beta-liver", r.insulin, C_INSULIN);
+    G.setArrow("a-beta-liver", r.total_insulin, C_INSULIN);
     G.setArrow("a-alpha-liver", r.glucagon, C_GLUCAGON);
-    G.setArrow("a-muscle-resp", r.insulin, C_UPTAKE);
+    G.setArrow("a-muscle-resp", r.total_insulin, C_UPTAKE);
     G.setArrow("a-liver-resp", liverAct, C_LIVER);
     G.setArrow("a-feedback", respAct, dirSensed);
 

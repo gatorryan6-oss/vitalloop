@@ -23,7 +23,7 @@ const COLOR_MUTED = palette.getPropertyValue("--muted").trim();
 let activeLoop = "temp";         // which loop the page is showing
 const buffers = {                // engine records per loop, oldest first
   temp: { pts: [], lastT: -1 },
-  glucose: { pts: [], lastT: -1 },
+  glucose: { pts: [], lastT: -1, doses: [] },
 };
 let running = true;              // play/speed of the ACTIVE loop's runner
 let speed = 1;
@@ -43,10 +43,12 @@ async function poll() {
   if (j.now.t < buf.lastT) {     // sim was reset behind our back
     buf.pts = [];
     buf.lastT = -1;
+    buf.doses = [];
     return;
   }
   buf.pts.push(...j.points);
   buf.lastT = j.now.t;
+  if (j.doses) buf.doses = j.doses;   // the engine's bolus event log
   // Trim the buffer: keep the visible window plus slack. Full history for
   // the CSV lives on the server; the browser only needs what it draws.
   const cutoff = buf.lastT - WINDOWS[loop] * 1.2;
@@ -92,6 +94,10 @@ function updateReadouts(now) {
     setText("r1Value", now.glucose.toFixed(0) + " mg/dL");
     setText("r2Label", "gut carbs");
     setText("r2Value", now.gut_carbs.toFixed(0) + " g");
+    setText("iobReadout", now.iob_units.toFixed(1) + " U");
+    document.querySelectorAll(".basal").forEach(b =>
+      b.classList.toggle("active",
+        Number(b.dataset.rate) === now.basal_rate));
     const gex = document.getElementById("gExerciseBtn");
     gex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
     gex.setAttribute("aria-pressed", String(now.exercise));
@@ -201,6 +207,15 @@ document.querySelectorAll(".gscenario").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "scenario", value: b.dataset.scenario })));
 
+/* --- insulin dosing (M12) --- */
+
+document.querySelectorAll(".dose").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "inject", units: Number(b.dataset.units) })));
+document.querySelectorAll(".basal").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "basal", value: Number(b.dataset.rate) })));
+
 /* --- break the loop (M5) --- */
 
 const BREAKER_LABELS = {
@@ -244,7 +259,7 @@ document.querySelectorAll("#page-glucose .breaker").forEach(b =>
 /* One strip-chart panel bound to an <svg>. Series share the rolling time
    axis; y-range is fixed per panel so the eye can trust vertical position. */
 function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
-                            loop = "temp", bands = [] }) {
+                            loop = "temp", bands = [], markers = null }) {
   const svg = document.getElementById(svgId);
   const view = svg.viewBox.baseVal;
   const windowS = WINDOWS[loop];
@@ -310,6 +325,23 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
                    "font-size": 12 }, ref.label);
     }
 
+    // dose markers (M12): vertical ticks from the engine's bolus log —
+    // recorded events, never inferred from wiggles in a curve
+    if (markers) {
+      for (const d of markers()) {
+        if (d.t < t0 || d.t > tEnd) continue;
+        const xd = x(d.t, t0, tEnd);
+        el("line", { x1: xd, x2: xd, y1: M.top + 14,
+                     y2: view.height - M.bottom, stroke: COLOR_SWEAT,
+                     "stroke-width": 1.5, "stroke-dasharray": "2 4",
+                     "vector-effect": "non-scaling-stroke" });
+        el("text", { x: xd, y: M.top + 10, "text-anchor": "middle",
+                     fill: COLOR_SWEAT, "font-size": 11,
+                     "font-weight": 600 },
+           `${d.units % 1 ? d.units.toFixed(1) : d.units.toFixed(0)} U`);
+      }
+    }
+
     for (const s of series) {
       const visible = records.filter(r => r.t >= t0);
       const path = visible
@@ -317,8 +349,11 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
         .join(" ");
       if (path) {
         el("polyline", { points: path, fill: "none", stroke: s.color,
-                         "stroke-width": 2, "stroke-linejoin": "round",
-                         "vector-effect": "non-scaling-stroke" });
+                         "stroke-width": s.width || 2,
+                         "stroke-linejoin": "round",
+                         "vector-effect": "non-scaling-stroke",
+                         ...(s.dash ? { "stroke-dasharray": s.dash } : {}),
+                         ...(s.opacity ? { opacity: s.opacity } : {}) });
       }
       // Direct label at the line's live end: ink text, colored tick mark —
       // the mark carries identity, the text stays readable.
@@ -374,6 +409,8 @@ function showTooltip(ev, r) {
       (r.exercise ? "<br>exercising" : "")
     : `glucose ${r.glucose.toFixed(0)} mg/dL<br>` +
       `insulin ${r.insulin.toFixed(2)} · glucagon ${r.glucagon.toFixed(2)}<br>` +
+      `injected ${r.injected_insulin.toFixed(2)} · total ` +
+      `${r.total_insulin.toFixed(2)} · IOB ${r.iob_units.toFixed(1)} U<br>` +
       `liver +${r.liver_flux.toFixed(2)} · uptake −${r.uptake.toFixed(2)}<br>` +
       `gut ${r.gut_carbs.toFixed(0)} g` +
       (r.exercise ? "<br>exercising" : "");
@@ -419,11 +456,16 @@ const glucoseChart = makeChart("glucoseChart", {
     { y: 180, label: "hyperglycemia" },
     { y: 70, label: "hypoglycemia" },
   ],
+  markers: () => buffers.glucose.doses || [],
 });
 const hormoneChart = makeChart("hormoneChart", {
   loop: "glucose", yMin: 0, yMax: 1, yStep: 0.5,
   series: [
+    // total first so the soft envelope draws UNDER the identity lines
+    { key: "total_insulin", color: COLOR_SWEAT, width: 6, opacity: 0.3 },
     { key: "insulin", color: COLOR_SWEAT, label: "insulin" },
+    { key: "injected_insulin", color: COLOR_SWEAT, dash: "6 4",
+      label: "injected" },
     { key: "glucagon", color: COLOR_SHIVER, label: "glucagon" },
   ],
 });
