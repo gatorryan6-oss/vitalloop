@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vital Loop</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Vital Loop</h1>
+    <span class="tagline">homeostasis &middot; thermoregulation</span>
+  </div>
+
+  <div class="readouts">
+    <div class="readout">
+      <span class="readout-label">core temp</span>
+      <span class="readout-value" id="coreReadout">&ndash;</span>
+    </div>
+    <div class="readout">
+      <span class="readout-label">room</span>
+      <span class="readout-value small" id="envReadout">&ndash;</span>
+    </div>
+    <div class="readout">
+      <span class="readout-label">sim time</span>
+      <span class="readout-value small" id="clockReadout">0:00</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="pauseBtn" type="button">Pause</button>
+    <button id="resetBtn" type="button">Reset</button>
+    <div class="speed-group" role="group" aria-label="simulation speed">
+      <button class="speed" data-speed="1" type="button">1&times;</button>
+      <button class="speed" data-speed="4" type="button">4&times;</button>
+      <button class="speed" data-speed="16" type="button">16&times;</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="chart-card">
+    <h2>Core body temperature (&deg;C)</h2>
+    <svg id="coreChart" viewBox="0 0 960 240" preserveAspectRatio="none"
+         aria-label="Core body temperature over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Environment (&deg;C)</h2>
+    <svg id="envChart" viewBox="0 0 960 160" preserveAspectRatio="none"
+         aria-label="Environment temperature over time"></svg>
+  </section>
+</main>
+
+<div id="tooltip" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

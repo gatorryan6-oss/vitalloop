@@ -63,7 +63,8 @@ MUST_CONTAIN = [                               # strings that must appear in the
                                                # and no other project's (never leave empty)
 ]
 EXTRA_PAGES = [                                # (path, must-contain) — more pages to smoke-test
-]                                              # /state lands at M2
+    ("/state", "core_temp"),                   # the M2 JSON feed the charts read
+]
 STARTUP_TIMEOUT_SECONDS = 20
 SERVED_SOURCES = [                             # what the running app loads or
     "app.py",                                  # serves — the ONLY files whose

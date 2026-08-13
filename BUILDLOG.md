@@ -18,10 +18,10 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M1. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
-- **Next up:** M2 — Flask app: engine ticking server-side, live strip chart
-  of core + env temp, pause/resume/reset, speed 1×/4×/16×. verify.py becomes
-  a real end-to-end check.
+- **Committed:** M2. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
+- **Next up:** M3 — disturbance controls: env-temp slider (−10…45),
+  exercise toggle, scenario buttons, plus a third chart panel for effector
+  activity (sweat/shiver/vaso).
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -33,6 +33,21 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M2: Flask app with live strip charts
+- Shipped: `app.py` (lazy-ticking runner — engine steps on each poll by
+  wall-time × speed, capped catch-up; `/state` since-param JSON;
+  `/control` pause/resume/reset/speed), page with core-temp and environment
+  strip charts (SVG, dataviz-palette colors, crosshair tooltip), big
+  classroom readouts. verify.py now a real end-to-end check incl. `/state`.
+  Controls exercised live in the browser: 16× ≈ 32 sim-s per 2 wall-s,
+  pause freezes clock, reset clears client buffer, bad speed → 400.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: no background thread — determinism and un-wedgeability beat
+  smoothness we don't need at 4 Hz polling. Reset keeps the current speed
+  setting on purpose. Chart y-ranges fixed (core 33–41, env −15–45) so
+  vertical position stays trustworthy across a lesson.
 
 ## 2026-08-13 — M1: Thermoregulation engine + console demo
 - Shipped: `engine/sim.py` (heat-budget model + proportional hypothalamus,
