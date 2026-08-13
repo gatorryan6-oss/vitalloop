@@ -18,11 +18,11 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M8. Phase 2 spec is `vital_loop_phase2_kickoff.md`
+- **Committed:** M9. Phase 2 spec is `vital_loop_phase2_kickoff.md`
   (M6–M10): the blood glucose loop.
-- **Next up:** M9 — the glucose loop diagram: beta/alpha cells as two
-  explicit control-center boxes, muscle/fat + liver effectors, insulin
-  and glucagon arrows visibly opposing.
+- **Next up:** M10 — break the glucose loop (beta/alpha/liver/sensor
+  toggles, grayed diagram parts) + `/export.csv?loop=glucose`. End of
+  Phase 2 — STOP for confirmation after.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -34,6 +34,20 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M9: Glucose loop diagram
+- Shipped: `diagram.js` refactored into a per-svg kit (scoped marker ids)
+  building BOTH diagrams; temperature behavior unchanged (verified).
+  Glucose layout: control center is two boxes — beta and alpha cells —
+  with insulin's suppression of liver release drawn as an inhibition bar
+  (-|), the biology convention. Verified live: fasted shows both hormone
+  boxes lit at once (the antagonistic balance); a sugary drink flips the
+  seesaw — beta path lights, alpha and liver go dark.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: diagram colors match the glucose page's chart legend
+  (insulin aqua, glucagon yellow, liver magenta, uptake violet); stim
+  glows full at 30 mg/dL off set point.
 
 ## 2026-08-13 — M8: Glucose disturbances
 - Shipped: eat buttons (meal 60 g @ 1.0 g/min; sugary drink 40 g @ 1.5;

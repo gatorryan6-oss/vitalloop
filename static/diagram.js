@@ -1,21 +1,25 @@
-/* The live loop diagram (M4). Built once into #loopDiagram; app.js calls
-   updateDiagram(record) every poll with the newest engine record — the
-   diagram is a live VIEW of the running engine, never a canned animation.
+/* The live loop diagrams (M4 temperature, M9 glucose). Each is built once
+   into its <svg>; app.js calls updateDiagram(record) / updateGlucoseDiagram
+   (record) every poll with the newest engine record — the diagrams are live
+   VIEWS of the running engines, never canned animations.
 
-   Teaching detail that matters: the STIMULUS box lights from the TRUE
-   temperature error, while RECEPTOR and CONTROL CENTER light from the
-   SENSED error (the record's `error` field). With a damaged sensor (M5)
-   the stimulus stays lit while everything downstream goes dark — the
-   diagram shows exactly where the loop is broken. */
+   Teaching details that matter:
+   - The STIMULUS box lights from the TRUE error; RECEPTOR and everything
+     downstream light from the SENSED error. With a damaged sensor the
+     stimulus stays lit while the chain goes dark — the break is visible
+     exactly where it happened.
+   - On the glucose diagram the control center is TWO boxes (beta / alpha
+     cells): the antagonistic pair, explicit. Insulin's suppression of
+     liver release is drawn with an inhibition bar (-|), not an arrowhead —
+     the standard biology convention. */
 
 "use strict";
 
 (function () {
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const svg = document.getElementById("loopDiagram");
 
-  const COLD = "#2a78d6";        // diverging pair: cold pole
-  const HOT = "#e34948";         // hot pole
+  const COLD = "#2a78d6";        // diverging pair: below-set-point pole
+  const HOT = "#e34948";         // above-set-point pole
   const INK = "#0b0b0b";
   const INK2 = "#52514e";
   const MUTED = "#898781";
@@ -25,159 +29,240 @@
   const C_SWEAT = css.getPropertyValue("--series-sweat").trim();
   const C_SHIVER = css.getPropertyValue("--series-shiver").trim();
   const C_VASO = css.getPropertyValue("--series-vaso").trim();
-
-  function el(name, attrs, parent) {
-    const node = document.createElementNS(SVG_NS, name);
-    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-    (parent || svg).appendChild(node);
-    return node;
-  }
-
-  // arrowhead marker
-  const defs = el("defs", {});
-  const marker = el("marker", {
-    id: "arrowhead", viewBox: "0 0 10 10", refX: 9, refY: 5,
-    markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse",
-  }, defs);
-  el("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: BASELINE }, marker);
-
-  const boxes = {};   // id -> {rect, roleText, arrows: []}
-  const arrows = {};  // id -> line/path element
-
-  function box(id, x, y, w, h, role, lines) {
-    const g = el("g", {});
-    const rect = el("rect", {
-      x, y, width: w, height: h, rx: 10,
-      fill: SURFACE, stroke: BASELINE, "stroke-width": 1.5,
-    }, g);
-    boxes[id] = { g, rect, x, y, w, h };
-    el("text", {
-      x: x + w / 2, y: y + 17, "text-anchor": "middle",
-      fill: MUTED, "font-size": 10, "letter-spacing": "0.12em",
-      "font-weight": 600,
-    }, g).textContent = role.toUpperCase();
-    lines.forEach((line, i) => {
-      el("text", {
-        x: x + w / 2, y: y + 34 + i * 16, "text-anchor": "middle",
-        fill: INK, "font-size": 13.5, "font-weight": 500,
-      }, g).textContent = line;
-    });
-  }
-
-  function arrow(id, x1, y1, x2, y2) {
-    arrows[id] = el("line", {
-      x1, y1, x2, y2, stroke: BASELINE, "stroke-width": 2,
-      "marker-end": "url(#arrowhead)", opacity: 0.5,
-    });
-  }
-
-  /* ---- layout: the pipeline, then the return arrow closing the loop ---- */
-
-  box("stim", 15, 125, 140, 84, "stimulus",
-      ["Body temperature", "changes"]);
-  box("recep", 195, 125, 150, 84, "receptor",
-      ["Thermoreceptors", "(skin & core)"]);
-  box("control", 385, 117, 175, 100, "control center",
-      ["Hypothalamus", "compares to", "set point 37.0 °C"]);
-  box("eff-sweat", 610, 40, 180, 58, "effector", ["Sweat glands"]);
-  box("eff-shiver", 610, 138, 180, 58, "effector", ["Skeletal muscles", "— shiver"]);
-  box("eff-vaso", 610, 236, 180, 58, "effector", ["Skin blood vessels"]);
-  box("resp", 830, 125, 120, 84, "response",
-      ["Heat lost,", "made or kept"]);
-
-  arrow("a-stim", 155, 167, 193, 167);
-  arrow("a-recep", 345, 167, 383, 167);
-  arrow("a-sweat", 560, 140, 608, 78);
-  arrow("a-shiver", 560, 167, 608, 167);
-  arrow("a-vaso", 560, 195, 608, 258);
-  arrow("a-resp-sweat", 790, 69, 845, 122);
-  arrow("a-resp-shiver", 790, 167, 828, 167);
-  arrow("a-resp-vaso", 790, 265, 845, 212);
-
-  // The negative-feedback return path: response back to stimulus.
-  arrows["a-feedback"] = el("path", {
-    d: "M 890 209 L 890 322 L 85 322 L 85 213",
-    fill: "none", stroke: BASELINE, "stroke-width": 2,
-    "stroke-dasharray": "7 5", "marker-end": "url(#arrowhead)",
-    opacity: 0.6,
-  });
-  el("text", {
-    x: 487, y: 315, "text-anchor": "middle", fill: INK2,
-    "font-size": 13, "font-style": "italic",
-  }).textContent =
-    "negative feedback — the response counteracts the stimulus";
-
-  /* ---- the live update ---- */
+  const C_UPTAKE = css.getPropertyValue("--series-uptake").trim();
+  const C_INSULIN = C_SWEAT;     // match the glucose page's chart legend
+  const C_GLUCAGON = C_SHIVER;
+  const C_LIVER = C_VASO;
 
   function mix(hex, alpha) {
-    // hex -> rgba string, for fill washes without extra elements
     const n = parseInt(hex.slice(1), 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
   }
 
-  function setGlow(id, activation, color) {
-    const b = boxes[id];
-    const a = Math.max(0, Math.min(1, activation));
-    b.rect.setAttribute("fill", a > 0.02 ? mix(color, 0.12 + 0.38 * a) : SURFACE);
-    b.rect.setAttribute("stroke", a > 0.02 ? color : BASELINE);
-    b.rect.setAttribute("stroke-width", (1.5 + 2.5 * a).toFixed(2));
-  }
+  /* A small kit bound to one <svg>: boxes, arrows, and the live styling. */
+  function makeKit(svgId) {
+    const svg = document.getElementById(svgId);
+    const boxes = {};
+    const arrows = {};
 
-  function setBroken(id, broken) {
-    const b = boxes[id];
-    b.g.setAttribute("opacity", broken ? 0.45 : 1);
-    if (broken) {
-      b.rect.setAttribute("stroke-dasharray", "6 4");
-      b.rect.setAttribute("stroke", MUTED);
-      b.rect.setAttribute("stroke-width", 1.5);
-      b.rect.setAttribute("fill", "#f1f0ec");
-    } else {
-      b.rect.removeAttribute("stroke-dasharray");
+    function el(name, attrs, parent) {
+      const node = document.createElementNS(SVG_NS, name);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      (parent || svg).appendChild(node);
+      return node;
     }
+
+    // markers get svg-scoped ids so two diagrams on one page never collide
+    const defs = el("defs", {});
+    const arrowMarker = el("marker", {
+      id: `${svgId}-arrow`, viewBox: "0 0 10 10", refX: 9, refY: 5,
+      markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse",
+    }, defs);
+    el("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: BASELINE }, arrowMarker);
+    const inhibitMarker = el("marker", {
+      id: `${svgId}-inhibit`, viewBox: "0 0 6 12", refX: 4, refY: 6,
+      markerWidth: 6, markerHeight: 9, orient: "auto-start-reverse",
+    }, defs);
+    el("path", { d: "M 4 0 L 4 12", stroke: BASELINE, "stroke-width": 2.5,
+                 fill: "none" }, inhibitMarker);
+
+    function box(id, x, y, w, h, role, lines) {
+      const g = el("g", {});
+      const rect = el("rect", {
+        x, y, width: w, height: h, rx: 10,
+        fill: SURFACE, stroke: BASELINE, "stroke-width": 1.5,
+      }, g);
+      el("text", {
+        x: x + w / 2, y: y + 17, "text-anchor": "middle",
+        fill: MUTED, "font-size": 10, "letter-spacing": "0.12em",
+        "font-weight": 600,
+      }, g).textContent = role.toUpperCase();
+      lines.forEach((line, i) => {
+        el("text", {
+          x: x + w / 2, y: y + 34 + i * 16, "text-anchor": "middle",
+          fill: INK, "font-size": 13.5, "font-weight": 500,
+        }, g).textContent = line;
+      });
+      boxes[id] = { g, rect };
+    }
+
+    function arrow(id, x1, y1, x2, y2, end = "arrow") {
+      arrows[id] = el("line", {
+        x1, y1, x2, y2, stroke: BASELINE, "stroke-width": 2,
+        "marker-end": `url(#${svgId}-${end})`, opacity: 0.5,
+      });
+    }
+
+    function pathArrow(id, d, dashed) {
+      arrows[id] = el("path", {
+        d, fill: "none", stroke: BASELINE, "stroke-width": 2,
+        "marker-end": `url(#${svgId}-arrow)`, opacity: 0.6,
+        ...(dashed ? { "stroke-dasharray": "7 5" } : {}),
+      });
+    }
+
+    function caption(x, y, text) {
+      el("text", { x, y, "text-anchor": "middle", fill: INK2,
+                   "font-size": 13, "font-style": "italic" })
+        .textContent = text;
+    }
+
+    function setGlow(id, activation, color) {
+      const b = boxes[id];
+      const a = Math.max(0, Math.min(1, activation));
+      b.rect.setAttribute("fill",
+        a > 0.02 ? mix(color, 0.12 + 0.38 * a) : SURFACE);
+      b.rect.setAttribute("stroke", a > 0.02 ? color : BASELINE);
+      b.rect.setAttribute("stroke-width", (1.5 + 2.5 * a).toFixed(2));
+    }
+
+    function setArrow(id, activation, color) {
+      const a = Math.max(0, Math.min(1, activation));
+      const node = arrows[id];
+      node.setAttribute("opacity", (0.35 + 0.65 * a).toFixed(2));
+      node.setAttribute("stroke", a > 0.05 ? color : BASELINE);
+      node.setAttribute("stroke-width", (2 + 2 * a).toFixed(2));
+    }
+
+    function setBroken(id, broken) {
+      const b = boxes[id];
+      b.g.setAttribute("opacity", broken ? 0.45 : 1);
+      if (broken) {
+        b.rect.setAttribute("stroke-dasharray", "6 4");
+        b.rect.setAttribute("stroke", MUTED);
+        b.rect.setAttribute("stroke-width", 1.5);
+        b.rect.setAttribute("fill", "#f1f0ec");
+      } else {
+        b.rect.removeAttribute("stroke-dasharray");
+      }
+    }
+
+    return { box, arrow, pathArrow, caption, setGlow, setArrow, setBroken };
   }
 
-  function setArrow(id, activation, color) {
-    const a = Math.max(0, Math.min(1, activation));
-    const node = arrows[id];
-    node.setAttribute("opacity", (0.35 + 0.65 * a).toFixed(2));
-    node.setAttribute("stroke", a > 0.05 ? color : BASELINE);
-    node.setAttribute("stroke-width", (2 + 2 * a).toFixed(2));
-  }
+  /* ================= temperature diagram (M4) ================= */
+
+  const T = makeKit("loopDiagram");
+
+  T.box("stim", 15, 125, 140, 84, "stimulus",
+        ["Body temperature", "changes"]);
+  T.box("recep", 195, 125, 150, 84, "receptor",
+        ["Thermoreceptors", "(skin & core)"]);
+  T.box("control", 385, 117, 175, 100, "control center",
+        ["Hypothalamus", "compares to", "set point 37.0 °C"]);
+  T.box("eff-sweat", 610, 40, 180, 58, "effector", ["Sweat glands"]);
+  T.box("eff-shiver", 610, 138, 180, 58, "effector",
+        ["Skeletal muscles", "— shiver"]);
+  T.box("eff-vaso", 610, 236, 180, 58, "effector", ["Skin blood vessels"]);
+  T.box("resp", 830, 125, 120, 84, "response", ["Heat lost,", "made or kept"]);
+
+  T.arrow("a-stim", 155, 167, 193, 167);
+  T.arrow("a-recep", 345, 167, 383, 167);
+  T.arrow("a-sweat", 560, 140, 608, 78);
+  T.arrow("a-shiver", 560, 167, 608, 167);
+  T.arrow("a-vaso", 560, 195, 608, 258);
+  T.arrow("a-resp-sweat", 790, 69, 845, 122);
+  T.arrow("a-resp-shiver", 790, 167, 828, 167);
+  T.arrow("a-resp-vaso", 790, 265, 845, 212);
+  T.pathArrow("a-feedback", "M 890 209 L 890 322 L 85 322 L 85 213", true);
+  T.caption(487, 315,
+    "negative feedback — the response counteracts the stimulus");
 
   window.updateDiagram = function (r) {
-    const trueErr = r.core_temp - 37.0;       // what is really happening
-    const sensed = r.error;                   // what the hypothalamus sees
+    const trueErr = r.core_temp - 37.0;
+    const sensed = r.error;
     const dirTrue = trueErr >= 0 ? HOT : COLD;
     const dirSensed = sensed >= 0 ? HOT : COLD;
-    const stimAct = Math.abs(trueErr) / 0.5;  // full glow at 0.5 degC off
+    const stimAct = Math.abs(trueErr) / 0.5;
     const sensedAct = Math.abs(sensed) / 0.5;
 
-    setGlow("stim", stimAct, dirTrue);
-    setGlow("recep", sensedAct, dirSensed);
-    setGlow("control", sensedAct, dirSensed);
-    setGlow("eff-sweat", r.sweat, C_SWEAT);
-    setGlow("eff-shiver", r.shiver, C_SHIVER);
-    setGlow("eff-vaso", Math.abs(r.vaso), C_VASO);
+    T.setGlow("stim", stimAct, dirTrue);
+    T.setGlow("recep", sensedAct, dirSensed);
+    T.setGlow("control", sensedAct, dirSensed);
+    T.setGlow("eff-sweat", r.sweat, C_SWEAT);
+    T.setGlow("eff-shiver", r.shiver, C_SHIVER);
+    T.setGlow("eff-vaso", Math.abs(r.vaso), C_VASO);
     const respAct = Math.max(r.sweat, r.shiver, Math.abs(r.vaso));
-    setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
+    T.setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
 
-    setArrow("a-stim", stimAct, dirTrue);
-    setArrow("a-recep", sensedAct, dirSensed);
-    setArrow("a-sweat", r.sweat, C_SWEAT);
-    setArrow("a-shiver", r.shiver, C_SHIVER);
-    setArrow("a-vaso", Math.abs(r.vaso), C_VASO);
-    setArrow("a-resp-sweat", r.sweat, C_SWEAT);
-    setArrow("a-resp-shiver", r.shiver, C_SHIVER);
-    setArrow("a-resp-vaso", Math.abs(r.vaso), C_VASO);
-    setArrow("a-feedback", respAct, dirSensed);
+    T.setArrow("a-stim", stimAct, dirTrue);
+    T.setArrow("a-recep", sensedAct, dirSensed);
+    T.setArrow("a-sweat", r.sweat, C_SWEAT);
+    T.setArrow("a-shiver", r.shiver, C_SHIVER);
+    T.setArrow("a-vaso", Math.abs(r.vaso), C_VASO);
+    T.setArrow("a-resp-sweat", r.sweat, C_SWEAT);
+    T.setArrow("a-resp-shiver", r.shiver, C_SHIVER);
+    T.setArrow("a-resp-vaso", Math.abs(r.vaso), C_VASO);
+    T.setArrow("a-feedback", respAct, dirSensed);
 
-    // Broken parts gray out AFTER the glow pass, so the override wins.
-    // Damaged sensors gray the receptor; the boxes downstream go dark on
-    // their own because the sensed error is zero — the diagram shows the
-    // break exactly where it happened.
-    setBroken("recep", !r.sensor_enabled);
-    setBroken("eff-sweat", !r.sweat_enabled);
-    setBroken("eff-shiver", !r.shiver_enabled);
-    setBroken("eff-vaso", !r.vaso_enabled);
+    T.setBroken("recep", !r.sensor_enabled);
+    T.setBroken("eff-sweat", !r.sweat_enabled);
+    T.setBroken("eff-shiver", !r.shiver_enabled);
+    T.setBroken("eff-vaso", !r.vaso_enabled);
+  };
+
+  /* ================= glucose diagram (M9) ================= */
+
+  const G = makeKit("glucoseDiagram");
+
+  G.box("stim", 15, 155, 140, 84, "stimulus", ["Blood glucose", "changes"]);
+  G.box("recep", 185, 155, 150, 84, "receptor",
+        ["Islet cells", "(pancreas)"]);
+  G.box("beta", 375, 60, 180, 74, "control center",
+        ["Beta cells", "release insulin"]);
+  G.box("alpha", 375, 260, 180, 74, "control center",
+        ["Alpha cells", "release glucagon"]);
+  G.box("muscle", 610, 60, 185, 74, "effector",
+        ["Muscle & fat", "take up glucose"]);
+  G.box("liver", 610, 260, 185, 74, "effector",
+        ["Liver", "releases glucose"]);
+  G.box("resp", 830, 155, 120, 90, "response",
+        ["Glucose falls", "or rises"]);
+
+  G.arrow("a-stim", 155, 197, 183, 197);
+  G.arrow("a-r-beta", 335, 180, 373, 105);
+  G.arrow("a-r-alpha", 335, 215, 373, 290);
+  G.arrow("a-beta-muscle", 555, 97, 608, 97);
+  G.arrow("a-alpha-liver", 555, 297, 608, 297);
+  // insulin INHIBITS liver release: bar end, not arrowhead
+  G.arrow("a-beta-liver", 540, 134, 640, 258, "inhibit");
+  G.arrow("a-muscle-resp", 795, 97, 845, 152);
+  G.arrow("a-liver-resp", 795, 297, 845, 248);
+  G.pathArrow("a-feedback", "M 890 245 L 890 372 L 85 372 L 85 241", true);
+  G.caption(487, 365,
+    "negative feedback — insulin and glucagon push in opposite directions");
+
+  window.updateGlucoseDiagram = function (r) {
+    const trueErr = r.glucose - 90.0;
+    const sensed = r.error;
+    const dirTrue = trueErr >= 0 ? HOT : COLD;
+    const dirSensed = sensed >= 0 ? HOT : COLD;
+    const stimAct = Math.abs(trueErr) / 30.0;   // full glow 30 mg/dL off
+    const sensedAct = Math.abs(sensed) / 30.0;
+    const liverAct = r.liver_flux / 3.0;
+
+    G.setGlow("stim", stimAct, dirTrue);
+    G.setGlow("recep", sensedAct, dirSensed);
+    G.setGlow("beta", r.insulin, C_INSULIN);
+    G.setGlow("alpha", r.glucagon, C_GLUCAGON);
+    G.setGlow("muscle", r.insulin, C_UPTAKE);
+    G.setGlow("liver", liverAct, C_LIVER);
+    const respAct = Math.max(r.insulin, liverAct);
+    G.setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
+
+    G.setArrow("a-stim", stimAct, dirTrue);
+    G.setArrow("a-r-beta", r.insulin, C_INSULIN);
+    G.setArrow("a-r-alpha", r.glucagon, C_GLUCAGON);
+    G.setArrow("a-beta-muscle", r.insulin, C_INSULIN);
+    G.setArrow("a-beta-liver", r.insulin, C_INSULIN);
+    G.setArrow("a-alpha-liver", r.glucagon, C_GLUCAGON);
+    G.setArrow("a-muscle-resp", r.insulin, C_UPTAKE);
+    G.setArrow("a-liver-resp", liverAct, C_LIVER);
+    G.setArrow("a-feedback", respAct, dirSensed);
+
+    G.setBroken("recep", !r.sensor_enabled);
+    G.setBroken("beta", !r.beta_enabled);
+    G.setBroken("alpha", !r.alpha_enabled);
+    G.setBroken("liver", !r.liver_enabled);
   };
 })();

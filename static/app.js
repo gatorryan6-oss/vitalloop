@@ -58,7 +58,11 @@ async function poll() {
   if (loop !== activeLoop) return;   // tab switched while we fetched
   applyServerState(j);
   updateReadouts(j.now);
-  if (loop === "temp" && window.updateDiagram) window.updateDiagram(j.now);
+  if (loop === "temp" && window.updateDiagram) {
+    window.updateDiagram(j.now);
+  } else if (loop === "glucose" && window.updateGlucoseDiagram) {
+    window.updateGlucoseDiagram(j.now);
+  }
   drawAll();
 }
 
