@@ -18,11 +18,11 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M6. Phase 2 spec is `vital_loop_phase2_kickoff.md`
+- **Committed:** M7. Phase 2 spec is `vital_loop_phase2_kickoff.md`
   (M6–M10): the blood glucose loop.
-- **Next up:** M7 — loop switcher tab (Temperature | Glucose), glucose
-  strip charts with the 70–110 healthy band, `/state?loop=` param, both
-  sims live and independent server-side.
+- **Next up:** M8 — glucose disturbances: eat-a-meal button, sugary vs
+  balanced scenarios, exercise burn, 12 h fast, gut-carbs readout is
+  already in the header.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -34,6 +34,21 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M7: Loop switcher + glucose charts
+- Shipped: two independent Runners server-side (`/state?loop=`,
+  `/control?loop=`; loop-specific actions 400 on the wrong loop), header
+  tabs Temperature | Glucose with per-loop readouts, per-loop chart
+  buffers/windows (temp 10 min, glucose 2 h), three glucose panels:
+  blood glucose (shaded 70–110 band, set point + hypo/hyper lines),
+  hormones (insulin/glucagon), flows (liver vs uptake — same units, one
+  axis). Verified live: tab switching, all panels drawing, glucose at
+  16× while temp stayed 1×.
+- Deferred: glucose CSV export → M10 (route currently temp-only).
+- Open bugs: none.
+- Decisions: pause/speed are PER LOOP (header controls act on the active
+  tab). Browser polls only the visible loop; the hidden one catches up
+  from server history on switch.
 
 ## 2026-08-13 — M6: Glucose invariants + engine + console demo (Phase 2 starts)
 - Shipped: glucose contract added to `tests/test_invariants.py` (API,

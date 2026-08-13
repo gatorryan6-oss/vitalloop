@@ -6,7 +6,8 @@
 "use strict";
 
 const POLL_MS = 250;
-const WINDOW_S = 600;            // visible strip: the last 10 sim-minutes
+// Visible strip per loop: temperature moves in minutes, glucose in hours.
+const WINDOWS = { temp: 600, glucose: 7200 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const palette = getComputedStyle(document.documentElement);
@@ -19,37 +20,45 @@ const COLOR_GRID = palette.getPropertyValue("--grid").trim();
 const COLOR_BASELINE = palette.getPropertyValue("--baseline").trim();
 const COLOR_MUTED = palette.getPropertyValue("--muted").trim();
 
-let pts = [];                    // engine records, oldest first
-let lastT = -1;
-let running = true;
+let activeLoop = "temp";         // which loop the page is showing
+const buffers = {                // engine records per loop, oldest first
+  temp: { pts: [], lastT: -1 },
+  glucose: { pts: [], lastT: -1 },
+};
+let running = true;              // play/speed of the ACTIVE loop's runner
 let speed = 1;
 
 /* ---------------- polling ---------------- */
 
 async function poll() {
+  const loop = activeLoop;       // pin: the tab may switch mid-await
+  const buf = buffers[loop];
   let j;
   try {
-    const r = await fetch("/state?since=" + lastT);
+    const r = await fetch(`/state?loop=${loop}&since=` + buf.lastT);
     j = await r.json();
   } catch (e) {
     return;                      // server briefly away; next poll retries
   }
-  if (j.now.t < lastT) {         // sim was reset behind our back
-    pts = [];
-    lastT = -1;
+  if (j.now.t < buf.lastT) {     // sim was reset behind our back
+    buf.pts = [];
+    buf.lastT = -1;
     return;
   }
-  pts.push(...j.points);
-  lastT = j.now.t;
-  applyServerState(j);
+  buf.pts.push(...j.points);
+  buf.lastT = j.now.t;
   // Trim the buffer: keep the visible window plus slack. Full history for
   // the CSV lives on the server; the browser only needs what it draws.
-  const cutoff = lastT - WINDOW_S * 1.2;
+  const cutoff = buf.lastT - WINDOWS[loop] * 1.2;
   let firstKeep = 0;
-  while (firstKeep < pts.length && pts[firstKeep].t < cutoff) firstKeep++;
-  if (firstKeep > 0) pts = pts.slice(firstKeep);
+  while (firstKeep < buf.pts.length && buf.pts[firstKeep].t < cutoff) {
+    firstKeep++;
+  }
+  if (firstKeep > 0) buf.pts = buf.pts.slice(firstKeep);
+  if (loop !== activeLoop) return;   // tab switched while we fetched
+  applyServerState(j);
   updateReadouts(j.now);
-  if (window.updateDiagram) window.updateDiagram(j.now);
+  if (loop === "temp" && window.updateDiagram) window.updateDiagram(j.now);
   drawAll();
 }
 
@@ -64,15 +73,28 @@ function applyServerState(j) {
     b.classList.toggle("active", Number(b.dataset.speed) === speed));
 }
 
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
 function updateReadouts(now) {
-  document.getElementById("coreReadout").textContent =
-    now.core_temp.toFixed(2) + " °C";
-  document.getElementById("envReadout").textContent =
-    now.env_temp.toFixed(1) + " °C";
   const s = Math.floor(now.t);
   const mm = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, "0");
-  document.getElementById("clockReadout").textContent = `${mm}:${ss}`;
+  setText("clockReadout", `${mm}:${ss}`);
+
+  if (activeLoop === "glucose") {
+    setText("r1Label", "glucose");
+    setText("r1Value", now.glucose.toFixed(0) + " mg/dL");
+    setText("r2Label", "gut carbs");
+    setText("r2Value", now.gut_carbs.toFixed(0) + " g");
+    return;
+  }
+
+  setText("r1Label", "core temp");
+  setText("r1Value", now.core_temp.toFixed(2) + " °C");
+  setText("r2Label", "room");
+  setText("r2Value", now.env_temp.toFixed(1) + " °C");
 
   // Reflect the server's truth in the disturbance controls — unless the
   // teacher is mid-drag, in which case their hand wins.
@@ -104,7 +126,7 @@ function updateReadouts(now) {
 
 async function control(body) {
   try {
-    const r = await fetch("/control", {
+    const r = await fetch(`/control?loop=${activeLoop}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -170,9 +192,11 @@ document.querySelectorAll(".breaker").forEach(b =>
 
 /* One strip-chart panel bound to an <svg>. Series share the rolling time
    axis; y-range is fixed per panel so the eye can trust vertical position. */
-function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
+function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
+                            loop = "temp", bands = [] }) {
   const svg = document.getElementById(svgId);
   const view = svg.viewBox.baseVal;
+  const windowS = WINDOWS[loop];
   const hasLabels = series.some(s => s.label);
   const M = { left: 46, right: hasLabels ? 72 : 14, top: 10, bottom: 22 };
 
@@ -194,8 +218,16 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
 
   function draw(records, t1) {
     svg.innerHTML = "";
-    const t0 = Math.max(0, t1 - WINDOW_S);
-    const tEnd = Math.max(t1, WINDOW_S);   // fill the frame from sim start
+    const t0 = Math.max(0, t1 - windowS);
+    const tEnd = Math.max(t1, windowS);    // fill the frame from sim start
+
+    // shaded reference bands (e.g. the healthy 70-110 mg/dL zone) first,
+    // so everything else draws on top
+    for (const band of bands) {
+      el("rect", { x: M.left, width: view.width - M.left - M.right,
+                   y: y(band.y1), height: y(band.y0) - y(band.y1),
+                   fill: band.color });
+    }
 
     // recessive grid: hairlines + muted tick labels
     for (let v = yMin; v <= yMax + 1e-9; v += yStep) {
@@ -206,7 +238,7 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
                    fill: COLOR_MUTED, "font-size": 12 },
          yStep < 1 ? v.toFixed(1) : v.toFixed(0));
     }
-    const xTickEvery = 120;                // a label every 2 sim-minutes
+    const xTickEvery = windowS <= 900 ? 120 : 1200;   // 2 min / 20 min
     const firstTick = Math.ceil(t0 / xTickEvery) * xTickEvery;
     for (let t = firstTick; t <= tEnd; t += xTickEvery) {
       el("text", { x: x(t, t0, tEnd), y: view.height - 6,
@@ -258,16 +290,17 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
 
   // crosshair + tooltip (interaction layer: nearest record to the cursor)
   svg.addEventListener("mousemove", ev => {
-    if (!pts.length) return;
+    const buf = buffers[loop];
+    if (!buf.pts.length) return;
     const rect = svg.getBoundingClientRect();
-    const t1 = Math.max(lastT, WINDOW_S);
-    const t0 = Math.max(0, lastT - WINDOW_S);
+    const t1 = Math.max(buf.lastT, windowS);
+    const t0 = Math.max(0, buf.lastT - windowS);
     const frac = (ev.clientX - rect.left) / rect.width;
     const tCursor = t0 + Math.max(0, Math.min(1,
       (frac * view.width - M.left) / (view.width - M.left - M.right)))
       * (t1 - t0);
-    let best = pts[0];
-    for (const p of pts) {
+    let best = buf.pts[0];
+    for (const p of buf.pts) {
       if (Math.abs(p.t - tCursor) < Math.abs(best.t - tCursor)) best = p;
     }
     showTooltip(ev, best);
@@ -282,13 +315,18 @@ const tooltip = document.getElementById("tooltip");
 function showTooltip(ev, r) {
   const mm = Math.floor(r.t / 60);
   const ss = String(Math.floor(r.t) % 60).padStart(2, "0");
-  tooltip.innerHTML =
-    `<strong>t = ${mm}:${ss}</strong><br>` +
-    `core ${r.core_temp.toFixed(2)} °C<br>` +
-    `room ${r.env_temp.toFixed(1)} °C<br>` +
-    `sweat ${r.sweat.toFixed(2)} · shiver ${r.shiver.toFixed(2)}<br>` +
-    `vessels ${r.vaso >= 0 ? "+" : ""}${r.vaso.toFixed(2)}` +
-    (r.exercise ? "<br>exercising" : "");
+  const body = ("core_temp" in r)
+    ? `core ${r.core_temp.toFixed(2)} °C<br>` +
+      `room ${r.env_temp.toFixed(1)} °C<br>` +
+      `sweat ${r.sweat.toFixed(2)} · shiver ${r.shiver.toFixed(2)}<br>` +
+      `vessels ${r.vaso >= 0 ? "+" : ""}${r.vaso.toFixed(2)}` +
+      (r.exercise ? "<br>exercising" : "")
+    : `glucose ${r.glucose.toFixed(0)} mg/dL<br>` +
+      `insulin ${r.insulin.toFixed(2)} · glucagon ${r.glucagon.toFixed(2)}<br>` +
+      `liver +${r.liver_flux.toFixed(2)} · uptake −${r.uptake.toFixed(2)}<br>` +
+      `gut ${r.gut_carbs.toFixed(0)} g` +
+      (r.exercise ? "<br>exercising" : "");
+  tooltip.innerHTML = `<strong>t = ${mm}:${ss}</strong><br>` + body;
   tooltip.hidden = false;
   const pad = 14;
   tooltip.style.left = Math.min(ev.clientX + pad,
@@ -317,12 +355,59 @@ const effectorChart = makeChart("effectorChart", {
   refLines: [{ y: 0, label: "" }],
 });
 
+const COLOR_UPTAKE =
+  palette.getPropertyValue("--series-uptake").trim();
+const HEALTHY_BAND_FILL = "rgba(12, 163, 12, 0.07)";
+
+const glucoseChart = makeChart("glucoseChart", {
+  loop: "glucose", yMin: 40, yMax: 360, yStep: 40,
+  series: [{ key: "glucose", color: COLOR_CORE }],
+  bands: [{ y0: 70, y1: 110, color: HEALTHY_BAND_FILL }],
+  refLines: [
+    { y: 90, label: "set point 90" },
+    { y: 180, label: "hyperglycemia" },
+    { y: 70, label: "hypoglycemia" },
+  ],
+});
+const hormoneChart = makeChart("hormoneChart", {
+  loop: "glucose", yMin: 0, yMax: 1, yStep: 0.5,
+  series: [
+    { key: "insulin", color: COLOR_SWEAT, label: "insulin" },
+    { key: "glucagon", color: COLOR_SHIVER, label: "glucagon" },
+  ],
+});
+const flowChart = makeChart("flowChart", {
+  loop: "glucose", yMin: 0, yMax: 8, yStep: 2,
+  series: [
+    { key: "liver_flux", color: COLOR_VASO, label: "liver" },
+    { key: "uptake", color: COLOR_UPTAKE, label: "uptake" },
+  ],
+});
+
+const chartsByLoop = {
+  temp: [coreChart, envChart, effectorChart],
+  glucose: [glucoseChart, hormoneChart, flowChart],
+};
+
 function drawAll() {
-  const t1 = Math.max(lastT, WINDOW_S);
-  coreChart.draw(pts, t1);
-  envChart.draw(pts, t1);
-  effectorChart.draw(pts, t1);
+  const buf = buffers[activeLoop];
+  const t1 = Math.max(buf.lastT, WINDOWS[activeLoop]);
+  for (const chart of chartsByLoop[activeLoop]) chart.draw(buf.pts, t1);
 }
+
+/* --- the loop switcher (M7) --- */
+
+document.querySelectorAll(".loop-tab").forEach(b =>
+  b.addEventListener("click", () => {
+    if (activeLoop === b.dataset.loop) return;
+    activeLoop = b.dataset.loop;
+    document.querySelectorAll(".loop-tab").forEach(x =>
+      x.classList.toggle("active", x.dataset.loop === activeLoop));
+    document.getElementById("page-temp").hidden = activeLoop !== "temp";
+    document.getElementById("page-glucose").hidden =
+      activeLoop !== "glucose";
+    poll();                      // refresh the newly visible loop now
+  }));
 
 setInterval(poll, POLL_MS);
 poll();

@@ -11,17 +11,24 @@
 <header>
   <div class="brand">
     <h1>Vital Loop</h1>
-    <span class="tagline">homeostasis &middot; thermoregulation</span>
+    <span class="tagline">homeostasis, live</span>
   </div>
+
+  <nav class="loop-tabs" aria-label="which loop is on screen">
+    <button class="loop-tab active" data-loop="temp" type="button">
+      Temperature</button>
+    <button class="loop-tab" data-loop="glucose" type="button">
+      Glucose</button>
+  </nav>
 
   <div class="readouts">
     <div class="readout">
-      <span class="readout-label">core temp</span>
-      <span class="readout-value" id="coreReadout">&ndash;</span>
+      <span class="readout-label" id="r1Label">core temp</span>
+      <span class="readout-value" id="r1Value">&ndash;</span>
     </div>
     <div class="readout">
-      <span class="readout-label">room</span>
-      <span class="readout-value small" id="envReadout">&ndash;</span>
+      <span class="readout-label" id="r2Label">room</span>
+      <span class="readout-value small" id="r2Value">&ndash;</span>
     </div>
     <div class="readout">
       <span class="readout-label">sim time</span>
@@ -41,6 +48,7 @@
 </header>
 
 <main>
+<div id="page-temp">
   <section class="chart-card disturbances">
     <h2>Disturbances</h2>
     <div class="disturb-row">
@@ -103,6 +111,41 @@
     <svg id="effectorChart" viewBox="0 0 960 200" preserveAspectRatio="none"
          aria-label="Effector activity over time"></svg>
   </section>
+</div>
+
+<div id="page-glucose" hidden>
+  <section class="chart-card">
+    <h2>Blood glucose (mg/dL)</h2>
+    <svg id="glucoseChart" viewBox="0 0 960 260" preserveAspectRatio="none"
+         aria-label="Blood glucose over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Hormones &mdash; the antagonistic pair
+      <span class="legend">
+        <span class="chip"><span class="dot dot-insulin"></span>insulin
+          (lowers glucose)</span>
+        <span class="chip"><span class="dot dot-glucagon"></span>glucagon
+          (raises glucose)</span>
+      </span>
+    </h2>
+    <svg id="hormoneChart" viewBox="0 0 960 180" preserveAspectRatio="none"
+         aria-label="Insulin and glucagon over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Glucose flows (mg/dL&middot;min)
+      <span class="legend">
+        <span class="chip"><span class="dot dot-liver"></span>liver &rarr;
+          blood</span>
+        <span class="chip"><span class="dot dot-uptake"></span>blood &rarr;
+          tissues</span>
+      </span>
+    </h2>
+    <svg id="flowChart" viewBox="0 0 960 180" preserveAspectRatio="none"
+         aria-label="Liver output and tissue uptake over time"></svg>
+  </section>
+</div>
 </main>
 
 <div id="tooltip" hidden></div>

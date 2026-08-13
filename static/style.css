@@ -16,6 +16,7 @@
   --series-sweat: #1baf7a;  /* slot 3 \                                  */
   --series-shiver: #eda100; /* slot 4  > the three effectors, one panel  */
   --series-vaso: #e87ba4;   /* slot 5 /  (direct-labeled: low contrast)  */
+  --series-uptake: #4a3aa7; /* slot 7: tissue uptake on the flows panel  */
 }
 
 * { box-sizing: border-box; }
@@ -39,6 +40,21 @@ header {
 
 .brand h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.01em; }
 .tagline { color: var(--ink-2); font-size: 0.95rem; }
+
+.loop-tabs { display: flex; gap: 0; }
+.loop-tab {
+  border-radius: 0;
+  border-right-width: 0;
+  font-weight: 600;
+  padding: 0.45rem 1.3rem;
+}
+.loop-tab:first-child { border-radius: 8px 0 0 8px; }
+.loop-tab:last-child { border-radius: 0 8px 8px 0; border-right-width: 1px; }
+.loop-tab.active {
+  background: var(--series-core);
+  border-color: var(--series-core);
+  color: var(--surface);
+}
 
 .readouts { display: flex; gap: 2rem; margin-left: auto; }
 .readout { display: flex; flex-direction: column; align-items: flex-end; }
@@ -171,6 +187,10 @@ main {
 .dot-sweat { background: var(--series-sweat); }
 .dot-shiver { background: var(--series-shiver); }
 .dot-vaso { background: var(--series-vaso); }
+.dot-insulin { background: var(--series-sweat); }   /* glucose page reuses  */
+.dot-glucagon { background: var(--series-shiver); } /* slots 3-5: pages are */
+.dot-liver { background: var(--series-vaso); }      /* never shown together */
+.dot-uptake { background: var(--series-uptake); }
 
 #tooltip {
   position: fixed;

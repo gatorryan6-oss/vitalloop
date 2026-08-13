@@ -17,6 +17,7 @@ import time
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
 
 app = Flask(__name__)
@@ -26,11 +27,13 @@ MAX_POINTS_PER_RESPONSE = 1500   # downsample /state payloads beyond this
 
 
 class Runner:
-    """The single shared simulation and its play/pause/speed state."""
+    """One simulation and its play/pause/speed state. Each loop gets its
+    own Runner — pause and speed are PER LOOP (the simpler choice; logged
+    in BUILDLOG at M7)."""
 
-    def __init__(self):
+    def __init__(self, sim):
         self.lock = threading.Lock()
-        self.sim = Simulation()
+        self.sim = sim
         self.running = True
         self.speed = 1
         self._last_wall = time.monotonic()
@@ -72,7 +75,16 @@ class Runner:
         }
 
 
-runner = Runner()
+runners = {
+    "temp": Runner(Simulation()),
+    "glucose": Runner(GlucoseSimulation()),
+}
+
+
+def _runner():
+    """The Runner the request addresses (?loop=temp|glucose, default temp),
+    or None for an unknown loop name."""
+    return runners.get(request.args.get("loop", "temp"))
 
 
 @app.route("/")
@@ -82,6 +94,9 @@ def index():
 
 @app.route("/state")
 def state():
+    runner = _runner()
+    if runner is None:
+        return jsonify({"error": "unknown loop"}), 400
     runner.advance()
     since = request.args.get("since", -1.0, type=float)
     return jsonify(runner.snapshot(since))
@@ -98,7 +113,12 @@ SCENARIOS = {
 
 @app.route("/control", methods=["POST"])
 def control():
-    """Play/pause/reset/speed + M3 disturbances. Toggles arrive at M5."""
+    """Play/pause/reset/speed + disturbances + toggles, per loop.
+    Loop-specific actions (env_temp on temp, eat on glucose) 400 cleanly
+    if sent to the wrong loop."""
+    runner = _runner()
+    if runner is None:
+        return jsonify({"error": "unknown loop"}), 400
     cmd = request.get_json(force=True, silent=True) or {}
     action = cmd.get("action")
     runner.advance()   # settle time owed under the OLD settings first
@@ -117,6 +137,9 @@ def control():
                                          f"got {value!r}"}), 400
             runner.speed = value
         elif action == "env_temp":
+            if not hasattr(runner.sim, "set_env_temp"):
+                return jsonify({"error": "env_temp is a temperature-loop "
+                                         "action"}), 400
             try:
                 value = float(cmd.get("value"))
             except (TypeError, ValueError):
@@ -134,6 +157,9 @@ def control():
         elif action == "sensor":
             runner.sim.set_sensor_enabled(bool(cmd.get("value")))
         elif action == "scenario":
+            if not hasattr(runner.sim, "set_env_temp"):
+                return jsonify({"error": "scenario is a temperature-loop "
+                                         "action"}), 400
             name = cmd.get("value")
             if name not in SCENARIOS:
                 return jsonify({"error": f"unknown scenario {name!r}"}), 400
@@ -156,6 +182,7 @@ CSV_FIELDS = ["t", "core_temp", "env_temp", "exercise", "error",
 
 @app.route("/export.csv")
 def export_csv():
+    runner = runners["temp"]     # glucose export arrives at M10
     runner.advance()
     with runner.lock:
         records = runner.sim.history()
