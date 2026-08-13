@@ -18,11 +18,11 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M5 — **Phase 1 complete.** Spec was
-  `vital_loop_v1_kickoff.md` (M0–M5); all milestones shipped and verified.
-- **Next up:** awaiting the human's Phase 2 decision. Candidates from the
-  kickoff: blood glucose loop, water/ADH loop, authored scenario
-  challenges, student-facing game layer.
+- **Committed:** M6. Phase 2 spec is `vital_loop_phase2_kickoff.md`
+  (M6–M10): the blood glucose loop.
+- **Next up:** M7 — loop switcher tab (Temperature | Glucose), glucose
+  strip charts with the 70–110 healthy band, `/state?loop=` param, both
+  sims live and independent server-side.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -34,6 +34,25 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M6: Glucose invariants + engine + console demo (Phase 2 starts)
+- Shipped: glucose contract added to `tests/test_invariants.py` (API,
+  frozen fields, 4 pinned physiology behaviors, determinism, and a
+  Phase-1 regression guard: thermo scripted-run history sha256 pinned).
+  `engine/glucose.py` — antagonistic islet controller with OVERLAPPING
+  active ranges (both hormones nonzero at the set point), liver output
+  boosted by glucagon / suppressed by insulin, paracrine disinhibition
+  (no insulin → alpha cells run high → type 1 hyperglycemia persists
+  honestly), renal spill above 180. `engine/glucose_demo.py` meal story.
+  All 20 invariants pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: fasted equilibrium ≈ 88 mg/dL with insulin 0.13 / glucagon
+  0.40 both visibly active — the teaching point in the data. Sensor
+  damage freezes hormones at their set-point values (sensed G = 90),
+  which drifts the body hypo (~51) — hypoglycemia unawareness, honest
+  consequence of the model. eat(grams, rate): newest meal sets the
+  absorption pace (simplification, logged here on purpose).
 
 ## 2026-08-13 — M5: Break the loop + CSV export (Phase 1 complete)
 - Shipped: per-effector disable buttons + sensor-damage toggle (status
