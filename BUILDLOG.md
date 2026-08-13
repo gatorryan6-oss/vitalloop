@@ -18,10 +18,11 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M4. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
-- **Next up:** M5 — break the loop: per-effector disable toggles, sensor
-  damage, grayed diagram parts, CSV export of the run history. End of
-  Phase 1 — STOP for confirmation after.
+- **Committed:** M5 — **Phase 1 complete.** Spec was
+  `vital_loop_v1_kickoff.md` (M0–M5); all milestones shipped and verified.
+- **Next up:** awaiting the human's Phase 2 decision. Candidates from the
+  kickoff: blood glucose loop, water/ADH loop, authored scenario
+  challenges, student-facing game layer.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -33,6 +34,19 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M5: Break the loop + CSV export (Phase 1 complete)
+- Shipped: per-effector disable buttons + sensor-damage toggle (status
+  colors, "— DISABLED" labels), broken parts gray out dashed in the
+  diagram, `/export.csv` streams the full run history (frozen column
+  order, 1/0 bools). Verified live: sweating disabled on the hot run →
+  core 37.06 → 37.42+ °C in ~160 sim-s (runaway, the punchline); sensor
+  damage → sensed error 0 while true error 0.52 (receptor grayed, chain
+  dark, stimulus lit); CSV header matches the frozen fields exactly.
+- Deferred: Phase 2 candidates listed under Current state.
+- Open bugs: none.
+- Decisions: CSV bools export as 1/0 for spreadsheet graphing; export is
+  a plain link (`download` attr), no JS.
 
 ## 2026-08-13 — M4: Live SVG loop diagram
 - Shipped: `static/diagram.js` — Stimulus → Receptor → Control center →

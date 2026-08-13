@@ -50,6 +50,7 @@
       x, y, width: w, height: h, rx: 10,
       fill: SURFACE, stroke: BASELINE, "stroke-width": 1.5,
     }, g);
+    boxes[id] = { g, rect, x, y, w, h };
     el("text", {
       x: x + w / 2, y: y + 17, "text-anchor": "middle",
       fill: MUTED, "font-size": 10, "letter-spacing": "0.12em",
@@ -61,7 +62,6 @@
         fill: INK, "font-size": 13.5, "font-weight": 500,
       }, g).textContent = line;
     });
-    boxes[id] = { rect, x, y, w, h };
   }
 
   function arrow(id, x1, y1, x2, y2) {
@@ -123,6 +123,19 @@
     b.rect.setAttribute("stroke-width", (1.5 + 2.5 * a).toFixed(2));
   }
 
+  function setBroken(id, broken) {
+    const b = boxes[id];
+    b.g.setAttribute("opacity", broken ? 0.45 : 1);
+    if (broken) {
+      b.rect.setAttribute("stroke-dasharray", "6 4");
+      b.rect.setAttribute("stroke", MUTED);
+      b.rect.setAttribute("stroke-width", 1.5);
+      b.rect.setAttribute("fill", "#f1f0ec");
+    } else {
+      b.rect.removeAttribute("stroke-dasharray");
+    }
+  }
+
   function setArrow(id, activation, color) {
     const a = Math.max(0, Math.min(1, activation));
     const node = arrows[id];
@@ -157,5 +170,14 @@
     setArrow("a-resp-shiver", r.shiver, C_SHIVER);
     setArrow("a-resp-vaso", Math.abs(r.vaso), C_VASO);
     setArrow("a-feedback", respAct, dirSensed);
+
+    // Broken parts gray out AFTER the glow pass, so the override wins.
+    // Damaged sensors gray the receptor; the boxes downstream go dark on
+    // their own because the sensed error is zero — the diagram shows the
+    // break exactly where it happened.
+    setBroken("recep", !r.sensor_enabled);
+    setBroken("eff-sweat", !r.sweat_enabled);
+    setBroken("eff-shiver", !r.shiver_enabled);
+    setBroken("eff-vaso", !r.vaso_enabled);
   };
 })();

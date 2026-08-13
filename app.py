@@ -10,10 +10,12 @@ MAX_CATCHUP_TICKS and the rest of the wall time is dropped — the sim resumes
 smoothly instead of freezing the server chewing through an hour of ticks.
 """
 
+import csv
+import io
 import threading
 import time
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from engine.sim import Simulation
 
@@ -123,6 +125,14 @@ def control():
             runner.sim.set_env_temp(value)
         elif action == "exercise":
             runner.sim.set_exercise(bool(cmd.get("value")))
+        elif action == "effector":
+            name = cmd.get("name")
+            try:
+                runner.sim.set_effector_enabled(name, bool(cmd.get("value")))
+            except KeyError as e:
+                return jsonify({"error": str(e)}), 400
+        elif action == "sensor":
+            runner.sim.set_sensor_enabled(bool(cmd.get("value")))
         elif action == "scenario":
             name = cmd.get("value")
             if name not in SCENARIOS:
@@ -134,6 +144,34 @@ def control():
         else:
             return jsonify({"error": f"unknown action {action!r}"}), 400
     return jsonify(runner.snapshot(since=float("inf")))
+
+
+# Column order for the CSV: the frozen record fields (kickoff SS5), time
+# first, then the story left to right. The values come straight from
+# engine history — the spreadsheet a student opens matches the charts.
+CSV_FIELDS = ["t", "core_temp", "env_temp", "exercise", "error",
+              "sweat", "shiver", "vaso", "sweat_enabled", "shiver_enabled",
+              "vaso_enabled", "sensor_enabled"]
+
+
+@app.route("/export.csv")
+def export_csv():
+    runner.advance()
+    with runner.lock:
+        records = runner.sim.history()
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=CSV_FIELDS)
+    writer.writeheader()
+    for r in records:
+        row = dict(r)
+        for k, v in row.items():
+            if isinstance(v, bool):
+                row[k] = 1 if v else 0        # spreadsheet-friendly bools
+            elif isinstance(v, float):
+                row[k] = round(v, 4)
+        writer.writerow(row)
+    return Response(buf.getvalue(), mimetype="text/csv", headers={
+        "Content-Disposition": "attachment; filename=vital_loop_run.csv"})
 
 
 if __name__ == "__main__":

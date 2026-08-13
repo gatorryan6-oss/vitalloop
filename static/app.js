@@ -84,6 +84,20 @@ function updateReadouts(now) {
   ex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
   ex.setAttribute("aria-pressed", String(now.exercise));
   lastExercise = now.exercise;
+
+  // Break-the-loop buttons mirror the engine's enabled flags.
+  partEnabled = {
+    sweat: now.sweat_enabled,
+    shiver: now.shiver_enabled,
+    vaso: now.vaso_enabled,
+    sensor: now.sensor_enabled,
+  };
+  document.querySelectorAll(".breaker").forEach(b => {
+    const on = partEnabled[b.dataset.part];
+    b.classList.toggle("broken", !on);
+    b.textContent = BREAKER_LABELS[b.dataset.part] +
+      (on ? "" : " — DISABLED");
+  });
 }
 
 /* ---------------- controls ---------------- */
@@ -132,6 +146,25 @@ document.getElementById("exerciseBtn").addEventListener("click", () =>
 document.querySelectorAll(".scenario").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "scenario", value: b.dataset.scenario })));
+
+/* --- break the loop (M5) --- */
+
+const BREAKER_LABELS = {
+  sweat: "Sweating",
+  shiver: "Shivering",
+  vaso: "Vessel control",
+  sensor: "Temperature sensors",
+};
+let partEnabled = { sweat: true, shiver: true, vaso: true, sensor: true };
+
+document.querySelectorAll(".breaker").forEach(b =>
+  b.addEventListener("click", () => {
+    const part = b.dataset.part;
+    const wantEnabled = !partEnabled[part];
+    control(part === "sensor"
+      ? { action: "sensor", value: wantEnabled }
+      : { action: "effector", name: part, value: wantEnabled });
+  }));
 
 /* ---------------- charts ---------------- */
 

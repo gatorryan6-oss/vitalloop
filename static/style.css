@@ -132,6 +132,33 @@ main {
 }
 .scenarios { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
+.breaker::before {
+  content: "";
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  background: #0ca30c;           /* status: good — this part is working */
+}
+.breaker.broken {
+  background: #fdeeee;
+  border-color: #d03b3b;         /* status: critical — part disabled */
+  color: #8c1f1f;
+}
+.breaker.broken::before { background: #d03b3b; }
+
+.export-link {
+  margin-left: auto;
+  font-size: 0.95rem;
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--surface);
+}
+.export-link:hover { background: #f1f0ec; }
+
 .legend { font-weight: 400; font-size: 0.85rem; margin-left: 0.8rem; }
 .chip { margin-right: 0.9rem; color: var(--ink-2); white-space: nowrap; }
 .dot {

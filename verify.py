@@ -64,6 +64,7 @@ MUST_CONTAIN = [                               # strings that must appear in the
 ]
 EXTRA_PAGES = [                                # (path, must-contain) — more pages to smoke-test
     ("/state", "core_temp"),                   # the M2 JSON feed the charts read
+    ("/export.csv", "core_temp"),              # the M5 run-history export
 ]
 STARTUP_TIMEOUT_SECONDS = 20
 SERVED_SOURCES = [                             # what the running app loads or
