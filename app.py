@@ -85,9 +85,18 @@ def state():
     return jsonify(runner.snapshot(since))
 
 
+ENV_TEMP_MIN, ENV_TEMP_MAX = -10.0, 45.0   # the slider's range, enforced
+
+# One-click classroom setups: name -> (env_temp, exercise)
+SCENARIOS = {
+    "freezer": (-10.0, False),   # step into a freezer
+    "hot_run": (38.0, True),     # run a mile on a hot day
+}
+
+
 @app.route("/control", methods=["POST"])
 def control():
-    """Play/pause/reset/speed. Disturbances and toggles arrive at M3/M5."""
+    """Play/pause/reset/speed + M3 disturbances. Toggles arrive at M5."""
     cmd = request.get_json(force=True, silent=True) or {}
     action = cmd.get("action")
     runner.advance()   # settle time owed under the OLD settings first
@@ -105,6 +114,23 @@ def control():
                 return jsonify({"error": f"speed must be 1, 4 or 16, "
                                          f"got {value!r}"}), 400
             runner.speed = value
+        elif action == "env_temp":
+            try:
+                value = float(cmd.get("value"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "env_temp needs a number"}), 400
+            value = max(ENV_TEMP_MIN, min(ENV_TEMP_MAX, value))
+            runner.sim.set_env_temp(value)
+        elif action == "exercise":
+            runner.sim.set_exercise(bool(cmd.get("value")))
+        elif action == "scenario":
+            name = cmd.get("value")
+            if name not in SCENARIOS:
+                return jsonify({"error": f"unknown scenario {name!r}"}), 400
+            env_temp, exercise = SCENARIOS[name]
+            runner.sim.set_env_temp(env_temp)
+            runner.sim.set_exercise(exercise)
+            runner.running = True   # a scenario should visibly happen
         else:
             return jsonify({"error": f"unknown action {action!r}"}), 400
     return jsonify(runner.snapshot(since=float("inf")))

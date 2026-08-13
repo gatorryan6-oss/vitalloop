@@ -41,6 +41,26 @@
 </header>
 
 <main>
+  <section class="chart-card disturbances">
+    <h2>Disturbances</h2>
+    <div class="disturb-row">
+      <div class="control-block">
+        <label for="envSlider">Room temperature
+          <strong id="envSliderVal">22.0 &deg;C</strong></label>
+        <input type="range" id="envSlider" min="-10" max="45" step="0.5"
+               value="22" aria-label="room temperature in degrees Celsius">
+      </div>
+      <button id="exerciseBtn" type="button" aria-pressed="false">
+        Exercise: off</button>
+      <div class="scenarios">
+        <button class="scenario" data-scenario="freezer" type="button">
+          Step into a freezer</button>
+        <button class="scenario" data-scenario="hot_run" type="button">
+          Run a mile on a hot day</button>
+      </div>
+    </div>
+  </section>
+
   <section class="chart-card">
     <h2>Core body temperature (&deg;C)</h2>
     <svg id="coreChart" viewBox="0 0 960 240" preserveAspectRatio="none"
@@ -51,6 +71,19 @@
     <h2>Environment (&deg;C)</h2>
     <svg id="envChart" viewBox="0 0 960 160" preserveAspectRatio="none"
          aria-label="Environment temperature over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Effector activity
+      <span class="legend">
+        <span class="chip"><span class="dot dot-sweat"></span>sweat</span>
+        <span class="chip"><span class="dot dot-shiver"></span>shiver</span>
+        <span class="chip"><span class="dot dot-vaso"></span>vessels
+          (+ dilated / &minus; constricted)</span>
+      </span>
+    </h2>
+    <svg id="effectorChart" viewBox="0 0 960 200" preserveAspectRatio="none"
+         aria-label="Effector activity over time"></svg>
   </section>
 </main>
 

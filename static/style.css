@@ -13,6 +13,9 @@
   --border: rgba(11, 11, 11, 0.10);
   --series-core: #2a78d6;   /* categorical slot 1: the controlled variable */
   --series-env: #eb6834;    /* slot 2: the disturbance */
+  --series-sweat: #1baf7a;  /* slot 3 \                                  */
+  --series-shiver: #eda100; /* slot 4  > the three effectors, one panel  */
+  --series-vaso: #e87ba4;   /* slot 5 /  (direct-labeled: low contrast)  */
 }
 
 * { box-sizing: border-box; }
@@ -103,6 +106,44 @@ main {
   color: var(--ink-2);
 }
 .chart-card svg { display: block; width: 100%; height: auto; }
+
+.disturb-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.2rem 0 0.4rem;
+}
+.control-block { min-width: 280px; flex: 1; }
+.control-block label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+  margin-bottom: 0.2rem;
+}
+.control-block strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.control-block input[type="range"] { width: 100%; accent-color: var(--series-env); }
+
+#exerciseBtn[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+.scenarios { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.legend { font-weight: 400; font-size: 0.85rem; margin-left: 0.8rem; }
+.chip { margin-right: 0.9rem; color: var(--ink-2); white-space: nowrap; }
+.dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: baseline;
+}
+.dot-sweat { background: var(--series-sweat); }
+.dot-shiver { background: var(--series-shiver); }
+.dot-vaso { background: var(--series-vaso); }
 
 #tooltip {
   position: fixed;

@@ -18,10 +18,10 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M2. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
-- **Next up:** M3 — disturbance controls: env-temp slider (−10…45),
-  exercise toggle, scenario buttons, plus a third chart panel for effector
-  activity (sweat/shiver/vaso).
+- **Committed:** M3. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
+- **Next up:** M4 — the live SVG loop diagram (Stimulus → Receptor →
+  Control center → Effectors → Response), driven by the same /state JSON
+  as the charts, activation intensity ∝ live activity.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -33,6 +33,19 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M3: Disturbance controls + effector panel
+- Shipped: env-temp slider (−10…45 °C, debounced send, server-clamped),
+  exercise toggle, two scenario buttons (freezer: −10 °C rest; hot run:
+  38 °C + exercise — a scenario also auto-resumes a paused sim), and a
+  third time-aligned chart panel: sweat/shiver/vessels with legend +
+  direct labels (dataviz slots 3–5). Tooltip now shows effector values.
+  Exercised live in the browser: both scenarios, slider, UI sync.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: UI controls reflect server truth on every poll, except while
+  the teacher is mid-drag (their hand wins for 800 ms). Effector panel is
+  one axis (−1…+1 dimensionless drive); vessels read +dilated/−constricted.
 
 ## 2026-08-13 — M2: Flask app with live strip charts
 - Shipped: `app.py` (lazy-ticking runner — engine steps on each poll by

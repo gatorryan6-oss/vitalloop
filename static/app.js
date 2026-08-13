@@ -12,6 +12,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const palette = getComputedStyle(document.documentElement);
 const COLOR_CORE = palette.getPropertyValue("--series-core").trim();
 const COLOR_ENV = palette.getPropertyValue("--series-env").trim();
+const COLOR_SWEAT = palette.getPropertyValue("--series-sweat").trim();
+const COLOR_SHIVER = palette.getPropertyValue("--series-shiver").trim();
+const COLOR_VASO = palette.getPropertyValue("--series-vaso").trim();
 const COLOR_GRID = palette.getPropertyValue("--grid").trim();
 const COLOR_BASELINE = palette.getPropertyValue("--baseline").trim();
 const COLOR_MUTED = palette.getPropertyValue("--muted").trim();
@@ -69,6 +72,17 @@ function updateReadouts(now) {
   const mm = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, "0");
   document.getElementById("clockReadout").textContent = `${mm}:${ss}`;
+
+  // Reflect the server's truth in the disturbance controls — unless the
+  // teacher is mid-drag, in which case their hand wins.
+  if (!sliderBusy) {
+    envSlider.value = now.env_temp;
+    envSliderVal.textContent = now.env_temp.toFixed(1) + " °C";
+  }
+  const ex = document.getElementById("exerciseBtn");
+  ex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
+  ex.setAttribute("aria-pressed", String(now.exercise));
+  lastExercise = now.exercise;
 }
 
 /* ---------------- controls ---------------- */
@@ -92,6 +106,32 @@ document.querySelectorAll(".speed").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "speed", value: Number(b.dataset.speed) })));
 
+/* --- disturbances (M3) --- */
+
+const envSlider = document.getElementById("envSlider");
+const envSliderVal = document.getElementById("envSliderVal");
+let sliderBusy = false;          // true while the teacher is dragging
+let sliderIdleTimer = null;
+let sliderSendTimer = null;
+let lastExercise = false;
+
+envSlider.addEventListener("input", () => {
+  sliderBusy = true;
+  envSliderVal.textContent = Number(envSlider.value).toFixed(1) + " °C";
+  clearTimeout(sliderSendTimer);   // debounce: send the resting value only
+  sliderSendTimer = setTimeout(() =>
+    control({ action: "env_temp", value: Number(envSlider.value) }), 150);
+  clearTimeout(sliderIdleTimer);
+  sliderIdleTimer = setTimeout(() => { sliderBusy = false; }, 800);
+});
+
+document.getElementById("exerciseBtn").addEventListener("click", () =>
+  control({ action: "exercise", value: !lastExercise }));
+
+document.querySelectorAll(".scenario").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "scenario", value: b.dataset.scenario })));
+
 /* ---------------- charts ---------------- */
 
 /* One strip-chart panel bound to an <svg>. Series share the rolling time
@@ -99,7 +139,8 @@ document.querySelectorAll(".speed").forEach(b =>
 function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
   const svg = document.getElementById(svgId);
   const view = svg.viewBox.baseVal;
-  const M = { left: 46, right: 14, top: 10, bottom: 22 };
+  const hasLabels = series.some(s => s.label);
+  const M = { left: 46, right: hasLabels ? 72 : 14, top: 10, bottom: 22 };
 
   function x(t, t0, t1) {
     return M.left + ((t - t0) / (t1 - t0)) * (view.width - M.left - M.right);
@@ -128,7 +169,8 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
                    stroke: COLOR_GRID, "stroke-width": 1,
                    "vector-effect": "non-scaling-stroke" });
       el("text", { x: M.left - 8, y: y(v) + 4, "text-anchor": "end",
-                   fill: COLOR_MUTED, "font-size": 12 }, v.toFixed(0));
+                   fill: COLOR_MUTED, "font-size": 12 },
+         yStep < 1 ? v.toFixed(1) : v.toFixed(0));
     }
     const xTickEvery = 120;                // a label every 2 sim-minutes
     const firstTick = Math.ceil(t0 / xTickEvery) * xTickEvery;
@@ -152,14 +194,26 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [] }) {
     }
 
     for (const s of series) {
-      const path = records
-        .filter(r => r.t >= t0)
+      const visible = records.filter(r => r.t >= t0);
+      const path = visible
         .map(r => `${x(r.t, t0, tEnd).toFixed(1)},${y(clampY(r[s.key])).toFixed(1)}`)
         .join(" ");
       if (path) {
         el("polyline", { points: path, fill: "none", stroke: s.color,
                          "stroke-width": 2, "stroke-linejoin": "round",
                          "vector-effect": "non-scaling-stroke" });
+      }
+      // Direct label at the line's live end: ink text, colored tick mark —
+      // the mark carries identity, the text stays readable.
+      if (s.label && visible.length) {
+        const last = visible[visible.length - 1];
+        const yEnd = y(clampY(last[s.key]));
+        const xEnd = x(last.t, t0, tEnd);
+        el("line", { x1: xEnd + 3, x2: xEnd + 12, y1: yEnd, y2: yEnd,
+                     stroke: s.color, "stroke-width": 3,
+                     "vector-effect": "non-scaling-stroke" });
+        el("text", { x: xEnd + 15, y: yEnd + 4, fill: "#52514e",
+                     "font-size": 12 }, s.label);
       }
     }
   }
@@ -197,7 +251,10 @@ function showTooltip(ev, r) {
   tooltip.innerHTML =
     `<strong>t = ${mm}:${ss}</strong><br>` +
     `core ${r.core_temp.toFixed(2)} °C<br>` +
-    `room ${r.env_temp.toFixed(1)} °C`;
+    `room ${r.env_temp.toFixed(1)} °C<br>` +
+    `sweat ${r.sweat.toFixed(2)} · shiver ${r.shiver.toFixed(2)}<br>` +
+    `vessels ${r.vaso >= 0 ? "+" : ""}${r.vaso.toFixed(2)}` +
+    (r.exercise ? "<br>exercising" : "");
   tooltip.hidden = false;
   const pad = 14;
   tooltip.style.left = Math.min(ev.clientX + pad,
@@ -216,10 +273,21 @@ const envChart = makeChart("envChart", {
   yMin: -15, yMax: 45, yStep: 15,
   series: [{ key: "env_temp", color: COLOR_ENV }],
 });
+const effectorChart = makeChart("effectorChart", {
+  yMin: -1, yMax: 1, yStep: 0.5,
+  series: [
+    { key: "sweat", color: COLOR_SWEAT, label: "sweat" },
+    { key: "shiver", color: COLOR_SHIVER, label: "shiver" },
+    { key: "vaso", color: COLOR_VASO, label: "vessels" },
+  ],
+  refLines: [{ y: 0, label: "" }],
+});
 
 function drawAll() {
-  coreChart.draw(pts, Math.max(lastT, WINDOW_S));
-  envChart.draw(pts, Math.max(lastT, WINDOW_S));
+  const t1 = Math.max(lastT, WINDOW_S);
+  coreChart.draw(pts, t1);
+  envChart.draw(pts, t1);
+  effectorChart.draw(pts, t1);
 }
 
 setInterval(poll, POLL_MS);
