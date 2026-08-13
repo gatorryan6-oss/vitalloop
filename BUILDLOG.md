@@ -18,11 +18,11 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M7. Phase 2 spec is `vital_loop_phase2_kickoff.md`
+- **Committed:** M8. Phase 2 spec is `vital_loop_phase2_kickoff.md`
   (M6–M10): the blood glucose loop.
-- **Next up:** M8 — glucose disturbances: eat-a-meal button, sugary vs
-  balanced scenarios, exercise burn, 12 h fast, gut-carbs readout is
-  already in the header.
+- **Next up:** M9 — the glucose loop diagram: beta/alpha cells as two
+  explicit control-center boxes, muscle/fat + liver effectors, insulin
+  and glucagon arrows visibly opposing.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -34,6 +34,17 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M8: Glucose disturbances
+- Shipped: eat buttons (meal 60 g @ 1.0 g/min; sugary drink 40 g @ 1.5;
+  balanced 60 g @ 0.4), glucose-page exercise toggle, "Skip meals —
+  watch 12 h" scenario (exercise off + 16×; anything in the gut keeps
+  absorbing — you can't un-eat). `/control` action `eat` validates and
+  400s on the temperature loop. Verified live in the browser.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: a fast scenario bumps speed to 16× so the hours are
+  watchable; eating auto-resumes a paused sim, same rule as scenarios.
 
 ## 2026-08-13 — M7: Loop switcher + glucose charts
 - Shipped: two independent Runners server-side (`/state?loop=`,

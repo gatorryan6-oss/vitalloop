@@ -114,6 +114,24 @@
 </div>
 
 <div id="page-glucose" hidden>
+  <section class="chart-card disturbances">
+    <h2>Disturbances</h2>
+    <div class="disturb-row">
+      <div class="scenarios">
+        <button class="eat" data-grams="60" data-rate="1.0" type="button">
+          Eat a meal (60&nbsp;g)</button>
+        <button class="eat" data-grams="40" data-rate="1.5" type="button">
+          Sugary drink (40&nbsp;g, fast)</button>
+        <button class="eat" data-grams="60" data-rate="0.4" type="button">
+          Balanced meal (60&nbsp;g, slow)</button>
+      </div>
+      <button id="gExerciseBtn" type="button" aria-pressed="false">
+        Exercise: off</button>
+      <button class="gscenario" data-scenario="fast" type="button">
+        Skip meals &mdash; watch 12&nbsp;h</button>
+    </div>
+  </section>
+
   <section class="chart-card">
     <h2>Blood glucose (mg/dL)</h2>
     <svg id="glucoseChart" viewBox="0 0 960 260" preserveAspectRatio="none"

@@ -88,6 +88,10 @@ function updateReadouts(now) {
     setText("r1Value", now.glucose.toFixed(0) + " mg/dL");
     setText("r2Label", "gut carbs");
     setText("r2Value", now.gut_carbs.toFixed(0) + " g");
+    const gex = document.getElementById("gExerciseBtn");
+    gex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
+    gex.setAttribute("aria-pressed", String(now.exercise));
+    lastExercise = now.exercise;
     return;
   }
 
@@ -166,6 +170,18 @@ document.getElementById("exerciseBtn").addEventListener("click", () =>
   control({ action: "exercise", value: !lastExercise }));
 
 document.querySelectorAll(".scenario").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "scenario", value: b.dataset.scenario })));
+
+/* --- glucose disturbances (M8) --- */
+
+document.querySelectorAll(".eat").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "eat", grams: Number(b.dataset.grams),
+              rate: Number(b.dataset.rate) })));
+document.getElementById("gExerciseBtn").addEventListener("click", () =>
+  control({ action: "exercise", value: !lastExercise }));
+document.querySelectorAll(".gscenario").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "scenario", value: b.dataset.scenario })));
 

@@ -156,16 +156,32 @@ def control():
                 return jsonify({"error": str(e)}), 400
         elif action == "sensor":
             runner.sim.set_sensor_enabled(bool(cmd.get("value")))
+        elif action == "eat":
+            if not hasattr(runner.sim, "eat"):
+                return jsonify({"error": "eat is a glucose-loop action"}), 400
+            try:
+                runner.sim.eat(float(cmd.get("grams", 60)),
+                               float(cmd.get("rate", 1.0)))
+            except (TypeError, ValueError) as e:
+                return jsonify({"error": str(e)}), 400
+            runner.running = True   # a meal should visibly happen
         elif action == "scenario":
-            if not hasattr(runner.sim, "set_env_temp"):
-                return jsonify({"error": "scenario is a temperature-loop "
-                                         "action"}), 400
             name = cmd.get("value")
-            if name not in SCENARIOS:
+            if hasattr(runner.sim, "set_env_temp"):
+                if name not in SCENARIOS:
+                    return jsonify({"error": f"unknown scenario {name!r}"}), 400
+                env_temp, exercise = SCENARIOS[name]
+                runner.sim.set_env_temp(env_temp)
+                runner.sim.set_exercise(exercise)
+            elif name == "fast":
+                # A fast is the absence of eating: nothing to inject, just
+                # stop exercising and make hours pass quickly on screen.
+                # (Anything still in the gut keeps absorbing - you can't
+                # un-eat.)
+                runner.sim.set_exercise(False)
+                runner.speed = 16
+            else:
                 return jsonify({"error": f"unknown scenario {name!r}"}), 400
-            env_temp, exercise = SCENARIOS[name]
-            runner.sim.set_env_temp(env_temp)
-            runner.sim.set_exercise(exercise)
             runner.running = True   # a scenario should visibly happen
         else:
             return jsonify({"error": f"unknown action {action!r}"}), 400
