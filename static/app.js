@@ -49,6 +49,7 @@ async function poll() {
   while (firstKeep < pts.length && pts[firstKeep].t < cutoff) firstKeep++;
   if (firstKeep > 0) pts = pts.slice(firstKeep);
   updateReadouts(j.now);
+  if (window.updateDiagram) window.updateDiagram(j.now);
   drawAll();
 }
 

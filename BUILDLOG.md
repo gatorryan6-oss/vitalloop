@@ -18,10 +18,10 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M3. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
-- **Next up:** M4 — the live SVG loop diagram (Stimulus → Receptor →
-  Control center → Effectors → Response), driven by the same /state JSON
-  as the charts, activation intensity ∝ live activity.
+- **Committed:** M4. Phase 1 spec is `vital_loop_v1_kickoff.md` (M0–M5).
+- **Next up:** M5 — break the loop: per-effector disable toggles, sensor
+  damage, grayed diagram parts, CSV export of the run history. End of
+  Phase 1 — STOP for confirmation after.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -33,6 +33,19 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M4: Live SVG loop diagram
+- Shipped: `static/diagram.js` — Stimulus → Receptor → Control center →
+  three Effectors → Response, negative-feedback return arrow, curriculum
+  vocabulary on the labels. Boxes/arrows glow ∝ live activity from the
+  same /state records as the charts. Verified in-browser: neutral at rest;
+  freezer turns the sensing chain cold-blue and lights vessels/shiver.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: stimulus box lights from the TRUE error, receptor/control
+  from the SENSED error — so M5's sensor damage will show the loop broken
+  at exactly the right box. Cold/hot tint uses the diverging blue↔red
+  pair; effector boxes glow in their chart series colors.
 
 ## 2026-08-13 — M3: Disturbance controls + effector panel
 - Shipped: env-temp slider (−10…45 °C, debounced send, server-clamped),
