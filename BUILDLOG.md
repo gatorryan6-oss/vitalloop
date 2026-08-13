@@ -18,12 +18,12 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M10 — **Phase 2 complete.** Specs:
-  `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
-  (M6–M10). All milestones shipped and verified.
-- **Next up:** awaiting the human's Phase 3 decision. Candidates:
-  insulin-injection dosing, named disease presets, water/ADH loop,
-  scenario challenges, game layer.
+- **Committed:** M11 — Phase 3 (insulin-injection dosing) in progress.
+  Specs: `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
+  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13).
+- **Next up:** M12 — the dosing panel UI (bolus buttons, basal selector,
+  IOB readout, injected/total insulin chart series, dose markers, syringe
+  box in the diagram, CSV columns, /control inject+basal actions).
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -35,6 +35,31 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-13 — M11: Dosing contract + engine + console demo (Phase 3 starts)
+- Shipped: Phase 3 contract in `tests/test_invariants.py` (record grows
+  `injected_insulin`, `total_insulin`, `iob_units`, `basal_rate`;
+  `inject`/`set_basal_rate`/`doses` API; pinned kinetics, replacement,
+  overdose, basal-holds-the-line; Phase-2-subset regression hash recorded
+  from M10 code BEFORE the engine changed). `engine/glucose.py` extended:
+  subcutaneous depot with Erlang-2 kinetics (K=1/55 per min → peak ~55 min,
+  ~23% of peak at 5 min, ~15% left at 4 h; ACTIVITY_PER_UNIT=0.35 ≈ the
+  1 U : 15 g carb ratio), basal drips into the same depot (pump framing),
+  IOB = depot + plasma. `python -m engine.dosing_demo` tells the type 1
+  day. All 28 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) endogenous + injected insulin sum into ONE total activity
+  driving all three insulin actions including the paracrine brake — so
+  zero-injection runs are byte-identical to Phase 2 (guard hash proves it)
+  and injections honestly re-restrain a type 1 liver. (2) `insulin` field
+  keeps its Phase 2 meaning (beta output alone); the body responds to
+  `total_insulin`. (3) reset() clears basal to 0. (4) Engine accepts any
+  positive dose; the sane single-dose cap (~15 U) is server policy, M12.
+  (5) Demo tuning surfaced REAL stacking: with 1.0 U/h basal running, the
+  right breakfast bolus is 2 U, not 4 U — and the same 2 U with no meal
+  behind it is an overdose. Kept as the demo's punchline; expect the same
+  stacking live in class (that's the IOB readout's job).
 
 ## 2026-08-13 — M10: Break the glucose loop + CSV (Phase 2 complete)
 - Shipped: glucose break card (beta/alpha/liver/sensor toggles, status

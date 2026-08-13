@@ -63,6 +63,33 @@ The glucose engine API contract (built at M6):
     sim.set_sensor_enabled(bool)
     sim.state() / sim.history() / sim.reset()   # as in the thermo engine
 
+--- Phase 3 (kickoff: vital_loop_phase3_kickoff.md) adds injection dosing ---
+
+  (l) the frozen glucose record GROWS four fields (injected_insulin,
+      total_insulin, iob_units, basal_rate); the Phase 2 fields keep their
+      exact meaning — `insulin` stays beta-cell output alone,
+  (m) pinned dosing physiology: a bolus is NOT instant (peak effect 30-90
+      sim-minutes after injection, under 30% of peak in the first 5 min,
+      under 25% of peak 4 h later); beta cells off, a 60 g meal + 4 U at
+      mealtime returns glucose to 70-110 within 5 h and never drops below
+      65 within 8 h (replacement works); beta cells off, fasted, 10 U
+      drives glucose below 70 within 3 h even though glucagon and the
+      liver fight back (overdose is dangerous — no secret floor); beta
+      cells off + 1.0 U/h basal holds a 12 h fast inside 70-180 (basal
+      holds the fasting line),
+  (n) REGRESSION GUARD: with zero injections and zero basal, the Phase 2
+      scripted glucose run's PHASE 2 FIELD SUBSET is byte-identical to the
+      M10 baseline hash — Phase 3 grows the record shape but must not
+      change one recorded value of the old behavior,
+  (o) determinism now includes injections and basal changes.
+
+The dosing API contract (built at M11):
+
+    sim.inject(units)             # subcutaneous bolus, units > 0
+    sim.set_basal_rate(u_per_hr)  # continuous drip, >= 0
+    sim.doses()                   # bolus event log: [{"t":..., "units":...}]
+                                  # oldest first, cleared by reset()
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -268,7 +295,19 @@ GLUCOSE_FIELDS = {
     "alpha_enabled",    # modeled from M6 so the physiology tests below
     "liver_enabled",    # can prove they matter)
     "sensor_enabled",
+    # -- grown at M11 (Phase 3 kickoff SS5), a deliberate contract amendment:
+    "injected_insulin", # exogenous plasma activity, 0..1 (same scale as
+                        # insulin; `insulin` stays beta-cell output ALONE)
+    "total_insulin",    # clamp(insulin + injected_insulin) — what the body
+                        # actually responds to; recorded, never JS-derived
+    "iob_units",        # "insulin on board": U still working (depot+plasma)
+    "basal_rate",       # continuous drip setting, U/h
 }
+
+# The Phase 2 record shape as it was frozen at M6 — the regression guard (n)
+# hashes exactly this subset of the scripted run.
+PHASE2_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - {
+    "injected_insulin", "total_insulin", "iob_units", "basal_rate"})
 
 # (k) sha256 of json.dumps(_scripted_run(Simulation), sort_keys=True),
 # recorded 2026-08-13 with M5 committed — the last Phase 1 state.
@@ -396,6 +435,182 @@ def test_thermo_history_unchanged_by_phase2():
         "Phase 2 must EXTEND Phase 1, never rebuild it (standing rule 3). "
         "If this change was ordered by the human, re-record the hash and "
         "say so in BUILDLOG.md.")
+
+
+# ================= Phase 3: insulin-injection dosing =====================
+
+# (n) sha256 of json.dumps of the PHASE 2 FIELD SUBSET of
+# _scripted_glucose_run's records, recorded 2026-08-13 with M10 committed —
+# the last Phase 2 state. Phase 3 grows the record but must not change one
+# recorded value of the old behavior.
+GLUCOSE_PHASE2_SUBSET_SHA256 = (
+    "d81402f2c46b1533ba55067f53b7937b94340e8f4ccdf32047aa9e1d24890e39")
+
+HYPO_LINE = 70.0
+
+
+def _dosing():
+    """The glucose engine once it speaks the dosing API, or SKIP (M11)."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "inject"):
+        pytest.skip("inject() doesn't exist yet - it arrives at M11")
+    return GlucoseSimulation
+
+
+def test_bolus_is_not_instant():
+    """(m) The subcutaneous delay IS the teaching mechanic: little effect in
+    the first minutes, peak 30-90 min out, essentially spent by 4 h."""
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    sim.step(600)                        # settle, then inject at t0
+    t0 = sim.state()["t"]
+    sim.inject(2)                        # small dose: activity stays unclamped
+    sim.step(4 * 3600)
+    after = [r for r in sim.history() if r["t"] > t0]
+    activity = [r["injected_insulin"] for r in after]
+    peak = max(activity)
+    assert peak > 0.0, "A 2 U bolus produced no injected insulin activity"
+    peak_minutes = (after[activity.index(peak)]["t"] - t0) / 60.0
+    assert 30.0 <= peak_minutes <= 90.0, (
+        f"Injected insulin peaked {peak_minutes:.0f} min after the bolus; "
+        "rapid-acting analog peak must land 30-90 sim-minutes out")
+    at_5min = next(r["injected_insulin"] for r in after if r["t"] >= t0 + 300)
+    assert at_5min < 0.30 * peak, (
+        f"5 min after the bolus activity is already {at_5min / peak:.0%} of "
+        "peak - injections must not act instantly")
+    at_4h = after[-1]["injected_insulin"]
+    assert at_4h < 0.25 * peak, (
+        f"4 h after the bolus activity is still {at_4h / peak:.0%} of peak - "
+        "a rapid-acting bolus must be essentially spent")
+
+
+def test_replacement_bolus_controls_a_type1_meal():
+    """(m) Beta cells off, 60 g meal + 4 U at mealtime: the manual dose does
+    what the missing beta cells would have - lands the spike back in the
+    healthy band without overshooting into a hypo."""
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.step(600)
+    t0 = sim.state()["t"]
+    sim.eat(60, 1.0)
+    sim.inject(4)
+    sim.step(8 * 3600)
+    after = [r for r in sim.history() if r["t"] > t0]
+    glucoses = [r["glucose"] for r in after]
+    peak_i = glucoses.index(max(glucoses))
+    assert glucoses[peak_i] > HEALTHY_BAND[1], (
+        "The 60 g meal never spiked above the band - nothing to control")
+    in_band_at = next(
+        (r["t"] - t0 for r in after[peak_i:]
+         if HEALTHY_BAND[0] <= r["glucose"] <= HEALTHY_BAND[1]), None)
+    assert in_band_at is not None and in_band_at <= 5 * 3600, (
+        "With beta cells off, a 60 g meal + 4 U bolus must bring the spike "
+        "back into 70-110 within 5 sim-hours"
+        + ("" if in_band_at is None else f" (took {in_band_at / 3600:.1f} h)"))
+    nadir = min(r["glucose"] for r in after)
+    assert nadir > 65.0, (
+        f"The 4 U replacement bolus overshot to {nadir:.1f} mg/dL - a "
+        "correctly sized dose must not cause a hypo")
+
+
+def test_overdose_causes_hypoglycemia():
+    """(m) Beta cells off, fasted, 10 U: glucagon and the liver fight back
+    and LOSE. No secret floor - the acute danger must be real."""
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.step(600)
+    sim.inject(10)
+    sim.step(3 * 3600)
+    low = min(r["glucose"] for r in sim.history())
+    assert low < HYPO_LINE, (
+        f"10 U into a fasted body only reached {low:.1f} mg/dL - an overdose "
+        f"must drive glucose below {HYPO_LINE:.0f} (no secret rescue)")
+
+
+def test_basal_holds_the_fasting_line():
+    """(m) Beta cells off + 1.0 U/h basal: a 12 h fast stays inside 70-180.
+    (Phase 2 already proved beta-off with NO basal climbs past 180.)"""
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.set_basal_rate(1.0)
+    sim.step(12 * 3600)
+    values = [r["glucose"] for r in sim.history()]
+    assert max(values) < HYPER_LINE, (
+        f"With 1.0 U/h basal a fasted type 1 body must stay under "
+        f"{HYPER_LINE:.0f} mg/dL; it reached {max(values):.1f}")
+    assert min(values) > HYPO_LINE, (
+        f"1.0 U/h basal must not hypo a fasted body; it fell to "
+        f"{min(values):.1f} mg/dL")
+
+
+def test_doses_log_is_a_data_product():
+    """(l) Bolus events are recorded state, not chart decoration."""
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    sim.step(60)
+    sim.inject(4)
+    sim.step(600)
+    sim.inject(2)
+    doses = sim.doses()
+    assert [d["units"] for d in doses] == [4.0, 2.0]
+    assert doses[0]["t"] < doses[1]["t"]
+    assert all(set(d.keys()) == {"t", "units"} for d in doses)
+    sim.reset()
+    assert sim.doses() == [], "reset() must clear the dose log"
+
+
+def test_dosing_rejects_nonsense():
+    GlucoseSimulation = _dosing()
+    sim = GlucoseSimulation()
+    with pytest.raises(ValueError):
+        sim.inject(0)
+    with pytest.raises(ValueError):
+        sim.inject(-3)
+    with pytest.raises(ValueError):
+        sim.set_basal_rate(-0.5)
+
+
+def _scripted_dosing_run(GlucoseSimulation):
+    """Exercises every Phase 3 control, for the determinism check (o)."""
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.step(1800)
+    sim.set_basal_rate(1.0)
+    sim.step(3600)
+    sim.eat(60, 1.0)
+    sim.inject(4)
+    sim.step(3600)
+    sim.inject(2)
+    sim.set_basal_rate(0.5)
+    sim.step(3600)
+    return sim.history(), sim.doses()
+
+
+def test_dosing_same_inputs_same_history():
+    GlucoseSimulation = _dosing()
+    assert (_scripted_dosing_run(GlucoseSimulation)
+            == _scripted_dosing_run(GlucoseSimulation)), (
+        "Two identical dosing runs diverged - injections and basal must be "
+        "deterministic (kickoff SS2)")
+
+
+def test_glucose_phase2_subset_unchanged_by_phase3():
+    """(n) Zero injections, zero basal -> the Phase 2 fields of the Phase 2
+    scripted run are byte-identical to the M10 baseline."""
+    import hashlib
+    import json
+    GlucoseSimulation = _dosing()
+    records = _scripted_glucose_run(GlucoseSimulation)
+    subset = [{k: r[k] for k in PHASE2_GLUCOSE_FIELDS} for r in records]
+    digest = hashlib.sha256(
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
+    assert digest == GLUCOSE_PHASE2_SUBSET_SHA256, (
+        "The glucose engine's Phase 2 behavior changed. Phase 3 must EXTEND "
+        "Phase 2, never rebuild it (standing rule 3). If this change was "
+        "ordered by the human, re-record the hash and say so in BUILDLOG.md.")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
