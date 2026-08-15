@@ -22,9 +22,9 @@ Entry format:
   phases 1–5 as before, plus `vital_loop_phase6_kickoff.md` (M20–M23).
   The human chose the water/ADH loop on 2026-08-15.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M22 — water breaker card (osmoreceptors / ADH release /
-  kidney response / water access) and the third SVG diagram with the
-  behavioral effector drawn distinctly.
+- **Next up:** M23 — Central DI / Nephrogenic DI / Healthy preset rows
+  + banners with the insipidus/mellitus naming story, full three-loop
+  projector pass. Then the Phase 6 checkpoint STOP.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,6 +36,25 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M22: Water breakers + the third diagram
+- Shipped: water breaker card (Osmoreceptors / ADH release / Kidney
+  response / Water access) with the standard status colors and
+  DISABLED labels + water CSV export link; third SVG diagram from the
+  same kit — Stimulus → Osmoreceptors → Hypothalamus/posterior
+  pituitary (ADH) → Kidneys AND "Thirst → drinking", the second
+  effector role-labeled "EFFECTOR — A BEHAVIOR" with the caption
+  "drinking reaches through the OUTSIDE WORLD — no other effector
+  does". Kidney box glows with how loudly it OBEYS the hormone (dark =
+  flooding), grays out when deaf. Verified live: kidney breaker →
+  nephrogenic tableau — ADH 0.82 with the control box blazing green,
+  kidney gray-dashed, urine pinned at 12 mL/min, auto-drinks keeping
+  osmolarity ~293 (the loop surviving on its behavioral arm alone).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: kidney glow semantics — boxes glow when their LABELED
+  action is happening ("retain water"), so a flooding kidney is dark,
+  a deaf one is gray. Same grammar as every other box.
 
 ## 2026-08-15 — M21: Water tab + charts + disturbances + CSV
 - Shipped: third Runner (`/state?loop=water`), Water tab, four panels

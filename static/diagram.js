@@ -318,4 +318,70 @@
     G.setBroken("alpha", !r.alpha_enabled);
     G.setBroken("liver", !r.liver_enabled);
   };
+
+  /* ================= water diagram (M22) ================= */
+
+  const W = makeKit("waterDiagram");
+
+  W.box("stim", 15, 165, 140, 84, "stimulus",
+        ["Blood osmolarity", "changes"]);
+  W.box("recep", 185, 165, 150, 84, "receptor",
+        ["Osmoreceptors", "(hypothalamus)"]);
+  W.box("control", 375, 160, 180, 94, "control center",
+        ["Hypothalamus →", "posterior pituitary", "releases ADH"]);
+  W.box("kidney", 610, 60, 185, 74, "effector",
+        ["Kidneys", "retain water"]);
+  // The loop's other arm is a BEHAVIOR - the role label says so, and
+  // the caption under it names the catch: this effector only works if
+  // the outside world provides something to drink.
+  W.box("thirst", 610, 270, 185, 74, "effector — a behavior",
+        ["Thirst → drinking", "(needs water nearby)"]);
+  W.box("resp", 830, 165, 120, 90, "response",
+        ["Water kept", "or gained"]);
+
+  W.arrow("a-stim", 155, 207, 183, 207);
+  W.arrow("a-recep", 335, 207, 373, 207);
+  W.arrow("a-c-kidney", 555, 180, 608, 105);
+  W.arrow("a-c-thirst", 555, 234, 608, 300);
+  W.arrow("a-kidney-resp", 795, 97, 845, 162);
+  W.arrow("a-thirst-resp", 795, 307, 845, 258);
+  W.pathArrow("a-feedback", "M 890 255 L 890 392 L 85 392 L 85 251", true);
+  W.caption(700, 372,
+    "drinking reaches through the OUTSIDE WORLD — no other effector does");
+  W.caption(400, 392,
+    "negative feedback — the response counteracts the stimulus");
+
+  window.updateWaterDiagram = function (r) {
+    const trueErr = r.osmolarity - 290.0;
+    const sensed = r.error;
+    const dirTrue = trueErr >= 0 ? HOT : COLD;    // concentrated runs hot
+    const dirSensed = sensed >= 0 ? HOT : COLD;
+    const stimAct = Math.abs(trueErr) / 10.0;     // full glow 10 mOsm off
+    const sensedAct = Math.abs(sensed) / 10.0;
+    // The kidney box glows with how loudly it OBEYS the hormone: dark
+    // means flooding — "retain water" is the box's labeled action, and
+    // a deaf kidney (nephrogenic DI) grays out instead.
+    const heard = r.kidney_enabled ? r.adh : 0;
+
+    W.setGlow("stim", stimAct, dirTrue);
+    W.setGlow("recep", sensedAct, dirSensed);
+    W.setGlow("control", r.adh, C_SWEAT);
+    W.setGlow("kidney", heard, C_SWEAT);
+    W.setGlow("thirst", r.thirst, C_SHIVER);
+    const respAct = Math.max(heard, r.thirst);
+    W.setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
+
+    W.setArrow("a-stim", stimAct, dirTrue);
+    W.setArrow("a-recep", sensedAct, dirSensed);
+    W.setArrow("a-c-kidney", r.adh, C_SWEAT);
+    W.setArrow("a-c-thirst", r.thirst, C_SHIVER);
+    W.setArrow("a-kidney-resp", heard, C_SWEAT);
+    W.setArrow("a-thirst-resp", r.thirst, C_SHIVER);
+    W.setArrow("a-feedback", respAct, dirSensed);
+
+    W.setBroken("recep", !r.sensor_enabled);
+    W.setBroken("control", !r.adh_enabled);
+    W.setBroken("kidney", !r.kidney_enabled);
+    W.setBroken("thirst", !r.water_access);
+  };
 })();

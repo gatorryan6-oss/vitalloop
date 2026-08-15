@@ -295,6 +295,28 @@
   </section>
 
   <section class="chart-card">
+    <h2>Break the loop</h2>
+    <div class="disturb-row">
+      <button class="breaker" data-part="sensor" type="button">
+        Osmoreceptors</button>
+      <button class="breaker" data-part="adh" type="button">
+        ADH release</button>
+      <button class="breaker" data-part="kidney" type="button">
+        Kidney response</button>
+      <button class="breaker" data-part="access" type="button">
+        Water access</button>
+      <a class="export-link" href="/export.csv?loop=water" download>
+        Export run (CSV)</a>
+    </div>
+  </section>
+
+  <section class="chart-card">
+    <h2>The feedback loop, live</h2>
+    <svg id="waterDiagram" viewBox="0 0 960 420"
+         aria-label="Water balance feedback loop: stimulus, osmoreceptors, hypothalamus and pituitary, kidneys and thirst, response"></svg>
+  </section>
+
+  <section class="chart-card">
     <h2>Plasma osmolarity (mOsm/L)</h2>
     <svg id="osmChart" viewBox="0 0 960 260" preserveAspectRatio="none"
          aria-label="Plasma osmolarity over time"></svg>

@@ -69,6 +69,8 @@ async function poll() {
     window.updateDiagram(j.now);
   } else if (loop === "glucose" && window.updateGlucoseDiagram) {
     window.updateGlucoseDiagram(j.now);
+  } else if (loop === "water" && window.updateWaterDiagram) {
+    window.updateWaterDiagram(j.now);
   }
   drawAll();
 }
@@ -135,6 +137,18 @@ function updateReadouts(now) {
       ? "Exercise / heat: ON" : "Exercise / heat: off";
     wex.setAttribute("aria-pressed", String(now.exercise));
     lastExercise = now.exercise;
+    wPartEnabled = {
+      adh: now.adh_enabled,
+      kidney: now.kidney_enabled,
+      access: now.water_access,
+      sensor: now.sensor_enabled,
+    };
+    document.querySelectorAll("#page-water .breaker").forEach(b => {
+      const on = wPartEnabled[b.dataset.part];
+      b.classList.toggle("broken", !on);
+      b.textContent = W_BREAKER_LABELS[b.dataset.part] +
+        (on ? "" : " — DISABLED");
+    });
     return;
   }
 
@@ -348,6 +362,25 @@ document.querySelectorAll("#page-glucose .breaker").forEach(b =>
   b.addEventListener("click", () => {
     const part = b.dataset.part;
     const wantEnabled = !gPartEnabled[part];
+    control(part === "sensor"
+      ? { action: "sensor", value: wantEnabled }
+      : { action: "effector", name: part, value: wantEnabled });
+  }));
+
+/* --- break the water loop (M22) --- */
+
+const W_BREAKER_LABELS = {
+  sensor: "Osmoreceptors",
+  adh: "ADH release",
+  kidney: "Kidney response",
+  access: "Water access",
+};
+let wPartEnabled = { adh: true, kidney: true, access: true, sensor: true };
+
+document.querySelectorAll("#page-water .breaker").forEach(b =>
+  b.addEventListener("click", () => {
+    const part = b.dataset.part;
+    const wantEnabled = !wPartEnabled[part];
     control(part === "sensor"
       ? { action: "sensor", value: wantEnabled }
       : { action: "effector", name: part, value: wantEnabled });
