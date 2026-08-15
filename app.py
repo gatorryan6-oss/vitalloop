@@ -36,6 +36,8 @@ class Runner:
         self.sim = sim
         self.running = True
         self.speed = 1
+        self.preset = None       # active disease name (app-level; M18) —
+                                 # the engine only ever sees mechanisms
         self._last_wall = time.monotonic()
         self._tick_debt = 0.0    # fractional ticks owed, carried between polls
 
@@ -73,6 +75,7 @@ class Runner:
         out = {
             "running": self.running,
             "speed": self.speed,
+            "preset": self.preset,
             "now": state,
             "points": points,
         }
@@ -120,6 +123,84 @@ SCENARIOS = {
 MAX_SINGLE_DOSE_U = 15.0
 ALLOWED_BASAL_RATES = {0, 0.5, 1.0, 1.5, 2.0}   # U/h, matching the buttons
 
+# Disease presets (M18): ONE table is the source for what each disease
+# means mechanically (Phase 5 kickoff SS5) — buttons, banner, and any
+# future quiz layer read this, never their own copy. A preset is a
+# COMPLETE diagnosis: it sets the whole loop configuration so diseases
+# never stack, and it never resets the run — the class watches the
+# transition. The engine never sees a disease name.
+HEALTHY_TEMP = {"fever": 0.0, "exercise": False, "sensor": True,
+                "effectors": {"sweat": True, "shiver": True, "vaso": True}}
+HEALTHY_GLUCOSE = {"sensitivity": 1.0, "exercise": False, "sensor": True,
+                   "effectors": {"beta": True, "alpha": True, "liver": True},
+                   "pump": False, "basal": 0.0}
+
+PRESETS = {
+    "temp": {
+        "healthy": {"label": "Healthy", "banner": None, "speed": 1,
+                    **HEALTHY_TEMP},
+        "fever": {
+            "label": "Fever",
+            "banner": "the set point moved to 39.0 °C — the loop is "
+                      "WORKING, defending the wrong number. Chills on "
+                      "the way up, sweats when it breaks.",
+            "speed": 16, **{**HEALTHY_TEMP, "fever": 2.0, "env": 22.0}},
+        "heat_stroke": {
+            "label": "Heat stroke",
+            "banner": "a hot run and the sweat effector has failed — "
+                      "heat pours in with no way out (effector failure).",
+            "speed": 4,
+            **{**HEALTHY_TEMP, "exercise": True, "env": 40.0,
+               "effectors": {"sweat": False, "shiver": True, "vaso": True}}},
+        "hypothermia": {
+            "label": "Hypothermia",
+            "banner": "a freezing room and no shivering — the responses "
+                      "that remain cannot keep up (effector overwhelmed).",
+            "speed": 4,
+            **{**HEALTHY_TEMP, "env": -10.0,
+               "effectors": {"sweat": True, "shiver": False, "vaso": True}}},
+    },
+    "glucose": {
+        "healthy": {"label": "Healthy", "banner": None, "speed": 1,
+                    **HEALTHY_GLUCOSE},
+        "type1": {
+            "label": "Type 1 diabetes",
+            "banner": "the beta cells are destroyed — no insulin is made "
+                      "at all (control-center failure). Treat with the "
+                      "syringe or the pump.",
+            "speed": 16, **{**HEALTHY_GLUCOSE,
+                            "effectors": {"beta": False, "alpha": True,
+                                          "liver": True}}},
+        "type2": {
+            "label": "Type 2 diabetes",
+            "banner": "insulin is made — lots of it — but the tissues "
+                      "barely listen (target-tissue resistance). Both "
+                      "numbers run high at once.",
+            "speed": 16, **{**HEALTHY_GLUCOSE, "sensitivity": 0.05}},
+    },
+}
+
+
+def _apply_preset(sim, p):
+    """Push a preset's full configuration through the engine's public
+    API. Only keys present in the entry are touched."""
+    for name, on in p.get("effectors", {}).items():
+        sim.set_effector_enabled(name, on)
+    if "sensor" in p:
+        sim.set_sensor_enabled(p["sensor"])
+    if "exercise" in p:
+        sim.set_exercise(p["exercise"])
+    if "env" in p:
+        sim.set_env_temp(p["env"])
+    if "fever" in p:
+        sim.set_fever(p["fever"])
+    if "sensitivity" in p:
+        sim.set_insulin_sensitivity(p["sensitivity"])
+    if "pump" in p:
+        sim.set_pump_enabled(p["pump"])
+    if "basal" in p:
+        sim.set_basal_rate(p["basal"])
+
 
 @app.route("/control", methods=["POST"])
 def control():
@@ -140,6 +221,7 @@ def control():
         elif action == "reset":
             runner.sim.reset()
             runner.running = True
+            runner.preset = None
         elif action == "speed":
             value = cmd.get("value")
             if value not in (1, 4, 16):
@@ -213,6 +295,22 @@ def control():
                                          "action"}), 400
             runner.sim.set_pump_enabled(bool(cmd.get("value")))
             runner.running = True   # switching the pump should be visible
+        elif action == "preset":
+            loop = request.args.get("loop", "temp")
+            name = cmd.get("value")
+            entry = PRESETS.get(loop, {}).get(name)
+            if entry is None:
+                return jsonify({"error": f"unknown preset {name!r} for "
+                                         f"the {loop} loop"}), 400
+            _apply_preset(runner.sim, entry)
+            runner.speed = entry["speed"]
+            # Healthy clears the banner; a disease raises it. Manual
+            # breaker flips afterwards do NOT clear it — the teacher is
+            # dissecting the disease, not curing it (kickoff SS2).
+            runner.preset = (None if entry["banner"] is None else
+                             {"name": name, "label": entry["label"],
+                              "banner": entry["banner"]})
+            runner.running = True   # a diagnosis should visibly happen
         elif action == "scenario":
             name = cmd.get("value")
             if hasattr(runner.sim, "set_env_temp"):

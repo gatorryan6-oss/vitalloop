@@ -24,9 +24,10 @@ Entry format:
   interview went unanswered, so all five ship as the flagged
   recommendation (fever, heat stroke, hypothermia, type 1, type 2).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M18 — Diseases card per loop, `/control preset` action,
-  server preset table (full configuration + speed + banner line),
-  banner strip in the UI.
+- **Next up:** M19 — thermo control-center box shows the LIVE defended
+  set point (39.0 under fever), glucose muscle/liver response dims by
+  insulin_sensitivity, full five-disease projector pass. Then the
+  Phase 5 checkpoint STOP.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -38,6 +39,28 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M18: The preset buttons + banner
+- Shipped: Diseases card on both pages (Fever / Heat stroke /
+  Hypothermia / Healthy again; Type 1 / Type 2 / Healthy again),
+  `/control` action `preset` driven by ONE server table (full
+  configuration + per-preset speed + banner line — buttons, banner, and
+  any future quiz layer read this single source), `Runner.preset`
+  carried in `/state`, red-accent banner strip rendering the diagnosis,
+  active-preset button highlight, reset clears the diagnosis. Verified
+  live: Fever click mid-run → offset 2.0 + 16× + banner up with core
+  already climbing at t=146 (no reset); Type 2 → sensitivity 0.05 with
+  beta cells still ON (resistance, not deficiency); Healthy → sensitivity
+  1.0, preset null, banner gone, run continuing at t=515.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) a preset is a COMPLETE diagnosis built on a healthy
+  baseline — it also switches treatments off (fresh type 1 arrives
+  untreated: pump off, basal 0), so diseases never stack and every
+  demo starts from the same story beat. (2) Healthy is a door, not a
+  state: it never shows as "active", it just clears the banner.
+  (3) Manual breaker flips do not clear the banner — dissecting the
+  disease is the point; reset does.
 
 ## 2026-08-15 — M17: Disease physiology + contract + console demo
 - Shipped: `set_fever(offset)` in the thermo engine (the hypothalamus

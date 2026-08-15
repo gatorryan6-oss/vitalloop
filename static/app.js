@@ -59,6 +59,7 @@ async function poll() {
   if (firstKeep > 0) buf.pts = buf.pts.slice(firstKeep);
   if (loop !== activeLoop) return;   // tab switched while we fetched
   applyServerState(j);
+  updateBanner(loop, j.preset);
   updateReadouts(j.now);
   if (loop === "temp" && window.updateDiagram) {
     window.updateDiagram(j.now);
@@ -81,6 +82,29 @@ function applyServerState(j) {
 
 function setText(id, text) {
   document.getElementById(id).textContent = text;
+}
+
+/* --- disease banner (M18): the server's preset table is the single
+   source; this only renders what /state hands over --- */
+
+const BANNER_IDS = { temp: "tempBanner", glucose: "glucoseBanner" };
+
+function updateBanner(loop, preset) {
+  const div = document.getElementById(BANNER_IDS[loop]);
+  if (preset) {
+    div.hidden = false;
+    div.innerHTML = "";
+    const name = document.createElement("strong");
+    name.textContent = preset.label.toUpperCase();
+    div.appendChild(name);
+    div.appendChild(document.createTextNode(" — " + preset.banner));
+  } else {
+    div.hidden = true;
+  }
+  const page = loop === "temp" ? "#page-temp" : "#page-glucose";
+  document.querySelectorAll(`${page} .preset`).forEach(b =>
+    b.classList.toggle("active",
+      preset ? b.dataset.preset === preset.name : false));
 }
 
 function updateReadouts(now) {
@@ -246,6 +270,12 @@ document.querySelectorAll(".basal").forEach(b =>
 let lastPump = false;
 document.getElementById("pumpBtn").addEventListener("click", () =>
   control({ action: "pump", value: !lastPump }));
+
+/* --- disease presets (M18) --- */
+
+document.querySelectorAll(".preset").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "preset", value: b.dataset.preset })));
 
 /* --- break the loop (M5) --- */
 

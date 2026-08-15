@@ -232,6 +232,29 @@ main {
   cursor: not-allowed;
 }
 
+/* --- disease presets + banner (M18) --- */
+
+.preset { font-weight: 600; }
+.preset.active {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+.preset.healthy { border-color: #0ca30c; }
+.preset.healthy.active {
+  background: #0ca30c;
+  border-color: #0ca30c;
+}
+.disease-banner {
+  margin: 0.5rem 0 0.3rem;
+  padding: 0.55rem 0.9rem;
+  border-left: 5px solid #d03b3b;
+  background: #fdeeee;
+  border-radius: 6px;
+  font-size: 1.05rem;
+}
+.disease-banner strong { letter-spacing: 0.04em; }
+
 /* --- patient status on the glucose readout (M13) --- */
 
 #r1Value.hypo { color: #d03b3b; }
