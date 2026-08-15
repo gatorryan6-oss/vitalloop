@@ -19,6 +19,8 @@
       Temperature</button>
     <button class="loop-tab" data-loop="glucose" type="button">
       Glucose</button>
+    <button class="loop-tab" data-loop="water" type="button">
+      Water</button>
   </nav>
 
   <div class="readouts">
@@ -264,6 +266,65 @@
     </h2>
     <svg id="flowChart" viewBox="0 0 960 180" preserveAspectRatio="none"
          aria-label="Liver output and tissue uptake over time"></svg>
+  </section>
+</div>
+
+<div id="page-water" hidden>
+  <section class="chart-card disturbances">
+    <h2>Disturbances</h2>
+    <div class="disturb-row">
+      <div class="scenarios">
+        <button class="drinkbtn" data-ml="250" type="button">
+          Drink a glass (250&nbsp;mL)</button>
+        <button class="drinkbtn" data-ml="1000" type="button">
+          Drink a liter</button>
+        <button class="drinkbtn" data-ml="3000" type="button">
+          Way too much (3&nbsp;L)</button>
+        <button id="saltyBtn" type="button">
+          Salty snack (+300&nbsp;mOsm)</button>
+      </div>
+      <button id="wExerciseBtn" type="button" aria-pressed="false">
+        Exercise / heat: off</button>
+      <div class="scenarios">
+        <button class="wscenario" data-scenario="desert" type="button">
+          A day in the desert</button>
+        <button class="wscenario" data-scenario="contest" type="button">
+          Water-drinking contest</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Plasma osmolarity (mOsm/L)</h2>
+    <svg id="osmChart" viewBox="0 0 960 260" preserveAspectRatio="none"
+         aria-label="Plasma osmolarity over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Hormone and behavior
+      <span class="legend">
+        <span class="chip"><span class="dot dot-adh"></span>ADH
+          (kidneys hold water)</span>
+        <span class="chip"><span class="dot dot-thirst"></span>thirst
+          (go find water)</span>
+      </span>
+    </h2>
+    <svg id="adhChart" viewBox="0 0 960 180" preserveAspectRatio="none"
+         aria-label="ADH and thirst over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Urine flow (mL/min)</h2>
+    <svg id="urineFlowChart" viewBox="0 0 960 160"
+         preserveAspectRatio="none"
+         aria-label="Urine flow over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Urine concentration (mOsm/L) &mdash; scant &amp; concentrated vs
+      flooding &amp; dilute</h2>
+    <svg id="urineOsmChart" viewBox="0 0 960 160" preserveAspectRatio="none"
+         aria-label="Urine concentration over time"></svg>
   </section>
 </div>
 </main>

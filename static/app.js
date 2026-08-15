@@ -6,8 +6,9 @@
 "use strict";
 
 const POLL_MS = 250;
-// Visible strip per loop: temperature moves in minutes, glucose in hours.
-const WINDOWS = { temp: 600, glucose: 7200 };
+// Visible strip per loop: temperature moves in minutes, glucose in
+// hours, water over a longer afternoon still.
+const WINDOWS = { temp: 600, glucose: 7200, water: 14400 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const palette = getComputedStyle(document.documentElement);
@@ -24,6 +25,7 @@ let activeLoop = "temp";         // which loop the page is showing
 const buffers = {                // engine records per loop, oldest first
   temp: { pts: [], lastT: -1 },
   glucose: { pts: [], lastT: -1, doses: [] },
+  water: { pts: [], lastT: -1, drinks: [] },
 };
 let running = true;              // play/speed of the ACTIVE loop's runner
 let speed = 1;
@@ -44,11 +46,13 @@ async function poll() {
     buf.pts = [];
     buf.lastT = -1;
     buf.doses = [];
+    buf.drinks = [];
     return;
   }
   buf.pts.push(...j.points);
   buf.lastT = j.now.t;
-  if (j.doses) buf.doses = j.doses;   // the engine's bolus event log
+  if (j.doses) buf.doses = j.doses;     // the engine's bolus event log
+  if (j.drinks) buf.drinks = j.drinks;  // ...and the intake event log
   // Trim the buffer: keep the visible window plus slack. Full history for
   // the CSV lives on the server; the browser only needs what it draws.
   const cutoff = buf.lastT - WINDOWS[loop] * 1.2;
@@ -91,6 +95,7 @@ const BANNER_IDS = { temp: "tempBanner", glucose: "glucoseBanner" };
 
 function updateBanner(loop, preset) {
   const div = document.getElementById(BANNER_IDS[loop]);
+  if (!div) return;              // this loop has no diseases card (yet)
   if (preset) {
     div.hidden = false;
     div.innerHTML = "";
@@ -112,6 +117,26 @@ function updateReadouts(now) {
   const mm = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, "0");
   setText("clockReadout", `${mm}:${ss}`);
+
+  if (activeLoop === "water") {
+    setText("r1Label", "osmolarity");
+    setText("r1Value", now.osmolarity.toFixed(1) + " mOsm/L");
+    const r1 = document.getElementById("r1Value");
+    r1.classList.remove("hypo", "severe", "hyper");
+    if (now.osmolarity > 305) r1.classList.add("hyper");
+    if (now.osmolarity < 275) r1.classList.add("hypo");
+    setText("r1Label", "osmolarity"
+      + (now.osmolarity > 305 ? " — DEHYDRATED"
+        : now.osmolarity < 275 ? " — OVERHYDRATED" : ""));
+    setText("r2Label", "body water");
+    setText("r2Value", now.water_liters.toFixed(1) + " L");
+    const wex = document.getElementById("wExerciseBtn");
+    wex.textContent = now.exercise
+      ? "Exercise / heat: ON" : "Exercise / heat: off";
+    wex.setAttribute("aria-pressed", String(now.exercise));
+    lastExercise = now.exercise;
+    return;
+  }
 
   if (activeLoop === "glucose") {
     // Patient status, legible from the back row (M13): the label carries
@@ -277,6 +302,19 @@ document.querySelectorAll(".preset").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "preset", value: b.dataset.preset })));
 
+/* --- water disturbances (M21) --- */
+
+document.querySelectorAll(".drinkbtn").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "drink", ml: Number(b.dataset.ml) })));
+document.getElementById("saltyBtn").addEventListener("click", () =>
+  control({ action: "salty", mosm: 300 }));
+document.getElementById("wExerciseBtn").addEventListener("click", () =>
+  control({ action: "exercise", value: !lastExercise }));
+document.querySelectorAll(".wscenario").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "scenario", value: b.dataset.scenario })));
+
 /* --- break the loop (M5) --- */
 
 const BREAKER_LABELS = {
@@ -386,20 +424,21 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
                    "font-size": 12 }, ref.label);
     }
 
-    // dose markers (M12): vertical ticks from the engine's bolus log —
-    // recorded events, never inferred from wiggles in a curve
+    // event markers (M12/M21): vertical ticks from the engines' event
+    // logs (doses, drinks) — recorded events, never inferred from
+    // wiggles in a curve. Each marker: {t, label, color}.
     if (markers) {
-      for (const d of markers()) {
-        if (d.t < t0 || d.t > tEnd) continue;
-        const xd = x(d.t, t0, tEnd);
+      for (const m of markers()) {
+        if (m.t < t0 || m.t > tEnd) continue;
+        const xd = x(m.t, t0, tEnd);
+        const color = m.color || COLOR_SWEAT;
         el("line", { x1: xd, x2: xd, y1: M.top + 14,
-                     y2: view.height - M.bottom, stroke: COLOR_SWEAT,
+                     y2: view.height - M.bottom, stroke: color,
                      "stroke-width": 1.5, "stroke-dasharray": "2 4",
                      "vector-effect": "non-scaling-stroke" });
         el("text", { x: xd, y: M.top + 10, "text-anchor": "middle",
-                     fill: COLOR_SWEAT, "font-size": 11,
-                     "font-weight": 600 },
-           `${d.units % 1 ? d.units.toFixed(1) : d.units.toFixed(0)} U`);
+                     fill: color, "font-size": 11,
+                     "font-weight": 600 }, m.label);
       }
     }
 
@@ -462,7 +501,15 @@ const tooltip = document.getElementById("tooltip");
 function showTooltip(ev, r) {
   const mm = Math.floor(r.t / 60);
   const ss = String(Math.floor(r.t) % 60).padStart(2, "0");
-  const body = ("core_temp" in r)
+  const body = ("osmolarity" in r)
+    ? `osmolarity ${r.osmolarity.toFixed(1)} mOsm/L<br>` +
+      `ADH ${r.adh.toFixed(2)} · thirst ${r.thirst.toFixed(2)}<br>` +
+      `urine ${r.urine_rate.toFixed(1)} mL/min at ` +
+      `${r.urine_osm.toFixed(0)} mOsm/L<br>` +
+      `body water ${r.water_liters.toFixed(1)} L · ` +
+      `gut ${r.gut_water.toFixed(0)} mL` +
+      (r.exercise ? "<br>sweating" : "")
+    : ("core_temp" in r)
     ? `core ${r.core_temp.toFixed(2)} °C<br>` +
       `room ${r.env_temp.toFixed(1)} °C<br>` +
       `sweat ${r.sweat.toFixed(2)} · shiver ${r.shiver.toFixed(2)}<br>` +
@@ -518,7 +565,10 @@ const glucoseChart = makeChart("glucoseChart", {
     { y: 180, label: "hyperglycemia" },
     { y: 70, label: "hypoglycemia" },
   ],
-  markers: () => buffers.glucose.doses || [],
+  markers: () => (buffers.glucose.doses || []).map(d => ({
+    t: d.t,
+    label: `${d.units % 1 ? d.units.toFixed(1) : d.units.toFixed(0)} U`,
+  })),
 });
 const hormoneChart = makeChart("hormoneChart", {
   loop: "glucose", yMin: 0, yMax: 1, yStep: 0.5,
@@ -543,9 +593,45 @@ const flowChart = makeChart("flowChart", {
   ],
 });
 
+// --- the water loop's panels (M21) ---
+// Drink markers carry authorship: green = the loop drank by itself
+// (the behavioral effector at work), blue = a human pressed the button.
+const osmChart = makeChart("osmChart", {
+  loop: "water", yMin: 260, yMax: 320, yStep: 10,
+  series: [{ key: "osmolarity", color: COLOR_CORE }],
+  bands: [{ y0: 285, y1: 295, color: HEALTHY_BAND_FILL }],
+  refLines: [
+    { y: 290, label: "set point 290" },
+    { y: 305, label: "dehydration" },
+    { y: 275, label: "overhydration" },
+  ],
+  markers: () => (buffers.water.drinks || []).map(d => ({
+    t: d.t,
+    label: d.ml >= 1000 ? `${(d.ml / 1000).toFixed(1)} L`
+                        : `${d.ml.toFixed(0)} mL`,
+    color: d.auto ? COLOR_SWEAT : COLOR_CORE,
+  })),
+});
+const adhChart = makeChart("adhChart", {
+  loop: "water", yMin: 0, yMax: 1, yStep: 0.5,
+  series: [
+    { key: "adh", color: COLOR_SWEAT, label: "ADH" },
+    { key: "thirst", color: COLOR_SHIVER, label: "thirst" },
+  ],
+});
+const urineFlowChart = makeChart("urineFlowChart", {
+  loop: "water", yMin: 0, yMax: 14, yStep: 7,
+  series: [{ key: "urine_rate", color: COLOR_VASO, label: "flow" }],
+});
+const urineOsmChart = makeChart("urineOsmChart", {
+  loop: "water", yMin: 0, yMax: 1600, yStep: 400,
+  series: [{ key: "urine_osm", color: COLOR_UPTAKE, label: "conc." }],
+});
+
 const chartsByLoop = {
   temp: [coreChart, envChart, effectorChart],
   glucose: [glucoseChart, hormoneChart, pumpChart, flowChart],
+  water: [osmChart, adhChart, urineFlowChart, urineOsmChart],
 };
 
 function drawAll() {
@@ -556,15 +642,18 @@ function drawAll() {
 
 /* --- the loop switcher (M7) --- */
 
+const PAGE_IDS = { temp: "page-temp", glucose: "page-glucose",
+                   water: "page-water" };
+
 document.querySelectorAll(".loop-tab").forEach(b =>
   b.addEventListener("click", () => {
     if (activeLoop === b.dataset.loop) return;
     activeLoop = b.dataset.loop;
     document.querySelectorAll(".loop-tab").forEach(x =>
       x.classList.toggle("active", x.dataset.loop === activeLoop));
-    document.getElementById("page-temp").hidden = activeLoop !== "temp";
-    document.getElementById("page-glucose").hidden =
-      activeLoop !== "glucose";
+    for (const [loop, id] of Object.entries(PAGE_IDS)) {
+      document.getElementById(id).hidden = loop !== activeLoop;
+    }
     poll();                      // refresh the newly visible loop now
   }));
 

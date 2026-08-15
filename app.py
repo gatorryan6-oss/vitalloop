@@ -19,6 +19,7 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
+from engine.water import WaterSimulation
 
 app = Flask(__name__)
 
@@ -64,9 +65,11 @@ class Runner:
         with self.lock:
             records = self.sim.history()
             state = records[-1]
-            # Dose events are a data product (Phase 3 kickoff SS5): the
-            # chart markers read the engine's log, never infer from curves.
+            # Dose/drink events are data products (Phase 3/6 kickoffs):
+            # chart markers read the engine's logs, never infer from curves.
             doses = self.sim.doses() if hasattr(self.sim, "doses") else None
+            drinks = (self.sim.drinks()
+                      if hasattr(self.sim, "drinks") else None)
         points = [r for r in records if r["t"] > since]
         if len(points) > MAX_POINTS_PER_RESPONSE:
             stride = -(-len(points) // MAX_POINTS_PER_RESPONSE)  # ceil div
@@ -81,12 +84,15 @@ class Runner:
         }
         if doses is not None:
             out["doses"] = doses
+        if drinks is not None:
+            out["drinks"] = drinks
         return out
 
 
 runners = {
     "temp": Runner(Simulation()),
     "glucose": Runner(GlucoseSimulation()),
+    "water": Runner(WaterSimulation()),
 }
 
 
@@ -122,6 +128,10 @@ SCENARIOS = {
 # Insulin dosing (M12): the UI offers real-world sizes; the cap is policy.
 MAX_SINGLE_DOSE_U = 15.0
 ALLOWED_BASAL_RATES = {0, 0.5, 1.0, 1.5, 2.0}   # U/h, matching the buttons
+
+# Water intake (M21): same idea — the engine is a model, the cap is policy.
+MAX_SINGLE_DRINK_ML = 3000.0
+MAX_SALT_MOSM = 600.0
 
 # Disease presets (M18): ONE table is the source for what each disease
 # means mechanically (Phase 5 kickoff SS5) — buttons, banner, and any
@@ -295,6 +305,35 @@ def control():
                                          "action"}), 400
             runner.sim.set_pump_enabled(bool(cmd.get("value")))
             runner.running = True   # switching the pump should be visible
+        elif action == "drink":
+            if not hasattr(runner.sim, "drink"):
+                return jsonify({"error": "drink is a water-loop "
+                                         "action"}), 400
+            try:
+                ml = float(cmd.get("ml"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "drink needs a number of mL"}), 400
+            ml = min(ml, MAX_SINGLE_DRINK_ML)   # server policy, like doses
+            try:
+                runner.sim.drink(ml)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+            runner.running = True   # a drink should visibly happen
+        elif action == "salty":
+            if not hasattr(runner.sim, "eat_salt"):
+                return jsonify({"error": "salty is a water-loop "
+                                         "action"}), 400
+            try:
+                mosm = float(cmd.get("mosm", 300))
+            except (TypeError, ValueError):
+                return jsonify({"error": "salty needs a number of "
+                                         "mOsm"}), 400
+            mosm = min(mosm, MAX_SALT_MOSM)
+            try:
+                runner.sim.eat_salt(mosm)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+            runner.running = True   # so should a salty snack
         elif action == "preset":
             loop = request.args.get("loop", "temp")
             name = cmd.get("value")
@@ -312,21 +351,24 @@ def control():
                               "banner": entry["banner"]})
             runner.running = True   # a diagnosis should visibly happen
         elif action == "scenario":
+            # Dispatch by LOOP NAME (M21): three loops now share this
+            # action, and hasattr-sniffing can't tell glucose from water.
+            loop = request.args.get("loop", "temp")
             name = cmd.get("value")
-            if hasattr(runner.sim, "set_env_temp"):
+            if loop == "temp":
                 if name not in SCENARIOS:
                     return jsonify({"error": f"unknown scenario {name!r}"}), 400
                 env_temp, exercise = SCENARIOS[name]
                 runner.sim.set_env_temp(env_temp)
                 runner.sim.set_exercise(exercise)
-            elif name == "fast":
+            elif loop == "glucose" and name == "fast":
                 # A fast is the absence of eating: nothing to inject, just
                 # stop exercising and make hours pass quickly on screen.
                 # (Anything still in the gut keeps absorbing - you can't
                 # un-eat.)
                 runner.sim.set_exercise(False)
                 runner.speed = 16
-            elif name == "t1_morning":
+            elif loop == "glucose" and name == "t1_morning":
                 # Type 1 morning (M13): the beta cells are gone and the
                 # day starts moving. Basal, breakfast, and boluses are the
                 # class's decisions from here — this button only sets the
@@ -334,15 +376,28 @@ def control():
                 runner.sim.set_effector_enabled("beta", False)
                 runner.sim.set_exercise(False)
                 runner.speed = 16
-            elif name == "pump_day":
+            elif loop == "glucose" and name == "pump_day":
                 # Artificial pancreas day (M16): same broken pancreas,
                 # but the machine loop takes the shift. Never resets.
                 runner.sim.set_effector_enabled("beta", False)
                 runner.sim.set_exercise(False)
                 runner.sim.set_pump_enabled(True)
                 runner.speed = 16
+            elif loop == "water" and name == "desert":
+                # A day in the desert (M21): sweating, nothing to drink.
+                # ADH will conserve heroically and lose anyway.
+                runner.sim.set_effector_enabled("access", False)
+                runner.sim.set_exercise(True)
+                runner.speed = 16
+            elif loop == "water" and name == "contest":
+                # Water-drinking contest: 3 L, fast. The kidneys will
+                # have opinions.
+                runner.sim.drink(3000)
+                runner.sim.set_exercise(False)
+                runner.speed = 16
             else:
-                return jsonify({"error": f"unknown scenario {name!r}"}), 400
+                return jsonify({"error": f"unknown scenario {name!r} for "
+                                         f"the {loop} loop"}), 400
             runner.running = True   # a scenario should visibly happen
         else:
             return jsonify({"error": f"unknown action {action!r}"}), 400
@@ -371,6 +426,10 @@ CSV_FIELDS = {
                 "pump_enabled", "pump_rate",
                 # grown at M17 with the Phase 5 disease knob, same rule
                 "insulin_sensitivity"],
+    "water": ["t", "osmolarity", "water_liters", "gut_water", "exercise",
+              "error", "adh", "thirst", "urine_rate", "urine_osm",
+              "adh_enabled", "kidney_enabled", "water_access",
+              "sensor_enabled"],
 }
 
 

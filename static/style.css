@@ -198,6 +198,16 @@ main {
   border: 2.5px solid var(--series-sweat);
 }
 .dot-total { background: rgba(27, 175, 122, 0.35); }
+.dot-adh { background: var(--series-sweat); }      /* water page reuses */
+.dot-thirst { background: var(--series-shiver); }  /* the same slots — */
+                                                   /* pages never share */
+
+#wExerciseBtn[aria-pressed="true"],
+#saltyBtn:active {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
 
 /* --- the insulin card (M12) --- */
 

@@ -22,9 +22,9 @@ Entry format:
   phases 1–5 as before, plus `vital_loop_phase6_kickoff.md` (M20–M23).
   The human chose the water/ADH loop on 2026-08-15.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M21 — third Runner + Water tab, osmolarity / ADH+thirst /
-  urine flow / urine concentration chart panels, drink markers (auto vs
-  manual), drink/salty/exercise/scenario controls, water CSV.
+- **Next up:** M22 — water breaker card (osmoreceptors / ADH release /
+  kidney response / water access) and the third SVG diagram with the
+  behavioral effector drawn distinctly.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,6 +36,28 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M21: Water tab + charts + disturbances + CSV
+- Shipped: third Runner (`/state?loop=water`), Water tab, four panels
+  (osmolarity with 285–295 band + 275/305 lines, ADH+thirst, urine
+  flow, urine concentration), drink markers colored by AUTHORSHIP
+  (green = the loop drank by itself, blue = a human pressed the
+  button), disturbance card (three drink sizes, salty snack, exercise/
+  heat, desert + contest scenarios), `/control` drink/salty actions
+  (server caps 3 L / 600 mOsm), scenario dispatch rewritten to branch
+  on LOOP NAME (three loops broke the old hasattr sniffing), water CSV
+  with the frozen 14 columns, water readouts with DEHYDRATED /
+  OVERHYDRATED status words. Marker machinery generalized to
+  {t, label, color}. Verified live through the production path: manual
+  glass logged, contest chug slid osmolarity 289 → 274 with ADH dying
+  and the kidneys flooding 12 mL/min at 38 mOsm/L, recovery turning;
+  desert honestly kept dumping the leftover chug excess (still below
+  285) before conserving; CSV header exact.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: drink-marker authorship colors are the loop's behavioral
+  arm made visible — the classroom can watch the body drink with
+  nobody at the keyboard.
 
 ## 2026-08-15 — M20: Water invariants + engine + console demo (Phase 6 starts)
 - Shipped: water contract in `tests/test_invariants.py` (API, frozen
