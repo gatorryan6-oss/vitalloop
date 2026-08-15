@@ -30,6 +30,17 @@ injected are summed into ONE total activity that drives tissue uptake,
 suppresses the liver, and works the paracrine brake on the alpha cells —
 which is why injections re-restrain a type 1 liver, honestly.
 
+Phase 4 (M14) adds the CLOSED-LOOP PUMP — an artificial pancreas, and the
+capstone of the unit: sensor -> controller -> effector, rebuilt in
+silicone. Every 5 sim-minutes it reads the SAME sensed glucose the islets
+read (so sensor damage blinds the machine exactly like the biology) and
+sets a proportional infusion rate into the SAME subcutaneous depot (so
+the machine fights the same absorption lag a syringe does). While the
+pump runs, its rate replaces the manual basal; boluses still work on top.
+Blind failure mode is over-delivery: with dead sensors the pump infuses
+its set-point rate forever while the frozen alpha cells cannot defend,
+and glucose crashes — the real CGM-failure story, emergent, unscripted.
+
 API and record fields are FROZEN by tests/test_invariants.py.
 Deterministic: no clock reads, no randomness.
 """
@@ -67,6 +78,18 @@ ACTIVITY_PER_UNIT = 0.35         # plasma U-equivalents -> activity (0..1);
                                  # classic 1 U : 15 g) and 1.0 U/h basal
                                  # holds a fasted type 1 body near the band
 
+# ---- Closed-loop pump (Phase 4): a proportional controller, on purpose
+# shaped like the hypothalamus and the islets. Gains chosen by sweep at
+# M14: higher KP oscillates through the 55-min absorption lag and hypos
+# the patient — delayed feedback hunting, real physics, kept out of the
+# default. Aims a little high (target 100) like commercial systems: the
+# cost of running hypo-shy is a small honest steady-state offset.
+PUMP_BASE = 1.0                  # U/h when sensed glucose sits at target
+PUMP_KP = 0.02                   # U/h per mg/dL above target
+PUMP_TARGET = 100.0              # mg/dL
+PUMP_MAX = 5.0                   # U/h hard cap
+PUMP_INTERVAL = 300.0            # s between decisions — rate is a staircase
+
 
 class GlucoseSimulation:
     """One body, one glucose pool, fixed 1-second ticks."""
@@ -88,8 +111,11 @@ class GlucoseSimulation:
         self._sensor_enabled = True
         self._depot_units = 0.0          # U waiting under the skin
         self._plasma_units = 0.0         # U absorbed and circulating
-        self._basal_rate = 0.0           # U/h continuous drip
+        self._basal_rate = 0.0           # U/h MANUAL drip (pump has its own)
         self._doses = []                 # bolus event log: {"t", "units"}
+        self._pump_enabled = False
+        self._pump_rate = 0.0            # U/h the algorithm chose; 0.0 off
+        self._pump_ticks_left = 0        # ticks until the next decision
         self._t = 0.0
         self._history = []
         self._append_record(error=0.0, insulin=0.0, glucagon=0.0,
@@ -145,6 +171,17 @@ class GlucoseSimulation:
         wiggles in a curve."""
         return [dict(d) for d in self._doses]
 
+    def set_pump_enabled(self, on):
+        """The closed-loop pump. While it runs, ITS rate feeds the depot
+        and the manual basal is overridden (not erased). Switching on
+        forces a decision on the very next tick."""
+        on = bool(on)
+        if on and not self._pump_enabled:
+            self._pump_ticks_left = 0
+        if not on:
+            self._pump_rate = 0.0
+        self._pump_enabled = on
+
     # ------------------------------- the loop -------------------------------
 
     def _islets(self, sensed_glucose, injected):
@@ -175,9 +212,24 @@ class GlucoseSimulation:
         """Advance n ticks. Each tick: sense -> decide -> act -> record."""
         minutes = self.DT / 60.0
         for _ in range(int(n)):
-            # Subcutaneous kinetics: the basal drip feeds the same depot the
-            # boluses use, then first-order depot -> plasma -> cleared.
-            self._depot_units += self._basal_rate / 60.0 * minutes
+            # The pump thinks first: every PUMP_INTERVAL of sim time it
+            # reads the SENSED glucose (dead sensors blind it exactly like
+            # the islets) and holds the chosen rate until its next look.
+            if self._pump_enabled:
+                if self._pump_ticks_left <= 0:
+                    sensed_now = (self._glucose if self._sensor_enabled
+                                  else self.SET_POINT)
+                    self._pump_rate = _clamp(
+                        PUMP_BASE + PUMP_KP * (sensed_now - PUMP_TARGET),
+                        0.0, PUMP_MAX)
+                    self._pump_ticks_left = int(PUMP_INTERVAL / self.DT)
+                self._pump_ticks_left -= 1
+
+            # Subcutaneous kinetics: one drip source at a time (pump rate
+            # overrides the manual basal) feeds the same depot the boluses
+            # use, then first-order depot -> plasma -> cleared.
+            drip = self._pump_rate if self._pump_enabled else self._basal_rate
+            self._depot_units += drip / 60.0 * minutes
             transfer = K_INJ * self._depot_units * minutes
             self._depot_units -= transfer
             self._plasma_units += transfer - K_INJ * self._plasma_units * minutes
@@ -237,6 +289,8 @@ class GlucoseSimulation:
             "total_insulin": total,
             "iob_units": self._depot_units + self._plasma_units,
             "basal_rate": self._basal_rate,
+            "pump_enabled": self._pump_enabled,
+            "pump_rate": self._pump_rate,
         })
 
     def history(self):

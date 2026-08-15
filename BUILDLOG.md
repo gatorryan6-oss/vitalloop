@@ -18,13 +18,15 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M13 — **Phase 3 complete.** Specs:
+- **Committed:** M14 — Phase 4 (closed-loop pump) in progress. Specs:
   `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
-  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13). All milestones
-  shipped and verified.
-- **Next up:** awaiting the human's Phase 4 decision. Candidates (Phase 3
-  kickoff): named disease presets, water/ADH loop, closed-loop pump (the
-  feedback-restored callback), scenario challenges, game layer.
+  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13),
+  `vital_loop_phase4_kickoff.md` (M14–M16). The human chose the pump
+  from the Phase 4 candidates on 2026-08-14.
+- **Next up:** M15 — pump toggle + rate readout on the Insulin card,
+  basal selector grayed while pump runs (server refuses `basal`), "Pump
+  rate (U/h)" staircase chart panel, CSV +2 columns, `/control` pump
+  action.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,6 +38,34 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-14 — M14: Pump contract + engine + console demo (Phase 4 starts)
+- Shipped: Phase 4 contract in `tests/test_invariants.py` (record grows
+  `pump_enabled` + `pump_rate`; `set_pump_enabled` API; pins: holds a
+  12 h fast in 70–140, survives a 60 g meal alone with nadir > 65 and
+  return ≤ 4 h, blind sensor → crash < 54 within 3 h, 5-min staircase,
+  determinism, Phase 2+3 subset hash recorded from M13 code BEFORE the
+  engine changed). Pump in `engine/glucose.py`: proportional controller
+  (base 1.0 U/h + 0.02 U/h per mg/dL over target 100, cap 5, decides
+  every 5 sim-min), doses through the SAME depot/lag as Phase 3, reads
+  the SAME sensed glucose as the islets. `python -m engine.pump_demo`:
+  the M11 day re-run by the machine, ending in CGM death. 35 invariants
+  + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) SPEC AMENDMENT, pre-M14, logged not silent: the kickoff
+  first pinned blind-sensor failure as runaway hyperglycemia; the model
+  (and real CGM-failure physiology) says the blind mode is OVER-delivery
+  — pump frozen at set-point rate + sensor-frozen alpha cells → hypo
+  crash. Pin (c) rewritten to the honest behavior before the contract
+  landed. (2) Gains chosen by sweep: KP 0.05 oscillates through the
+  55-min lag into hypos (real delayed-feedback hunting) — kept OUT of
+  the default; target 100 runs hypo-shy like commercial systems. (3)
+  Pump ON overrides the manual basal (one drip source at a time), never
+  erases the stored setting. (4) Blind-crash test blinds AFTER 2 h of
+  settled pumping: blinding from t=0 detours through the paracrine
+  disinhibition spike first and needs > 3 h to crash (an emergent detail
+  the first test run caught).
 
 ## 2026-08-13 — M13: The type 1 day, one click (Phase 3 complete)
 - Shipped: "Type 1 morning" scenario (beta off + exercise off + 16×, never

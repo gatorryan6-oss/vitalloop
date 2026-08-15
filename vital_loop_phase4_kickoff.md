@@ -91,8 +91,12 @@ only done when `python verify.py` and
   meal alone** — beta off + pump on, a 60 g meal peaks somewhere real
   (above 140 — the lag is honest) but returns to 70–140 within 4 h and
   never dips below 65; (c) **blind the sensor, break the machine** — beta
-  off + pump on + sensors disabled + a sugary drink → glucose rises above
-  180 and stays there, exactly like biological failure; (d) **regression
+  off + pump on + sensors disabled → the pump keeps blindly infusing its
+  set-point rate while the sensor-frozen alpha cells cannot defend, and
+  glucose CRASHES below 54 within 3 h. (Amended pre-M14: the spec first
+  guessed runaway hyperglycemia here; the model — and real CGM-failure
+  physiology — says the blind failure mode is over-delivery, a hypo
+  crash. Logged in BUILDLOG at M14.); (d) **regression
   guard** — a scripted Phase 3 run with the pump never enabled is
   byte-identical on the Phase 2+3 field subset, and the thermo and
   Phase 2 hashes stay untouched; (e) determinism including pump on/off

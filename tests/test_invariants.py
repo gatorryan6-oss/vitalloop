@@ -90,6 +90,32 @@ The dosing API contract (built at M11):
     sim.doses()                   # bolus event log: [{"t":..., "units":...}]
                                   # oldest first, cleared by reset()
 
+--- Phase 4 (kickoff: vital_loop_phase4_kickoff.md) adds the pump --------
+
+  (p) the frozen glucose record GROWS two fields (pump_enabled, pump_rate);
+      pump insulin flows through the SAME depot/plasma/IOB fields as
+      Phase 3 boluses — no parallel accounting,
+  (q) pinned pump physiology: beta cells off + pump on holds a 12 h fast
+      inside 70-140 with no manual help; a 60 g meal handled by the pump
+      ALONE peaks above 140 (the subcutaneous lag is honest) but returns
+      to 70-140 within 4 h and never dips below 65; with the sensors
+      disabled the pump keeps blindly infusing its set-point rate while
+      the sensor-frozen alpha cells cannot defend, and glucose crashes
+      below 54 within 3 h — the artificial loop fails at the same box as
+      the biological one, and the blind failure mode is OVER-delivery,
+  (r) the pump decides every 5 sim-minutes and holds its rate between
+      decisions - the recorded pump_rate is a staircase, not a ramp,
+  (s) REGRESSION GUARD: with the pump never enabled, the Phase 3 scripted
+      dosing run's PHASE 2+3 FIELD SUBSET is byte-identical to the M13
+      baseline hash; the thermo and Phase 2 hashes stay untouched,
+  (t) determinism includes pump on/off mid-run.
+
+The pump API contract (built at M14):
+
+    sim.set_pump_enabled(bool)    # closed-loop pump on/off; while on, the
+                                  # pump's rate (not the manual basal)
+                                  # feeds the depot; off -> pump_rate 0.0
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -301,13 +327,21 @@ GLUCOSE_FIELDS = {
     "total_insulin",    # clamp(insulin + injected_insulin) — what the body
                         # actually responds to; recorded, never JS-derived
     "iob_units",        # "insulin on board": U still working (depot+plasma)
-    "basal_rate",       # continuous drip setting, U/h
+    "basal_rate",       # MANUAL drip setting, U/h (the pump has its own)
+    # -- grown at M14 (Phase 4 kickoff SS5), the next amendment:
+    "pump_enabled",     # closed-loop pump on/off
+    "pump_rate",        # U/h the pump algorithm chose this tick; 0.0 off
 }
 
-# The Phase 2 record shape as it was frozen at M6 — the regression guard (n)
-# hashes exactly this subset of the scripted run.
-PHASE2_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - {
-    "injected_insulin", "total_insulin", "iob_units", "basal_rate"})
+PHASE3_FIELDS_ADDED = {"injected_insulin", "total_insulin", "iob_units",
+                       "basal_rate"}
+PHASE4_FIELDS_ADDED = {"pump_enabled", "pump_rate"}
+
+# The record shapes as frozen at each phase's end — the stacked regression
+# guards (n) and (s) hash exactly these subsets of their scripted runs.
+PHASE2_GLUCOSE_FIELDS = sorted(
+    GLUCOSE_FIELDS - PHASE3_FIELDS_ADDED - PHASE4_FIELDS_ADDED)
+PHASE23_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE4_FIELDS_ADDED)
 
 # (k) sha256 of json.dumps(_scripted_run(Simulation), sort_keys=True),
 # recorded 2026-08-13 with M5 committed — the last Phase 1 state.
@@ -611,6 +645,175 @@ def test_glucose_phase2_subset_unchanged_by_phase3():
         "The glucose engine's Phase 2 behavior changed. Phase 3 must EXTEND "
         "Phase 2, never rebuild it (standing rule 3). If this change was "
         "ordered by the human, re-record the hash and say so in BUILDLOG.md.")
+
+
+# ================= Phase 4: the closed-loop pump ==========================
+
+# (s) sha256 of json.dumps of the PHASE 2+3 FIELD SUBSET of
+# _scripted_dosing_run's records, recorded 2026-08-14 with M13 committed —
+# the last Phase 3 state.
+GLUCOSE_PHASE23_SUBSET_SHA256 = (
+    "43f5e607bca69944d08cfca97b8e7e9e0890a82aa8a5c54ea90de5d12db37e93")
+
+SEVERE_HYPO_LINE = 54.0
+PUMP_FASTING_BAND = (70.0, 140.0)
+
+
+def _pump():
+    """The glucose engine once it speaks the pump API, or SKIP (M14)."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_pump_enabled"):
+        pytest.skip("set_pump_enabled() doesn't exist yet - it arrives "
+                    "at M14")
+    return GlucoseSimulation
+
+
+def test_pump_holds_the_fasting_line():
+    """(q) Beta cells off + pump on: the artificial loop does what the
+    biological one did - 12 h fasted, no manual help, inside 70-140."""
+    GlucoseSimulation = _pump()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.set_pump_enabled(True)
+    sim.step(12 * 3600)
+    values = [r["glucose"] for r in sim.history()]
+    lo, hi = min(values), max(values)
+    assert PUMP_FASTING_BAND[0] < lo and hi < PUMP_FASTING_BAND[1], (
+        f"Pump-managed fasted type 1 glucose ran [{lo:.1f}, {hi:.1f}] - it "
+        f"must stay inside {PUMP_FASTING_BAND} with no manual dosing")
+
+
+def test_pump_survives_a_meal_alone():
+    """(q) No announcement, no manual bolus: the pump chases a 60 g meal
+    through the subcutaneous lag. Honest spike, safe landing."""
+    GlucoseSimulation = _pump()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.set_pump_enabled(True)
+    sim.step(2 * 3600)                   # let the loop settle first
+    t0 = sim.state()["t"]
+    sim.eat(60, 1.0)
+    sim.step(8 * 3600)
+    after = [r for r in sim.history() if r["t"] > t0]
+    peak = max(r["glucose"] for r in after)
+    assert peak > PUMP_FASTING_BAND[1], (
+        f"A 60 g meal only peaked at {peak:.1f} - the subcutaneous lag "
+        "should make the spike real; something is secretly fast")
+    nadir = min(r["glucose"] for r in after)
+    assert nadir > 65.0, (
+        f"The pump overshot the meal to {nadir:.1f} mg/dL - a sane gain "
+        "must not hypo the patient it manages")
+    peak_t = next(r["t"] for r in after if r["glucose"] == peak)
+    back = next((r["t"] - t0 for r in after
+                 if r["t"] > peak_t
+                 and PUMP_FASTING_BAND[0] <= r["glucose"]
+                 <= PUMP_FASTING_BAND[1]), None)
+    assert back is not None and back <= 4 * 3600, (
+        "The pump must bring a 60 g meal back into 70-140 within 4 h"
+        + ("" if back is None else f" (took {back / 3600:.1f} h)"))
+
+
+def test_blind_pump_overdelivers_into_hypo():
+    """(q) Sensors dead: the pump infuses its set-point rate forever while
+    the sensor-frozen alpha cells can't ramp glucagon. The artificial loop
+    fails at the SAME box as the biological one - and the machine's blind
+    failure mode is over-delivery, a crash below 54."""
+    GlucoseSimulation = _pump()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.set_pump_enabled(True)
+    sim.step(2 * 3600)                   # a working artificial loop...
+    settled = sim.state()["glucose"]
+    assert settled > 70.0, "Pump should be holding the line before blinding"
+    sim.set_sensor_enabled(False)        # ...then the sensor dies
+    t0 = sim.state()["t"]
+    sim.step(3 * 3600)
+    low = min(r["glucose"] for r in sim.history() if r["t"] > t0)
+    assert low < SEVERE_HYPO_LINE, (
+        f"A blind pump only reached {low:.1f} mg/dL in the 3 h after its "
+        "sensor died - it must over-deliver into severe hypoglycemia (no "
+        "secret safety net)")
+
+
+def test_pump_rate_is_a_staircase():
+    """(r) Decisions every 5 sim-minutes, held in between."""
+    GlucoseSimulation = _pump()
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.set_pump_enabled(True)
+    sim.step(1800)
+    sim.eat(60, 1.0)                     # force the rate to move
+    sim.step(2 * 3600)
+    h = [r for r in sim.history() if r["pump_enabled"]]
+    changes = [b["t"] for a, b in zip(h, h[1:])
+               if b["pump_rate"] != a["pump_rate"]]
+    assert len(changes) >= 3, (
+        "The pump rate never moved through a meal - the controller is "
+        "not controlling")
+    gaps = [b - a for a, b in zip(changes, changes[1:])]
+    assert all(g % 300.0 == 0 for g in gaps), (
+        f"Pump rate changed off the 5-minute grid (gaps {sorted(set(gaps))[:5]}) "
+        "- decisions must hold for 300 s (kickoff SS2: a staircase)")
+
+
+def test_pump_off_zeroes_rate_and_restores_manual_basal():
+    """(p) One basal source at a time, and pump_rate reads 0.0 when off."""
+    GlucoseSimulation = _pump()
+    sim = GlucoseSimulation()
+    sim.set_basal_rate(1.0)
+    sim.set_pump_enabled(True)
+    sim.step(1200)
+    assert sim.state()["pump_enabled"] is True
+    assert sim.state()["pump_rate"] > 0.0
+    sim.set_pump_enabled(False)
+    sim.step(600)
+    s = sim.state()
+    assert s["pump_enabled"] is False and s["pump_rate"] == 0.0
+    assert s["basal_rate"] == 1.0, (
+        "Switching the pump off must leave the manual basal setting "
+        "untouched - it was only overridden, not erased")
+
+
+def _scripted_pump_run(GlucoseSimulation):
+    """Exercises the pump on/off mid-run, for the determinism check (t)."""
+    sim = GlucoseSimulation()
+    sim.set_effector_enabled("beta", False)
+    sim.step(1800)
+    sim.set_pump_enabled(True)
+    sim.step(3600)
+    sim.eat(60, 1.0)
+    sim.step(3600)
+    sim.set_pump_enabled(False)
+    sim.set_basal_rate(1.0)
+    sim.step(1800)
+    sim.set_pump_enabled(True)
+    sim.step(1800)
+    return sim.history(), sim.doses()
+
+
+def test_pump_same_inputs_same_history():
+    GlucoseSimulation = _pump()
+    assert (_scripted_pump_run(GlucoseSimulation)
+            == _scripted_pump_run(GlucoseSimulation)), (
+        "Two identical pump runs diverged - the pump must be deterministic "
+        "(kickoff SS2)")
+
+
+def test_glucose_phase23_subset_unchanged_by_phase4():
+    """(s) Pump never enabled -> the Phase 2+3 fields of the Phase 3
+    scripted dosing run are byte-identical to the M13 baseline."""
+    import hashlib
+    import json
+    GlucoseSimulation = _pump()
+    records, _ = _scripted_dosing_run(GlucoseSimulation)
+    subset = [{k: r[k] for k in PHASE23_GLUCOSE_FIELDS} for r in records]
+    digest = hashlib.sha256(
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
+    assert digest == GLUCOSE_PHASE23_SUBSET_SHA256, (
+        "The glucose engine's Phase 2+3 behavior changed. Phase 4 must "
+        "EXTEND, never rebuild (standing rule 3). If this change was "
+        "ordered by the human, re-record the hash and say so in "
+        "BUILDLOG.md.")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
