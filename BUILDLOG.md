@@ -18,13 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M20 — Phase 6 (water/ADH loop) in progress. Specs:
-  phases 1–5 as before, plus `vital_loop_phase6_kickoff.md` (M20–M23).
-  The human chose the water/ADH loop on 2026-08-15.
+- **Committed:** M23 — **Phase 6 complete.** Specs: phases 1–5 as
+  before, plus `vital_loop_phase6_kickoff.md` (M20–M23). All milestones
+  shipped and verified. Three loops now run the same lesson grammar:
+  disturb, break, name.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M23 — Central DI / Nephrogenic DI / Healthy preset rows
-  + banners with the insipidus/mellitus naming story, full three-loop
-  projector pass. Then the Phase 6 checkpoint STOP.
+- **Next up:** awaiting the human's Phase 7 decision. Candidates:
+  scenario challenges, game layer, SIADH + an ADH-override knob,
+  cross-loop coupling (mellitus polyuria).
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,6 +37,27 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M23: The two insipidus presets (Phase 6 complete)
+- Shipped: water Diseases card (Central DI / Nephrogenic DI / Healthy
+  again) as three rows in the Phase 5 preset table; banners carry the
+  loop diagnosis AND the naming story (insipidus = tasteless, mellitus
+  = honey-sweet, both "siphons"). Verified live end to end: Central DI
+  → pituitary gray-dashed, urine flooding 12 mL/min, TWO auto-drinks
+  logged and drawn green (the loop surviving on its behavioral arm),
+  osm sawtooth ~293–294; desert layered ON TOP of DI → still flooding
+  while dying of thirst, dehydrated past 305 in ~65 sim-min, banner
+  still naming the disease; Nephrogenic → ADH on + kidney deaf +
+  complete-diagnosis semantics clearing the desert; Healthy → machinery
+  restored with osm 304.5, and the RESTORED loop drinks its own way
+  home (no teleport — sandbox never cheats).
+- Deferred: SIADH (needs an ADH-override knob) and cross-loop coupling
+  → Phase 7 candidates, per the kickoff.
+- Open bugs: none.
+- Decisions: nothing new — the phase closed on the Phase 5
+  architecture exactly as designed, three table rows and one banner
+  div. That the third loop's disease layer cost ~40 lines is the
+  payoff of names-in-the-table / mechanisms-in-the-engine.
 
 ## 2026-08-15 — M22: Water breakers + the third diagram
 - Shipped: water breaker card (Osmoreceptors / ADH release / Kidney

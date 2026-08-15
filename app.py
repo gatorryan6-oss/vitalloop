@@ -144,6 +144,8 @@ HEALTHY_TEMP = {"fever": 0.0, "exercise": False, "sensor": True,
 HEALTHY_GLUCOSE = {"sensitivity": 1.0, "exercise": False, "sensor": True,
                    "effectors": {"beta": True, "alpha": True, "liver": True},
                    "pump": False, "basal": 0.0}
+HEALTHY_WATER = {"exercise": False, "sensor": True,
+                 "effectors": {"adh": True, "kidney": True, "access": True}}
 
 PRESETS = {
     "temp": {
@@ -187,6 +189,31 @@ PRESETS = {
                       "barely listen (target-tissue resistance). Both "
                       "numbers run high at once.",
             "speed": 16, **{**HEALTHY_GLUCOSE, "sensitivity": 0.05}},
+    },
+    "water": {
+        "healthy": {"label": "Healthy", "banner": None, "speed": 1,
+                    **HEALTHY_WATER},
+        "central_di": {
+            "label": "Central diabetes insipidus",
+            "banner": "no ADH is released — the kidneys never hear "
+                      "'hold water' and pass liters of TASTELESS urine "
+                      "(control-center failure). Survivable while "
+                      "thirst can reach water. Insipidus = tasteless; "
+                      "the glucose loop's mellitus = honey-sweet. Two "
+                      "siphons, two different broken loops.",
+            "speed": 16,
+            **{**HEALTHY_WATER,
+               "effectors": {"adh": False, "kidney": True,
+                             "access": True}}},
+        "nephrogenic_di": {
+            "label": "Nephrogenic diabetes insipidus",
+            "banner": "ADH is released — and the kidneys cannot hear it "
+                      "(deaf-tissue failure, type 2's pattern in a new "
+                      "loop). Hormone high, urine flooding anyway.",
+            "speed": 16,
+            **{**HEALTHY_WATER,
+               "effectors": {"adh": True, "kidney": False,
+                             "access": True}}},
     },
 }
 

@@ -93,11 +93,12 @@ function setText(id, text) {
 /* --- disease banner (M18): the server's preset table is the single
    source; this only renders what /state hands over --- */
 
-const BANNER_IDS = { temp: "tempBanner", glucose: "glucoseBanner" };
+const BANNER_IDS = { temp: "tempBanner", glucose: "glucoseBanner",
+                     water: "waterBanner" };
 
 function updateBanner(loop, preset) {
   const div = document.getElementById(BANNER_IDS[loop]);
-  if (!div) return;              // this loop has no diseases card (yet)
+  if (!div) return;
   if (preset) {
     div.hidden = false;
     div.innerHTML = "";
@@ -108,8 +109,7 @@ function updateBanner(loop, preset) {
   } else {
     div.hidden = true;
   }
-  const page = loop === "temp" ? "#page-temp" : "#page-glucose";
-  document.querySelectorAll(`${page} .preset`).forEach(b =>
+  document.querySelectorAll(`#${PAGE_IDS[loop]} .preset`).forEach(b =>
     b.classList.toggle("active",
       preset ? b.dataset.preset === preset.name : false));
 }
