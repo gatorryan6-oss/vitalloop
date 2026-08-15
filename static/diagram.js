@@ -78,13 +78,24 @@
         fill: MUTED, "font-size": 10, "letter-spacing": "0.12em",
         "font-weight": 600,
       }, g).textContent = role.toUpperCase();
-      lines.forEach((line, i) => {
-        el("text", {
+      const lineNodes = lines.map((line, i) => {
+        const node = el("text", {
           x: x + w / 2, y: y + 34 + i * 16, "text-anchor": "middle",
           fill: INK, "font-size": 13.5, "font-weight": 500,
-        }, g).textContent = line;
+        }, g);
+        node.textContent = line;
+        return node;
       });
-      boxes[id] = { g, rect };
+      boxes[id] = { g, rect, lines: lineNodes };
+    }
+
+    function setLine(id, index, text, emphasize) {
+      /* live text in a box (M19: the fever set point) - only touches
+         the DOM when the string actually changes */
+      const node = boxes[id].lines[index];
+      if (node.textContent !== text) node.textContent = text;
+      node.setAttribute("fill", emphasize ? HOT : INK);
+      node.setAttribute("font-weight", emphasize ? 700 : 500);
     }
 
     function arrow(id, x1, y1, x2, y2, end = "arrow") {
@@ -138,7 +149,8 @@
       }
     }
 
-    return { box, arrow, pathArrow, caption, setGlow, setArrow, setBroken };
+    return { box, arrow, pathArrow, caption, setGlow, setArrow, setBroken,
+             setLine };
   }
 
   /* ================= temperature diagram (M4) ================= */
@@ -200,6 +212,13 @@
     T.setBroken("eff-sweat", !r.sweat_enabled);
     T.setBroken("eff-shiver", !r.shiver_enabled);
     T.setBroken("eff-vaso", !r.vaso_enabled);
+
+    // Fever (M19): the box shows the number the loop is DEFENDING right
+    // now — under fever the label turns hot-red and reads 39.0, and the
+    // class sees the machinery obeying a moved thermostat.
+    const defended = 37.0 + (r.fever_offset || 0);
+    T.setLine("control", 2, `set point ${defended.toFixed(1)} °C`,
+              !!r.fever_offset);
   };
 
   /* ================= glucose diagram (M9) ================= */
@@ -274,10 +293,13 @@
     G.setArrow("a-pump-dose", pumpAct, C_PUMP);
     // Effects downstream of the hormone run on TOTAL insulin — the body
     // can't tell the beta cells' insulin from the syringe's (engine truth,
-    // M11). Each SOURCE box still glows with its own output only.
-    G.setGlow("muscle", r.total_insulin, C_UPTAKE);
+    // M11) — scaled by how well the tissues HEAR it (M19): under type 2
+    // the beta box and its arrows blaze while the muscle box sits dim.
+    // Each SOURCE box still glows with its own output only.
+    const heard = r.total_insulin * (r.insulin_sensitivity ?? 1);
+    G.setGlow("muscle", heard, C_UPTAKE);
     G.setGlow("liver", liverAct, C_LIVER);
-    const respAct = Math.max(r.total_insulin, liverAct);
+    const respAct = Math.max(heard, liverAct);
     G.setGlow("resp", respAct, respAct > 0.02 ? dirSensed : BASELINE);
 
     G.setArrow("a-stim", stimAct, dirTrue);
@@ -285,9 +307,9 @@
     G.setArrow("a-r-alpha", r.glucagon, C_GLUCAGON);
     G.setArrow("a-inject", r.injected_insulin, C_INSULIN);
     G.setArrow("a-beta-muscle", r.insulin, C_INSULIN);
-    G.setArrow("a-beta-liver", r.total_insulin, C_INSULIN);
+    G.setArrow("a-beta-liver", heard, C_INSULIN);
     G.setArrow("a-alpha-liver", r.glucagon, C_GLUCAGON);
-    G.setArrow("a-muscle-resp", r.total_insulin, C_UPTAKE);
+    G.setArrow("a-muscle-resp", heard, C_UPTAKE);
     G.setArrow("a-liver-resp", liverAct, C_LIVER);
     G.setArrow("a-feedback", respAct, dirSensed);
 

@@ -18,16 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M17 — Phase 5 (disease presets) in progress. Specs:
-  phases 1–4 as before, plus `vital_loop_phase5_kickoff.md` (M17–M19).
-  The human chose disease presets on 2026-08-15; the preset-list
-  interview went unanswered, so all five ship as the flagged
-  recommendation (fever, heat stroke, hypothermia, type 1, type 2).
+- **Committed:** M19 — **Phase 5 complete.** Specs: phases 1–4 as
+  before, plus `vital_loop_phase5_kickoff.md` (M17–M19). All milestones
+  shipped and verified. (The preset-list interview went unanswered, so
+  all five diseases shipped as the flagged recommendation — easy to
+  trim if the human wants fewer.)
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M19 — thermo control-center box shows the LIVE defended
-  set point (39.0 under fever), glucose muscle/liver response dims by
-  insulin_sensitivity, full five-disease projector pass. Then the
-  Phase 5 checkpoint STOP.
+- **Next up:** awaiting the human's Phase 6 decision. Candidates:
+  water/ADH loop, scenario challenges, game layer.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -39,6 +37,28 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M19: Diagrams tell the diagnosis (Phase 5 complete)
+- Shipped: diagram kit gained setLine() (live box text); the thermo
+  control-center box now shows the number the loop is DEFENDING — "set
+  point 39.0 °C" in bold hot-red under fever, back to plain 37.0 when
+  it clears; glucose downstream effects (muscle glow, insulin→liver
+  bar, muscle→response arrow) scale by what the tissues HEAR
+  (total_insulin × insulin_sensitivity), so type 2 renders as a blazing
+  beta box shouting into a dim muscle box. Verified live across the
+  whole taxonomy: fever (set-point label flips to red 39.0, banner up),
+  heat stroke (40 °C + exercise + sweat dead), hypothermia (−10 °C +
+  shiver dead), temp Healthy (all restored, room untouched by design),
+  type 1 (beta off, untreated), type 2 (insulin 0.58 with glucose 114 —
+  beta fill 0.34 vs muscle fill 0.13 on screen), glucose Healthy.
+- Deferred: nothing. Phase 6 candidates under Current state.
+- Open bugs: none.
+- Decisions: (1) the a-beta-muscle arrow stays driven by the SIGNAL
+  (endogenous insulin) while the boxes/effects dim by what's heard —
+  bright arrow into a dim box IS the type 2 picture. (2) Verification
+  note, again: read server truth in a separate step after driving the
+  UI — a nested-callback probe raced the healthy POST and briefly
+  looked like a restore bug that didn't exist.
 
 ## 2026-08-15 — M18: The preset buttons + banner
 - Shipped: Diseases card on both pages (Fever / Heat stroke /
