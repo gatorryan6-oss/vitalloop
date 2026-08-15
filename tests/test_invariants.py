@@ -116,6 +116,39 @@ The pump API contract (built at M14):
                                   # pump's rate (not the manual basal)
                                   # feeds the depot; off -> pump_rate 0.0
 
+--- Phase 5 (kickoff: vital_loop_phase5_kickoff.md) adds disease knobs ---
+
+  (u) the thermo record GROWS fever_offset; the glucose record GROWS
+      insulin_sensitivity. Guard (k) switches to hashing the PHASE 1
+      FIELD SUBSET - its pinned VALUE must not change, which proves the
+      amendment is shape-only (the subset serializes today's records
+      identically to the old full-record hash),
+  (v) FEVER IS A MOVED SET POINT, NOT A BROKEN LOOP: set_fever(2.0) in a
+      22 C room settles core at 39 +/- 0.5 and HOLDS it; during onset
+      there is a stretch with core ABOVE 37 and shivering active (chills
+      while already hot); after clearing there is a stretch with core
+      above 37 and sweating active (the sweat of a breaking fever).
+      Simulation.SET_POINT stays 37.0 - fever is runtime state,
+  (w) INSULIN RESISTANCE deafens every insulin action at once: at
+      sensitivity 0.05, a fasted 8 h body parks above 110 mg/dL WITH
+      insulin at 0.5+ and glucagon inappropriately high (0.25+) - both
+      numbers high is the type 2 signature, and the fasting
+      hyperglycemia comes from the unrestrained alpha cells driving the
+      liver (real pathophysiology, emergent); a 60 g meal peaks above
+      250 and is still above 110 three hours later,
+  (x) validation: set_fever takes any float; set_insulin_sensitivity
+      only (0, 1] - 0 would be type 1 by another name, use the beta
+      toggle for that,
+  (y) REGRESSION: offset 0.0 and sensitivity 1.0 leave every pinned
+      hash untouched (fever adds to the error term, sensitivity
+      multiplies actions - both are exact identities at their defaults),
+  (z) determinism includes both new controls exercised mid-run.
+
+The disease-knob API contract (built at M17):
+
+    sim.set_fever(offset_c)               # thermo; 0.0 clears
+    sim.set_insulin_sensitivity(s)        # glucose; s in (0, 1]
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -158,7 +191,13 @@ HISTORY_FIELDS = {
     "shiver_enabled",   # but modeled from M1 so the physiology tests
     "vaso_enabled",     # below can prove they matter)
     "sensor_enabled",
+    # -- grown at M17 (Phase 5 kickoff SS5), a deliberate contract amendment:
+    "fever_offset",     # degC the thermostat is shifted; 0.0 = no fever
 }
+
+# The Phase 1 record shape as frozen at M0 — guard (k) hashes exactly this
+# subset of the scripted run, and its pinned value predates the growth.
+PHASE1_THERMO_FIELDS = sorted(HISTORY_FIELDS - {"fever_offset"})
 # -----------------------------------------------------------------
 
 
@@ -331,17 +370,21 @@ GLUCOSE_FIELDS = {
     # -- grown at M14 (Phase 4 kickoff SS5), the next amendment:
     "pump_enabled",     # closed-loop pump on/off
     "pump_rate",        # U/h the pump algorithm chose this tick; 0.0 off
+    # -- grown at M17 (Phase 5 kickoff SS5):
+    "insulin_sensitivity",  # 0..1, how well tissues hear insulin; 1 healthy
 }
 
 PHASE3_FIELDS_ADDED = {"injected_insulin", "total_insulin", "iob_units",
                        "basal_rate"}
 PHASE4_FIELDS_ADDED = {"pump_enabled", "pump_rate"}
+PHASE5_FIELDS_ADDED = {"insulin_sensitivity"}
 
 # The record shapes as frozen at each phase's end — the stacked regression
 # guards (n) and (s) hash exactly these subsets of their scripted runs.
-PHASE2_GLUCOSE_FIELDS = sorted(
-    GLUCOSE_FIELDS - PHASE3_FIELDS_ADDED - PHASE4_FIELDS_ADDED)
-PHASE23_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE4_FIELDS_ADDED)
+PHASE2_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE3_FIELDS_ADDED
+                               - PHASE4_FIELDS_ADDED - PHASE5_FIELDS_ADDED)
+PHASE23_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE4_FIELDS_ADDED
+                                - PHASE5_FIELDS_ADDED)
 
 # (k) sha256 of json.dumps(_scripted_run(Simulation), sort_keys=True),
 # recorded 2026-08-13 with M5 committed — the last Phase 1 state.
@@ -457,18 +500,24 @@ def test_glucose_state_is_newest_record():
     assert sim.state() == sim.history()[-1]
 
 
-def test_thermo_history_unchanged_by_phase2():
+def test_thermo_history_unchanged_since_phase1():
+    """(k), amended at M17 per invariant (u): hash the PHASE 1 FIELD
+    SUBSET so the record may grow. The pinned VALUE is the one recorded
+    at M5 — subset serialization is byte-identical to the old full-record
+    hash for any run whose values didn't change, so a pass here proves
+    the growth was shape-only."""
     import hashlib
     import json
     from engine.sim import Simulation
+    records = _scripted_run(Simulation)
+    subset = [{k: r[k] for k in PHASE1_THERMO_FIELDS} for r in records]
     digest = hashlib.sha256(
-        json.dumps(_scripted_run(Simulation), sort_keys=True).encode()
-    ).hexdigest()
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
     assert digest == THERMO_HISTORY_SHA256, (
         "The thermoregulation engine's scripted-run history changed. "
-        "Phase 2 must EXTEND Phase 1, never rebuild it (standing rule 3). "
-        "If this change was ordered by the human, re-record the hash and "
-        "say so in BUILDLOG.md.")
+        "Later phases must EXTEND Phase 1, never rebuild it (standing "
+        "rule 3). If this change was ordered by the human, re-record the "
+        "hash and say so in BUILDLOG.md.")
 
 
 # ================= Phase 3: insulin-injection dosing =====================
@@ -814,6 +863,154 @@ def test_glucose_phase23_subset_unchanged_by_phase4():
         "EXTEND, never rebuild (standing rule 3). If this change was "
         "ordered by the human, re-record the hash and say so in "
         "BUILDLOG.md.")
+
+
+# ================= Phase 5: disease knobs =================================
+
+T2_SENSITIVITY = 0.05    # the preset's value; pins below hold at this knob
+
+
+def _fever():
+    """The thermo engine once it speaks set_fever, or SKIP (M17)."""
+    Simulation = _engine()
+    if not hasattr(Simulation, "set_fever"):
+        pytest.skip("set_fever() doesn't exist yet - it arrives at M17")
+    return Simulation
+
+
+def _resistance():
+    """The glucose engine once it has sensitivity, or SKIP (M17)."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_insulin_sensitivity"):
+        pytest.skip("set_insulin_sensitivity() doesn't exist yet - M17")
+    return GlucoseSimulation
+
+
+def test_fever_is_a_moved_set_point_not_a_broken_loop():
+    """(v) The loop still regulates - it just defends the wrong number."""
+    Simulation = _fever()
+    sim = Simulation()
+    sim.step(600)
+    sim.set_fever(2.0)
+    sim.step(2 * 3600)
+    settled = sim.state()["core_temp"]
+    assert abs(settled - 39.0) <= 0.5, (
+        f"With a 2.0 degC fever the loop must defend 39 +/- 0.5; core is "
+        f"{settled:.2f} - either the offset is dead or regulation broke")
+    tail = [r["core_temp"] for r in sim.history()[-1800:]]
+    assert max(tail) - min(tail) < 0.3, (
+        "Fever core temp is not HOLDING - the loop must still regulate, "
+        "just at the shifted number")
+    assert Simulation.SET_POINT == 37.0, (
+        "SET_POINT itself moved - fever must be runtime state, never a "
+        "change to the constant the whole lesson hangs on")
+
+
+def test_fever_onset_brings_chills_while_already_hot():
+    """(v) The freaky fact: shivering at 38 degC, because 38 is BELOW the
+    new set point. This is why fevers start with chills."""
+    Simulation = _fever()
+    sim = Simulation()
+    sim.step(600)
+    sim.set_fever(2.0)
+    sim.step(2 * 3600)
+    onset = [r for r in sim.history() if r["t"] > 600]
+    chills = [r for r in onset
+              if r["core_temp"] > 37.2 and r["shiver"] > 0.05]
+    assert len(chills) > 60, (
+        f"Only {len(chills)} ticks of shivering-while-hot during fever "
+        "onset - the chills must be a visible stretch, not a blip")
+
+
+def test_breaking_a_fever_brings_sweats_while_cooling():
+    """(v) Clear the fever at 39: suddenly 39 is 2 degrees TOO HOT and
+    the loop sweats it back down."""
+    Simulation = _fever()
+    sim = Simulation()
+    sim.step(600)
+    sim.set_fever(2.0)
+    sim.step(2 * 3600)
+    sim.set_fever(0.0)
+    cleared_at = sim.state()["t"]
+    sim.step(2 * 3600)
+    cooling = [r for r in sim.history() if r["t"] > cleared_at]
+    sweats = [r for r in cooling
+              if r["core_temp"] > 37.2 and r["sweat"] > 0.05]
+    assert len(sweats) > 60, (
+        f"Only {len(sweats)} ticks of sweating-while-hot after the fever "
+        "broke - the classic drenched-sheets cooldown must be visible")
+    assert abs(sim.state()["core_temp"] - 37.0) <= 0.5, (
+        "Two hours after the fever broke, core must be back near 37")
+
+
+def test_insulin_resistance_shows_the_type2_signature():
+    """(w) BOTH numbers high at once: glucose above the band WITH insulin
+    pouring out - beta cells shouting at deaf tissues, and the
+    unrestrained alpha cells driving the liver. Contrast with type 1's
+    insulin of exactly zero."""
+    GlucoseSimulation = _resistance()
+    sim = GlucoseSimulation()
+    sim.set_insulin_sensitivity(T2_SENSITIVITY)
+    sim.step(8 * 3600)
+    s = sim.state()
+    assert s["glucose"] > 110.0, (
+        f"Fasted type 2 glucose is {s['glucose']:.0f}; resistance at "
+        f"sensitivity {T2_SENSITIVITY} must park it above 110")
+    assert s["insulin"] >= 0.5, (
+        f"Fasted type 2 insulin is {s['insulin']:.2f}; the signature is "
+        "HIGH insulin with high glucose (compensating beta cells)")
+    assert s["glucagon"] >= 0.25, (
+        f"Fasted type 2 glucagon is {s['glucagon']:.2f}; the deaf "
+        "paracrine brake must leave it inappropriately high")
+    t0 = s["t"]
+    sim.eat(60, 1.0)
+    sim.step(3 * 3600)
+    post = [r for r in sim.history() if r["t"] > t0]
+    peak = max(r["glucose"] for r in post)
+    assert peak > 250.0, (
+        f"A 60 g meal peaked at {peak:.0f} in a type 2 body; deaf "
+        "tissues must let it climb past 250")
+    final = sim.state()["glucose"]
+    assert final > 110.0, (
+        f"3 h after the meal glucose is {final:.0f}; a type 2 body must "
+        "still be above 110 - tall and slow is the shape")
+
+
+def test_disease_knob_validation():
+    """(x)"""
+    GlucoseSimulation = _resistance()
+    sim = GlucoseSimulation()
+    for bad in (0.0, -0.2, 1.5):
+        with pytest.raises(ValueError):
+            sim.set_insulin_sensitivity(bad)
+    sim.set_insulin_sensitivity(1.0)     # healthy is legal
+    Simulation = _fever()
+    Simulation().set_fever(-1.0)         # any float is legal (anesthesia!)
+
+
+def _scripted_disease_run():
+    """Exercises both knobs mid-run, for the determinism check (z)."""
+    Simulation = _fever()
+    GlucoseSimulation = _resistance()
+    t = Simulation()
+    t.step(600)
+    t.set_fever(1.5)
+    t.step(3600)
+    t.set_fever(0.0)
+    t.step(600)
+    g = GlucoseSimulation()
+    g.step(600)
+    g.set_insulin_sensitivity(0.4)
+    g.eat(60, 1.0)
+    g.step(3600)
+    g.set_insulin_sensitivity(1.0)
+    g.step(600)
+    return t.history(), g.history()
+
+
+def test_disease_knobs_are_deterministic():
+    assert _scripted_disease_run() == _scripted_disease_run(), (
+        "Two identical disease-knob runs diverged (kickoff SS2)")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}

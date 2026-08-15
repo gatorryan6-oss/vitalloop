@@ -257,7 +257,10 @@ def control():
 CSV_FIELDS = {
     "temp": ["t", "core_temp", "env_temp", "exercise", "error",
              "sweat", "shiver", "vaso", "sweat_enabled", "shiver_enabled",
-             "vaso_enabled", "sensor_enabled"],
+             "vaso_enabled", "sensor_enabled",
+             # grown at M17 with the Phase 5 disease fields — appended so
+             # earlier spreadsheets keep their column positions
+             "fever_offset"],
     "glucose": ["t", "glucose", "gut_carbs", "exercise", "error",
                 "insulin", "glucagon", "uptake", "liver_flux",
                 "beta_enabled", "alpha_enabled", "liver_enabled",
@@ -267,7 +270,9 @@ CSV_FIELDS = {
                 "injected_insulin", "total_insulin", "iob_units",
                 "basal_rate",
                 # grown at M15 with the Phase 4 pump fields, same rule
-                "pump_enabled", "pump_rate"],
+                "pump_enabled", "pump_rate",
+                # grown at M17 with the Phase 5 disease knob, same rule
+                "insulin_sensitivity"],
 }
 
 

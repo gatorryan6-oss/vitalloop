@@ -116,6 +116,7 @@ class GlucoseSimulation:
         self._pump_enabled = False
         self._pump_rate = 0.0            # U/h the algorithm chose; 0.0 off
         self._pump_ticks_left = 0        # ticks until the next decision
+        self._insulin_sensitivity = 1.0  # how well tissues HEAR insulin
         self._t = 0.0
         self._history = []
         self._append_record(error=0.0, insulin=0.0, glucagon=0.0,
@@ -171,6 +172,18 @@ class GlucoseSimulation:
         wiggles in a curve."""
         return [dict(d) for d in self._doses]
 
+    def set_insulin_sensitivity(self, s):
+        """Insulin resistance (Phase 5, M17): the hormone is made and
+        circulates, but every one of its actions — tissue uptake, liver
+        suppression, the paracrine brake on the alpha cells — lands at
+        fraction `s` strength. 1.0 is healthy; low values are type 2
+        territory. The engine never says 'diabetes'; this is a knob."""
+        s = float(s)
+        if not 0.0 < s <= 1.0:
+            raise ValueError(
+                "insulin sensitivity must be in (0, 1] - 1.0 is healthy")
+        self._insulin_sensitivity = s
+
     def set_pump_enabled(self, on):
         """The closed-loop pump. While it runs, ITS rate feeds the depot
         and the manual basal is overridden (not erased). Switching on
@@ -187,26 +200,29 @@ class GlucoseSimulation:
     def _islets(self, sensed_glucose, injected):
         """The controller: sensed mg/dL in, two opposing hormones out.
         `injected` joins endogenous insulin in ONE total activity — the
-        alpha cells' paracrine brake can't tell the insulins apart."""
+        alpha cells' paracrine brake can't tell the insulins apart.
+        `effective` is what the tissues actually HEAR: total scaled by
+        insulin sensitivity (resistance deafens every action at once)."""
         insulin = _clamp(
             (sensed_glucose - INSULIN_START) / (INSULIN_FULL - INSULIN_START),
             0.0, 1.0)
         if not self._enabled["beta"]:
             insulin = 0.0
         total = _clamp(insulin + injected, 0.0, 1.0)
+        effective = total * self._insulin_sensitivity
         drive = _clamp(
             (GLUCAGON_START - sensed_glucose) / (GLUCAGON_START - GLUCAGON_FULL),
             0.0, 1.0)
-        # Paracrine disinhibition: ACTUAL insulin is the local brake on the
-        # alpha cells; when it vanishes, glucagon tone appears regardless of
-        # what the blood glucose says. This is what makes type 1 stick —
-        # and why an injection visibly re-restrains the liver.
+        # Paracrine disinhibition: EFFECTIVE insulin is the local brake on
+        # the alpha cells; when it vanishes — absent (type 1) or unheard
+        # (type 2) — glucagon tone appears regardless of what the blood
+        # glucose says. This is what makes both diabetes stories stick.
         disinhibition = PARACRINE_GLUCAGON * _clamp(
-            1.0 - total / PARACRINE_INSULIN_SCALE, 0.0, 1.0)
+            1.0 - effective / PARACRINE_INSULIN_SCALE, 0.0, 1.0)
         glucagon = _clamp(drive + disinhibition, 0.0, 1.0)
         if not self._enabled["alpha"]:
             glucagon = 0.0
-        return insulin, glucagon, total
+        return insulin, glucagon, total, effective
 
     def step(self, n=1):
         """Advance n ticks. Each tick: sense -> decide -> act -> record."""
@@ -238,7 +254,8 @@ class GlucoseSimulation:
             sensed = (self._glucose if self._sensor_enabled
                       else self.SET_POINT)
             error = sensed - self.SET_POINT
-            insulin, glucagon, total = self._islets(sensed, injected)
+            insulin, glucagon, total, effective = self._islets(sensed,
+                                                               injected)
 
             # Into the blood: gut absorption + hepatic output.
             absorbed_g = min(self._absorb_rate * minutes, self._gut_carbs)
@@ -247,13 +264,13 @@ class GlucoseSimulation:
             if self._enabled["liver"]:
                 liver_flux = _clamp(
                     LIVER_BASE + GLUCAGON_BOOST * glucagon
-                    - INSULIN_SUPPRESS * total, 0.0, LIVER_MAX)
+                    - INSULIN_SUPPRESS * effective, 0.0, LIVER_MAX)
             else:
                 liver_flux = 0.0
 
             # Out of the blood: tissues, exercise, kidneys.
             uptake = BASAL_UPTAKE * self._glucose / self.SET_POINT
-            uptake += INSULIN_DISPOSAL_MAX * total
+            uptake += INSULIN_DISPOSAL_MAX * effective
             if self._exercise:
                 uptake += EXERCISE_UPTAKE
             if self._glucose > RENAL_THRESHOLD:
@@ -291,6 +308,7 @@ class GlucoseSimulation:
             "basal_rate": self._basal_rate,
             "pump_enabled": self._pump_enabled,
             "pump_rate": self._pump_rate,
+            "insulin_sensitivity": self._insulin_sensitivity,
         })
 
     def history(self):

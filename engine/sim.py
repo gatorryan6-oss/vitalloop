@@ -59,6 +59,7 @@ class Simulation:
         self._exercise = False
         self._enabled = {"sweat": True, "shiver": True, "vaso": True}
         self._sensor_enabled = True
+        self._fever_offset = 0.0
         self._core_temp = self.SET_POINT
         self._t = 0.0
         self._history = []
@@ -81,6 +82,14 @@ class Simulation:
 
     def set_sensor_enabled(self, on):
         self._sensor_enabled = bool(on)
+
+    def set_fever(self, offset_c):
+        """Fever (Phase 5, M17): pyrogens move the thermostat, they don't
+        break it. The hypothalamus defends SET_POINT + offset with the
+        same loop — which is why fever brings chills on the way up
+        (shivering while already hot) and sweats when it breaks. 0 clears
+        it. SET_POINT itself never changes."""
+        self._fever_offset = float(offset_c)
 
     # ------------------------------- the loop -------------------------------
 
@@ -110,7 +119,8 @@ class Simulation:
         for _ in range(int(n)):
             # Sense. A damaged sensor reports "all is well" - the controller
             # then does nothing, which is exactly the failure students see.
-            error = ((self._core_temp - self.SET_POINT)
+            # Fever shifts the number being defended, never the machinery.
+            error = ((self._core_temp - (self.SET_POINT + self._fever_offset))
                      if self._sensor_enabled else 0.0)
             commanded = self._control(error)
             # Act - a disabled effector produces nothing, whatever was asked.
@@ -139,6 +149,7 @@ class Simulation:
             "shiver_enabled": self._enabled["shiver"],
             "vaso_enabled": self._enabled["vaso"],
             "sensor_enabled": self._sensor_enabled,
+            "fever_offset": self._fever_offset,
         })
 
     def history(self):

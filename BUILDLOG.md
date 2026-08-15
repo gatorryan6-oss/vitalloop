@@ -18,13 +18,15 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M16 — **Phase 4 complete.** Specs:
-  `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
-  (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13),
-  `vital_loop_phase4_kickoff.md` (M14–M16). All milestones shipped and
-  verified. Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** awaiting the human's Phase 5 decision. Candidates: named
-  disease presets, water/ADH loop, scenario challenges, game layer.
+- **Committed:** M17 — Phase 5 (disease presets) in progress. Specs:
+  phases 1–4 as before, plus `vital_loop_phase5_kickoff.md` (M17–M19).
+  The human chose disease presets on 2026-08-15; the preset-list
+  interview went unanswered, so all five ship as the flagged
+  recommendation (fever, heat stroke, hypothermia, type 1, type 2).
+  Remote: https://github.com/gatorryan6-oss/vitalloop
+- **Next up:** M18 — Diseases card per loop, `/control preset` action,
+  server preset table (full configuration + speed + banner line),
+  banner strip in the UI.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -36,6 +38,36 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M17: Disease physiology + contract + console demo
+- Shipped: `set_fever(offset)` in the thermo engine (the hypothalamus
+  defends SET_POINT + offset; the constant itself untouched) and
+  `set_insulin_sensitivity(s)` in the glucose engine (one `effective =
+  total × s` scales uptake, liver suppression, AND the paracrine brake).
+  Records grew `fever_offset` / `insulin_sensitivity`; thermo guard (k)
+  converted to Phase-1-subset hashing with its VALUE unchanged
+  (9c83fe86…), proving shape-only growth; glucose subset guards updated
+  the same way, values unchanged. Six new pins: fever holds 39 ± 0.5,
+  chills-while-hot, sweats-while-cooling, the type 2 both-numbers-high
+  signature (fasted 122 mg/dL WITH insulin 0.70 at s = 0.05), knob
+  validation, determinism. `python -m engine.disease_demo`: fever story
+  with close-up rows at the chills and the breaking sweat, then type 1
+  and type 2 side by side (186/0.00 vs 122/0.70 — the insulin column IS
+  the diagnosis). 41 invariants + verify pass. CSV columns pulled
+  forward from M19: verify.py caught /export.csv 500ing on the grown
+  records (DictWriter refuses unknown keys) — the columns belong with
+  the fields, logged here.
+- Deferred: nothing (M19 sheds the CSV item, absorbed here).
+- Open bugs: none.
+- Decisions: (1) Type 2 preset sensitivity is 0.05 — sweep showed the
+  compensating beta cells defeat milder resistance (fasted ~94 at
+  s = 0.3, honest early-T2 compensation), and 0.05 parks fasting at 122
+  with the liver driven by unrestrained glucagon, which is the real
+  pathophysiology, emergent. (2) The spec's fasted->110 guess survived
+  contact with the model only at that knob value; no spec amendment
+  needed. (3) set_fever accepts any float (negative = anesthesia
+  teaching beat someday); sensitivity rejects 0 ("that's type 1 by
+  another name — use the beta toggle").
 
 ## 2026-08-14 — M16: The artificial loop, drawn (Phase 4 complete)
 - Shipped: pump box in the glucose diagram ("INJECTION — MACHINE",
