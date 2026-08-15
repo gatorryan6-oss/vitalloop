@@ -236,6 +236,13 @@ def control():
                 runner.sim.set_effector_enabled("beta", False)
                 runner.sim.set_exercise(False)
                 runner.speed = 16
+            elif name == "pump_day":
+                # Artificial pancreas day (M16): same broken pancreas,
+                # but the machine loop takes the shift. Never resets.
+                runner.sim.set_effector_enabled("beta", False)
+                runner.sim.set_exercise(False)
+                runner.sim.set_pump_enabled(True)
+                runner.speed = 16
             else:
                 return jsonify({"error": f"unknown scenario {name!r}"}), 400
             runner.running = True   # a scenario should visibly happen

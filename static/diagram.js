@@ -30,6 +30,7 @@
   const C_SHIVER = css.getPropertyValue("--series-shiver").trim();
   const C_VASO = css.getPropertyValue("--series-vaso").trim();
   const C_UPTAKE = css.getPropertyValue("--series-uptake").trim();
+  const C_PUMP = css.getPropertyValue("--series-env").trim();
   const C_INSULIN = C_SWEAT;     // match the glucose page's chart legend
   const C_GLUCAGON = C_SHIVER;
   const C_LIVER = C_VASO;
@@ -210,9 +211,16 @@
         ["Islet cells", "(pancreas)"]);
   // Phase 3: the syringe sits OUTSIDE the loop — an exogenous input a
   // person pushes in by hand. Its arrow arcs over the beta cells into the
-  // same effector pathway their insulin would have driven.
-  G.box("syringe", 100, 25, 170, 70, "injection — you",
+  // same effector pathway their insulin would have driven. (Nudged left
+  // at M16 to make room for the pump — Phase 4 owns this corner.)
+  G.box("syringe", 15, 25, 152, 70, "injection — you",
         ["Injected insulin", "bolus & basal"]);
+  // Phase 4: the closed-loop pump is a SECOND, machine-made loop drawn
+  // over the biological one: it READS the stimulus (CGM) and DOSES into
+  // the same muscle pathway. Sensor -> control center -> effector,
+  // rebuilt in silicone — the thesis of the whole unit.
+  G.box("pump", 450, 25, 190, 70, "injection — machine",
+        ["Closed-loop pump", "CGM reads, pump doses"]);
   G.box("beta", 375, 60, 180, 74, "control center",
         ["Beta cells", "release insulin"]);
   G.box("alpha", 375, 260, 180, 74, "control center",
@@ -227,7 +235,11 @@
   G.arrow("a-stim", 155, 197, 183, 197);
   G.arrow("a-r-beta", 335, 180, 373, 105);
   G.arrow("a-r-alpha", 335, 215, 373, 290);
-  G.pathArrow("a-inject", "M 272 57 C 400 15, 560 15, 665 56");
+  // the syringe's arc rides the very top corridor into the muscle path
+  G.pathArrow("a-inject", "M 167 48 C 320 4, 560 4, 665 52");
+  // the machine loop: CGM reading (stimulus -> pump), then the dose
+  G.pathArrow("a-cgm", "M 85 153 C 85 95, 290 62, 448 62");
+  G.arrow("a-pump-dose", 642, 62, 698, 60);
   G.arrow("a-beta-muscle", 555, 97, 608, 97);
   G.arrow("a-alpha-liver", 555, 297, 608, 297);
   // insulin INHIBITS liver release: bar end, not arrowhead
@@ -252,6 +264,14 @@
     G.setGlow("beta", r.insulin, C_INSULIN);
     G.setGlow("alpha", r.glucagon, C_GLUCAGON);
     G.setGlow("syringe", r.injected_insulin, C_INSULIN);
+    // The machine loop: box and dose arrow glow with the pump's chosen
+    // rate; the CGM reading arrow goes DARK when the sensors die — the
+    // artificial loop breaks at the same box the biological one does.
+    const pumpAct = r.pump_enabled ? r.pump_rate / 4.0 : 0;
+    // an enabled pump is never invisible: faint floor glow says "awake"
+    G.setGlow("pump", r.pump_enabled ? Math.max(0.12, pumpAct) : 0, C_PUMP);
+    G.setArrow("a-cgm", r.sensor_enabled ? pumpAct : 0, C_PUMP);
+    G.setArrow("a-pump-dose", pumpAct, C_PUMP);
     // Effects downstream of the hormone run on TOTAL insulin — the body
     // can't tell the beta cells' insulin from the syringe's (engine truth,
     // M11). Each SOURCE box still glows with its own output only.

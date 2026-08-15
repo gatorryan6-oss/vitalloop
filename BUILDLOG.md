@@ -18,15 +18,13 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M14 — Phase 4 (closed-loop pump) in progress. Specs:
+- **Committed:** M16 — **Phase 4 complete.** Specs:
   `vital_loop_v1_kickoff.md` (M0–M5), `vital_loop_phase2_kickoff.md`
   (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13),
-  `vital_loop_phase4_kickoff.md` (M14–M16). The human chose the pump
-  from the Phase 4 candidates on 2026-08-14.
-- **Next up:** M16 — the artificial loop drawn in the glucose diagram
-  (CGM/pump box reading the stimulus, dosing into the insulin path,
-  grayed reading arrow on sensor damage), scenario `pump_day`, full
-  four-phase story pass. Then the Phase 4 checkpoint STOP.
+  `vital_loop_phase4_kickoff.md` (M14–M16). All milestones shipped and
+  verified. Remote: https://github.com/gatorryan6-oss/vitalloop
+- **Next up:** awaiting the human's Phase 5 decision. Candidates: named
+  disease presets, water/ADH loop, scenario challenges, game layer.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -38,6 +36,26 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-14 — M16: The artificial loop, drawn (Phase 4 complete)
+- Shipped: pump box in the glucose diagram ("INJECTION — MACHINE",
+  orange, faint floor-glow whenever enabled so an idle pump never looks
+  off), CGM reading arc from the stimulus box and a dose arrow into the
+  muscle pathway, both ∝ pump rate; the reading arc goes DARK when the
+  sensors die while the pump box keeps glowing — dosing blind. Phase 3's
+  syringe nudged left (sanctioned in the Phase 4 kickoff §0). Scenario
+  "Artificial pancreas day" (beta off + pump on + 16×, never resets).
+  Verified live end to end: one click started the day at 0.80 U/h;
+  sensor kill froze the rate at 0.80 while glucose climbed the paracrine
+  hump to 150 then slid to 53 — SEVERE HYPO chip on, CGM arrow gray,
+  receptor dashed, pump box still lit. Both loops dead at the same box,
+  visible on one screen.
+- Deferred: nothing. Phase 5 candidates under Current state.
+- Open bugs: none.
+- Decisions: blinding an UNSETTLED pump takes the long way to the crash
+  (paracrine disinhibition pushes glucose up before the slide) — the
+  classroom beat is stronger if the sensor dies after the pump has been
+  holding the line a while, which is also how the invariant pins it.
 
 ## 2026-08-14 — M15: Pump controls + charts + CSV
 - Shipped: "Closed-loop pump" toggle + live rate readout on the Insulin
