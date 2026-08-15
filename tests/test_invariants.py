@@ -149,6 +149,41 @@ The disease-knob API contract (built at M17):
     sim.set_fever(offset_c)               # thermo; 0.0 clears
     sim.set_insulin_sensitivity(s)        # glucose; s in (0, 1]
 
+--- Phase 6 (kickoff: vital_loop_phase6_kickoff.md) adds the water loop ---
+
+  (aa) WaterSimulation.SET_POINT == 290.0 mOsm/L, deterministic, frozen
+       record fields, state() == history()[-1], engine purity,
+  (bb) pinned osmoregulation physiology: resting with water access the
+       loop holds 290 +/- 5 for 12 h BY DRINKING (the behavioral
+       effector closes the loop); in the desert (no access + sweating)
+       osmolarity passes 305 in 2.5-5 h with urine pinned near the
+       floor (ADH conserving, and conserving is not enough); central DI
+       (ADH off) WITH access stays under 300 for 6 h while passing more
+       than 3 L of urine (flooding AND surviving); ADH off AND the
+       desert passes 305 within 2.5 h (the layered failure); a 3 L chug
+       drives osmolarity below 280, ADH to ~0, urine above 8 mL/min at
+       under 150 mOsm/L, and back into the band within 6 h; there is a
+       sensed range where ADH > 0.3 while thirst == 0 (conserve first,
+       drink second - the staged thresholds),
+  (cc) the drink event log drinks() records {"t","ml","auto"} with
+       auto-drinks marked, cleared by reset(),
+  (dd) the three existing regression hashes stay untouched - the water
+       loop is a NEW module riding the kit, not a change to any engine.
+
+The water engine API contract (built at M20):
+
+    from engine.water import WaterSimulation
+    sim = WaterSimulation()     # 290 mOsm/L, resting, water within reach
+    WaterSimulation.SET_POINT   # 290.0 (mOsm/L)
+    sim.step(n)                 # advance n fixed 1 s ticks
+    sim.drink(ml)               # water into the gut (manual)
+    sim.eat_salt(mosm)          # solute bolus (salty snack)
+    sim.set_exercise(bool)      # sweating: hypotonic loss
+    sim.set_effector_enabled(name, bool)   # {"adh","kidney","access"}
+    sim.set_sensor_enabled(bool)
+    sim.drinks()                # intake event log, oldest first
+    sim.state() / sim.history() / sim.reset()   # as in the other engines
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -1011,6 +1046,232 @@ def _scripted_disease_run():
 def test_disease_knobs_are_deterministic():
     assert _scripted_disease_run() == _scripted_disease_run(), (
         "Two identical disease-knob runs diverged (kickoff SS2)")
+
+
+# ================= Phase 6: the water/ADH loop ============================
+
+WATER_SET_POINT = 290.0
+WATER_BAND = (285.0, 295.0)
+DEHYDRATION_LINE = 305.0
+OVERHYDRATION_LINE = 280.0
+
+# Kickoff Phase 6 SS5: the frozen water record shape.
+WATER_FIELDS = {
+    "t",                # sim time, seconds
+    "osmolarity",       # mOsm/L - the controlled variable
+    "water_liters",     # L of body water
+    "gut_water",        # mL drunk but not yet absorbed
+    "exercise",         # bool - sweating (hypotonic loss)
+    "error",            # osmolarity - set point, as the receptors see it
+    "adh",              # hormone activity, 0..1
+    "thirst",           # drive to drink, 0..1
+    "urine_rate",       # mL/min leaving via the kidneys
+    "urine_osm",        # mOsm/L of that urine - concentrated vs dilute
+    "adh_enabled",      # the break-the-loop toggles (armed at M22's UI,
+    "kidney_enabled",   # modeled from M20 so the physiology tests below
+    "water_access",     # can prove they matter)
+    "sensor_enabled",
+}
+
+
+def _water():
+    """Import the water engine, or SKIP loudly if not built yet (M20)."""
+    if not (ENGINE_PKG / "water.py").exists():
+        pytest.skip("engine/water.py doesn't exist yet - it arrives at M20")
+    from engine.water import WaterSimulation
+    return WaterSimulation
+
+
+def test_water_set_point_is_290():
+    WaterSimulation = _water()
+    assert WaterSimulation.SET_POINT == WATER_SET_POINT
+
+
+def test_water_records_have_the_frozen_fields():
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.step(5)
+    records = sim.history()
+    assert records, "history() returned nothing after stepping"
+    for r in (records[0], records[-1], sim.state()):
+        assert set(r.keys()) == WATER_FIELDS, (
+            f"Record fields {sorted(r.keys())} != frozen set "
+            f"{sorted(WATER_FIELDS)} (Phase 6 kickoff SS5)")
+
+
+def test_water_state_is_newest_record():
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.step(10)
+    assert sim.state() == sim.history()[-1]
+
+
+def test_resting_body_holds_band_by_drinking():
+    """(bb) The loop closes through BEHAVIOR: nobody touches anything for
+    12 h and osmolarity stays in the band because the body drinks."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.step(12 * 3600)
+    values = [r["osmolarity"] for r in sim.history()]
+    bad = [v for v in values if not
+           (WATER_BAND[0] <= v <= WATER_BAND[1])]
+    assert not bad, (
+        f"Resting osmolarity left 285-295 mOsm/L ({len(bad)} of "
+        f"{len(values)} ticks; worst "
+        f"{max(bad, key=lambda v: abs(v - WATER_SET_POINT)):.1f})")
+    assert any(d["auto"] for d in sim.drinks()), (
+        "12 h passed and the body never auto-drank - the behavioral "
+        "effector must be doing the work, not initial conditions")
+
+
+def _time_to_dehydration(sim, hours):
+    sim.step(int(hours * 3600))
+    return next((r["t"] for r in sim.history()
+                 if r["osmolarity"] > DEHYDRATION_LINE), None)
+
+
+def test_desert_dehydrates_despite_conservation():
+    """(bb) No water + sweating: ADH pins urine near the floor and the
+    body STILL dehydrates - the kidney can only slow losses, never
+    refill. No secret water."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.set_effector_enabled("access", False)
+    sim.set_exercise(True)
+    crossed = _time_to_dehydration(sim, 5)
+    assert crossed is not None and 2.5 * 3600 <= crossed <= 5 * 3600, (
+        "In the desert osmolarity must pass 305 between 2.5 and 5 h"
+        + ("" if crossed is None else f" (crossed at {crossed / 3600:.1f} h)"
+           ) + " - too fast means ADH isn't conserving, too slow means "
+        "the failure isn't visible in a lesson")
+    last_hour = sim.history()[-3600:]
+    assert max(r["urine_rate"] for r in last_hour) <= 1.0, (
+        "Dehydrating urine must be pinned near the floor - ADH at full "
+        "conservation")
+
+
+def test_central_di_compensates_through_the_water_bottle():
+    """(bb) ADH off but water within reach: urine floods AND the person
+    survives, because thirst closes the loop the hormone abandoned."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.set_effector_enabled("adh", False)
+    sim.step(6 * 3600)
+    records = sim.history()
+    assert max(r["osmolarity"] for r in records) < 300.0, (
+        "With water available, central DI must stay under 300 mOsm/L - "
+        "drinking compensates")
+    litres = sum(r["urine_rate"] for r in records) / 60.0 / 1000.0
+    assert litres > 3.0, (
+        f"Central DI passed only {litres:.1f} L of urine in 6 h - the "
+        "polyuria must be dramatic (real DI floods 15+ L/day)")
+
+
+def test_di_plus_desert_is_the_killer_combination():
+    """(bb) Break the hormone AND the behavior: dehydration arrives far
+    faster than with conservation intact."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.set_effector_enabled("adh", False)
+    sim.set_effector_enabled("access", False)
+    sim.set_exercise(True)
+    crossed = _time_to_dehydration(sim, 3)
+    assert crossed is not None and crossed <= 2.5 * 3600, (
+        "DI plus the desert must pass 305 within 2.5 h"
+        + ("" if crossed is None else f" (took {crossed / 3600:.1f} h)"))
+
+
+def test_overhydration_reflex_dumps_dilute_urine():
+    """(bb) A 3 L chug: ADH dies, the kidneys flood dilute, the band is
+    regained within 6 h."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.step(3600)
+    t0 = sim.state()["t"]
+    sim.drink(3000)
+    sim.step(6 * 3600)
+    after = [r for r in sim.history() if r["t"] > t0]
+    nadir = min(r["osmolarity"] for r in after)
+    assert nadir < OVERHYDRATION_LINE, (
+        f"3 L only diluted osmolarity to {nadir:.1f}; the dip below 280 "
+        "is the stimulus the class must see")
+    flooding = [r for r in after
+                if r["urine_rate"] > 8.0 and r["urine_osm"] < 150.0]
+    assert len(flooding) > 600, (
+        f"Only {len(flooding)} ticks of dilute flooding after the chug - "
+        "the kidneys must visibly dump the excess")
+    assert any(r["adh"] < 0.05 for r in after), (
+        "ADH never shut off after the chug")
+    back = next((r["t"] - t0 for r in after
+                 if r["osmolarity"] >= WATER_BAND[0]
+                 and r["t"] - t0 > 1800), None)
+    assert back is not None and back <= 6 * 3600, (
+        "Osmolarity must climb back into the band within 6 h of the chug")
+
+
+def test_conserve_first_drink_second():
+    """(bb) The staged thresholds: a stretch where the hormone is already
+    working while thirst hasn't woken - the cheap response leads."""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.set_effector_enabled("access", False)   # let osmolarity drift up
+    sim.step(6 * 3600)
+    staged = [r for r in sim.history()
+              if r["adh"] > 0.3 and r["thirst"] == 0.0]
+    assert len(staged) > 600, (
+        f"Only {len(staged)} ticks with ADH > 0.3 and thirst still 0 - "
+        "conserve-first/drink-second must be a visible stage, not a blip")
+
+
+def test_drinks_log_is_a_data_product():
+    """(cc)"""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    sim.step(60)
+    sim.drink(500)
+    manual = [d for d in sim.drinks() if not d["auto"]]
+    assert len(manual) == 1 and manual[0]["ml"] == 500.0
+    assert all(set(d.keys()) == {"t", "ml", "auto"} for d in sim.drinks())
+    sim.reset()
+    assert sim.drinks() == [], "reset() must clear the drink log"
+
+
+def test_water_rejects_nonsense():
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    with pytest.raises(ValueError):
+        sim.drink(0)
+    with pytest.raises(ValueError):
+        sim.drink(-100)
+    with pytest.raises(ValueError):
+        sim.eat_salt(-5)
+    with pytest.raises(KeyError):
+        sim.set_effector_enabled("bladder", False)
+
+
+def _scripted_water_run(WaterSimulation):
+    """Exercises every control, for the determinism check."""
+    sim = WaterSimulation()
+    sim.step(1800)
+    sim.eat_salt(300)
+    sim.step(3600)
+    sim.drink(1000)
+    sim.set_exercise(True)
+    sim.step(3600)
+    sim.set_exercise(False)
+    sim.set_effector_enabled("adh", False)
+    sim.step(3600)
+    sim.set_effector_enabled("adh", True)
+    sim.set_effector_enabled("access", False)
+    sim.step(1800)
+    return sim.history(), sim.drinks()
+
+
+def test_water_same_inputs_same_history():
+    WaterSimulation = _water()
+    assert (_scripted_water_run(WaterSimulation)
+            == _scripted_water_run(WaterSimulation)), (
+        "The water sim must be deterministic (kickoff SS2)")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}

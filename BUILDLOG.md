@@ -18,14 +18,13 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M19 — **Phase 5 complete.** Specs: phases 1–4 as
-  before, plus `vital_loop_phase5_kickoff.md` (M17–M19). All milestones
-  shipped and verified. (The preset-list interview went unanswered, so
-  all five diseases shipped as the flagged recommendation — easy to
-  trim if the human wants fewer.)
+- **Committed:** M20 — Phase 6 (water/ADH loop) in progress. Specs:
+  phases 1–5 as before, plus `vital_loop_phase6_kickoff.md` (M20–M23).
+  The human chose the water/ADH loop on 2026-08-15.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** awaiting the human's Phase 6 decision. Candidates:
-  water/ADH loop, scenario challenges, game layer.
+- **Next up:** M21 — third Runner + Water tab, osmolarity / ADH+thirst /
+  urine flow / urine concentration chart panels, drink markers (auto vs
+  manual), drink/salty/exercise/scenario controls, water CSV.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -37,6 +36,34 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M20: Water invariants + engine + console demo (Phase 6 starts)
+- Shipped: water contract in `tests/test_invariants.py` (API, frozen
+  14-field record, pins: holds-band-by-drinking, desert dehydrates
+  despite conservation, central DI compensates through the water
+  bottle, DI+desert killer combination, overhydration reflex, staged
+  conserve-first thresholds, drinks() event log, determinism).
+  `engine/water.py`: two-pool budget (water L + solutes mOsm; the
+  controlled variable is their ratio), quadratic urine-vs-ADH curve
+  (0.5–12 mL/min), constant metabolic waste stream making urine
+  concentration honest (~900 mOsm/L conserving, ~40 flooding),
+  auto-drinking as a deterministic behavioral effector gated by WATER
+  ACCESS. `python -m engine.water_demo`: salty lunch → chug → desert →
+  rescue, with the body drinking by itself 13 times. All 53 invariants
+  + verify pass, all first-run — constants were hand-derived against
+  the pins before writing the contract.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) salty snacks add solutes instantly (salt absorbs fast;
+  no gut-solute pool — logged simplification). (2) Auto-drink rule:
+  thirst ≥ 0.15 AND gut below 100 mL AND access — one deterministic
+  250 mL glass; the trigger sits low enough that the resting sawtooth
+  peaks ~294.4, inside the ±5 band. (3) Urine concentration is derived
+  in the ENGINE (excretion/flow) and can briefly exceed 1200 mOsm/L
+  after a salt bolus — physiologic ceiling not enforced, noted.
+  (4) Sensor damage leaves ADH frozen mid-range and thirst silent →
+  slow dehydration nobody feels (emergent, unpinned — the
+  hypernatremia-unawareness parallel to M6's glucose story).
 
 ## 2026-08-15 — M19: Diagrams tell the diagnosis (Phase 5 complete)
 - Shipped: diagram kit gained setLine() (live box text); the thermo
