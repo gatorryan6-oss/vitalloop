@@ -218,6 +218,20 @@ main {
 }
 .iob-readout { margin-left: auto; }
 
+/* --- the closed-loop pump (M15) --- */
+
+.pump-block { display: flex; align-items: center; gap: 0.9rem; }
+#pumpBtn[aria-pressed="true"] {
+  background: var(--series-env);
+  color: var(--surface);
+  border-color: var(--series-env);
+  font-weight: 600;
+}
+.basal-group .basal:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* --- patient status on the glucose readout (M13) --- */
 
 #r1Value.hypo { color: #d03b3b; }

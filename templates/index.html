@@ -157,6 +157,14 @@
           <button class="basal" data-rate="2" type="button">2.0</button>
         </div>
       </div>
+      <div class="pump-block">
+        <button id="pumpBtn" type="button" aria-pressed="false">
+          Closed-loop pump: off</button>
+        <div class="readout">
+          <span class="readout-label">pump rate</span>
+          <span class="readout-value small" id="pumpRateReadout">&mdash;</span>
+        </div>
+      </div>
       <div class="readout iob-readout">
         <span class="readout-label">insulin on board</span>
         <span class="readout-value small" id="iobReadout">0.0 U</span>
@@ -206,6 +214,13 @@
     </h2>
     <svg id="hormoneChart" viewBox="0 0 960 180" preserveAspectRatio="none"
          aria-label="Insulin and glucagon over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Pump rate (U/h) &mdash; the machine&rsquo;s decisions, every
+      5&nbsp;minutes</h2>
+    <svg id="pumpChart" viewBox="0 0 960 140" preserveAspectRatio="none"
+         aria-label="Closed-loop pump infusion rate over time"></svg>
   </section>
 
   <section class="chart-card">

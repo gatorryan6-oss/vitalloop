@@ -107,9 +107,20 @@ function updateReadouts(now) {
     setText("r2Label", "gut carbs");
     setText("r2Value", now.gut_carbs.toFixed(0) + " g");
     setText("iobReadout", now.iob_units.toFixed(1) + " U");
-    document.querySelectorAll(".basal").forEach(b =>
+    // One basal source at a time: while the pump runs it owns the drip,
+    // so the manual selector locks (the server refuses it anyway).
+    document.querySelectorAll(".basal").forEach(b => {
       b.classList.toggle("active",
-        Number(b.dataset.rate) === now.basal_rate));
+        Number(b.dataset.rate) === now.basal_rate);
+      b.disabled = now.pump_enabled;
+    });
+    lastPump = now.pump_enabled;
+    const pumpBtn = document.getElementById("pumpBtn");
+    pumpBtn.textContent = now.pump_enabled
+      ? "Closed-loop pump: ON" : "Closed-loop pump: off";
+    pumpBtn.setAttribute("aria-pressed", String(now.pump_enabled));
+    setText("pumpRateReadout", now.pump_enabled
+      ? now.pump_rate.toFixed(2) + " U/h" : "—");
     const gex = document.getElementById("gExerciseBtn");
     gex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
     gex.setAttribute("aria-pressed", String(now.exercise));
@@ -229,6 +240,12 @@ document.querySelectorAll(".dose").forEach(b =>
 document.querySelectorAll(".basal").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "basal", value: Number(b.dataset.rate) })));
+
+/* --- the closed-loop pump (M15) --- */
+
+let lastPump = false;
+document.getElementById("pumpBtn").addEventListener("click", () =>
+  control({ action: "pump", value: !lastPump }));
 
 /* --- break the loop (M5) --- */
 
@@ -427,6 +444,7 @@ function showTooltip(ev, r) {
       `${r.total_insulin.toFixed(2)} · IOB ${r.iob_units.toFixed(1)} U<br>` +
       `liver +${r.liver_flux.toFixed(2)} · uptake −${r.uptake.toFixed(2)}<br>` +
       `gut ${r.gut_carbs.toFixed(0)} g` +
+      (r.pump_enabled ? `<br>pump ${r.pump_rate.toFixed(2)} U/h` : "") +
       (r.exercise ? "<br>exercising" : "");
   tooltip.innerHTML = `<strong>t = ${mm}:${ss}</strong><br>` + body;
   tooltip.hidden = false;
@@ -483,6 +501,10 @@ const hormoneChart = makeChart("hormoneChart", {
     { key: "glucagon", color: COLOR_SHIVER, label: "glucagon" },
   ],
 });
+const pumpChart = makeChart("pumpChart", {
+  loop: "glucose", yMin: 0, yMax: 5, yStep: 1,
+  series: [{ key: "pump_rate", color: COLOR_ENV, label: "pump" }],
+});
 const flowChart = makeChart("flowChart", {
   loop: "glucose", yMin: 0, yMax: 8, yStep: 2,
   series: [
@@ -493,7 +515,7 @@ const flowChart = makeChart("flowChart", {
 
 const chartsByLoop = {
   temp: [coreChart, envChart, effectorChart],
-  glucose: [glucoseChart, hormoneChart, flowChart],
+  glucose: [glucoseChart, hormoneChart, pumpChart, flowChart],
 };
 
 function drawAll() {

@@ -23,10 +23,10 @@ Entry format:
   (M6–M10), `vital_loop_phase3_kickoff.md` (M11–M13),
   `vital_loop_phase4_kickoff.md` (M14–M16). The human chose the pump
   from the Phase 4 candidates on 2026-08-14.
-- **Next up:** M15 — pump toggle + rate readout on the Insulin card,
-  basal selector grayed while pump runs (server refuses `basal`), "Pump
-  rate (U/h)" staircase chart panel, CSV +2 columns, `/control` pump
-  action.
+- **Next up:** M16 — the artificial loop drawn in the glucose diagram
+  (CGM/pump box reading the stimulus, dosing into the insulin path,
+  grayed reading arrow on sensor damage), scenario `pump_day`, full
+  four-phase story pass. Then the Phase 4 checkpoint STOP.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -38,6 +38,25 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-14 — M15: Pump controls + charts + CSV
+- Shipped: "Closed-loop pump" toggle + live rate readout on the Insulin
+  card; manual basal selector locks while the pump runs (server refuses
+  `basal` with a plain-English 400, UI disables the buttons); "Pump rate
+  (U/h)" strip-chart panel between hormones and flows; glucose CSV grew
+  `pump_enabled` + `pump_rate` (appended, earlier positions unchanged);
+  `/control` action `pump`, glucose-loop-only. Verified live through the
+  production path: pump on read 0.80 U/h at fasting (the proportional
+  law by hand), a 60 g meal drove the staircase 1.31 → 3.98 U/h and back
+  down to 2.82 as the spike landed; 18 recorded rate changes all sat on
+  the 300 s grid; basal refusal and button lockout both confirmed; CSV
+  header exact with live pump data in the rows.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: pump rate charts in the environment-orange slot (unused on
+  the glucose page) — the pump is machinery, not hormone; the rate
+  readout shows "—" when the pump is off rather than 0.00, so a dead
+  pump never reads as a deliberate zero.
 
 ## 2026-08-14 — M14: Pump contract + engine + console demo (Phase 4 starts)
 - Shipped: Phase 4 contract in `tests/test_invariants.py` (record grows

@@ -196,6 +196,10 @@ def control():
             if not hasattr(runner.sim, "set_basal_rate"):
                 return jsonify({"error": "basal is a glucose-loop "
                                          "action"}), 400
+            if runner.sim.state().get("pump_enabled"):
+                return jsonify({"error": "the pump is running and owns "
+                                         "the basal - switch it off "
+                                         "first"}), 400
             value = cmd.get("value")
             if value not in ALLOWED_BASAL_RATES:
                 return jsonify({"error": f"basal rate must be one of "
@@ -203,6 +207,12 @@ def control():
                                          f"got {value!r}"}), 400
             runner.sim.set_basal_rate(float(value))
             runner.running = True   # so is a basal change
+        elif action == "pump":
+            if not hasattr(runner.sim, "set_pump_enabled"):
+                return jsonify({"error": "pump is a glucose-loop "
+                                         "action"}), 400
+            runner.sim.set_pump_enabled(bool(cmd.get("value")))
+            runner.running = True   # switching the pump should be visible
         elif action == "scenario":
             name = cmd.get("value")
             if hasattr(runner.sim, "set_env_temp"):
@@ -248,7 +258,9 @@ CSV_FIELDS = {
                 # grown at M12 with the Phase 3 dosing fields — appended so
                 # Phase 2 spreadsheets keep their column positions
                 "injected_insulin", "total_insulin", "iob_units",
-                "basal_rate"],
+                "basal_rate",
+                # grown at M15 with the Phase 4 pump fields, same rule
+                "pump_enabled", "pump_rate"],
 }
 
 
