@@ -18,16 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M25 — **Phase 7 complete.** Specs: phases 1–6 as
-  before, plus `vital_loop_phase7_kickoff.md` (M24–M25). All milestones
-  shipped and verified. The full lesson grammar now runs on every loop:
-  disturb → break → name → CHALLENGE.
+- **Committed:** M26 — Phase 8 underway. Specs: phases 1–7 as before,
+  plus `vital_loop_phase8_kickoff.md` (M26–M30). The lesson grammar now
+  runs disturb → break → name → challenge → SCORE.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** Phase 8 DECIDED — the game layer, all four modes, spec
-  written as `vital_loop_phase8_kickoff.md` (M26–M30) and awaiting the
-  human's review before M26 starts. Score+medals, head-to-head,
-  the diagnosis game, crisis mode; projector model kept (per-student
-  devices deferred to Phase 9); results persist in `data/attempts.json`.
+- **Next up:** M27 — head-to-head: a team-label box beside each Start
+  button (stamped onto the attempt, which already carries a `label`
+  field written as null), two finished report cards side by side row for
+  row, and a per-challenge leaderboard reading `data/attempts.json`.
+  Nothing new gets computed — every number is already a data product.
+  Then M28 diagnosis, M29 crisis, M30 the full pass.
   Deferred to Phase 9: per-student sessions, SIADH + ADH-override knob,
   cross-loop coupling (mellitus polyuria), student worksheets.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
@@ -41,6 +41,104 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-16 — M26: Points, medals, and the attempts log (Phase 8 starts)
+- Shipped: Phase 8 contract in `tests/test_invariants.py` (scorer purity
+  + exact arithmetic, out-of-100, integrity zeroing, medal ordering,
+  scoring-key/evaluator-row agreement, attempts round-trip, missing +
+  corrupt file, 500 cap, atomic write, loud write failure, frozen
+  attempt fields, `data/` gitignored). `attempts.py` — load / append /
+  atomic save, corrupt file MOVED ASIDE not overwritten. `score_report()`
+  + a `SCORING` table (the twin of `EVALUATORS`), `medals` on each
+  challenge, `build_attempt` / `log_attempt` / `best_attempt`, the
+  finalize moved INSIDE the runner lock (two polls could otherwise log
+  one run twice), `bests` + `attempts_error` in `/state`. UI: score line
+  + medal chip on the report card, per-row `points / max` so the class
+  sees WHERE the marks went, threshold line on each card, "best so far"
+  strip, and a red line if a score failed to save. All 73 invariants +
+  verify pass; the whole pipeline driven through the production routes
+  for winning AND losing plays on all three challenges. VERIFIED LIVE in
+  the browser on real wall-clock: locked the door, ran the hour at 16x,
+  rested the first half and worked the second (with one short breather
+  when the duty was about to cross the exhaustion cap) — GOAL MET,
+  36.75 °C at the buzzer, 46% duty, **83 / 100 SILVER**, one point short
+  of gold because the breather cost economy marks. Saved as run #1; then
+  the app was KILLED AND RESTARTED and the card still read "Best so far:
+  83 / 100 SILVER — 1 run so far", straight off the disk.
+- Deferred: nothing. Team labels on attempts are M27 as specced (the
+  field exists and is written as null).
+- Open bugs: none.
+- Decisions:
+  1. **SWEEP FIRST, and it overturned two guesses** (kickoff SS2's rule).
+     22 glucose strategies, 17 temperature, 15 water, all built only from
+     moves the UI actually offers (no 5 U bolus — the buttons are 2/4/8).
+     - *t1_shift*: an 8 U play that spent 81 % of the shift in range but
+       bottomed out at **6.5 mg/dL** scored 60 with the first weights —
+       a coma earning a bronze. The hypo line went from 25 to 35 points.
+       Final: 4 U with the meal 91 (gold), 4 U + basal 0.5 87, split
+       2+2 86, 4 U + a +2 h correction 86, 2 U + basal 85, 2 U alone 84,
+       basal-only 72, a late 4 U 66; NOT MET tops out at 65 (basal 0.5),
+       then 54 and 52 for the runs that went hypo, pump-from-cold 39,
+       do-nothing 35. **The worst goal-met run (66) sits one point above
+       the best goal-missed run (65)** — that gap is physiology, not
+       tuning. Medals 85 / 72 / 60.
+     - *cold_store*: nothing could score above 76 and a run ending at
+       35.8 °C (hypothermic, NOT MET) tied the best legal run, because
+       economy points paid out for resting. Fix: grade end-core tightly
+       around the goal (35.5 → 36.2 instead of 34.0 → 36.5) and cut the
+       economy row to 20. Final: 40 % duty 88, 45 % 84, 50 % 80 (MET);
+       35 % 67, 30 % 63, 25 % 43, resting 20 (NOT MET). Medals 84 / 76 /
+       60 — gold is the CHEAP rescue, spending the whole allowance is
+       silver.
+     - *aid_station*: six different drinking rhythms all held the band
+       100 % of the window and all scored exactly 100 — nothing to
+       compare in a head-to-head. Fix: grade the extremes to the SET
+       POINT (285/295) rather than the band edge (280/300). Final:
+       250 mL/15 min 100, /20 min 99, 1 L hourly 98, 1 L/45 min 96,
+       /12 min 94; every over-pour misses a medal (3 L chug 58, 250 mL
+       every 10 min 37). Medals 95 / 80 / 60.
+     - Calibration criterion, verified in the sweep and worth keeping:
+       **gold and silver are unreachable without MET**, and no run that
+       went hypo, hypothermic, or overhydrated earns any medal. Bronze
+       is the honest "you kept them alive but missed" tier.
+  2. **The evaluator's rows grew `key` and `n`** (a slug and the raw
+     number), appended the way the CSV columns have grown since M12. A
+     scorer cannot grade prose — `"88% (target: at least 75%)"` — without
+     a fragile regex, and recomputing from the records would put the
+     physiology-reading in two places. The card on screen is unchanged,
+     the UI ignores both fields, and the scorer stays a separate pure
+     function reading the same rows (kickoff SS5).
+  3. **A `hard` row kind**, one line in the table: going past the
+     exhaustion cap zeroes the run like an integrity failure, because
+     exercising 100 % of the hour isn't a bad play, it's not playing the
+     challenge — that body physically couldn't. The sweep is what
+     surfaced it (working the whole hour was outscoring legal plays).
+  4. Ties on the leaderboard go to the EARLIER run: to take the top spot
+     you have to beat it, not match it.
+  4.5 **A bug in the first attempts.py, caught by testing the failure
+     path instead of assuming it.** `load()` treated ANY read failure as
+     corruption and moved the file aside — so a log merely LOCKED for a
+     moment (antivirus, OneDrive, the teacher having it open in an
+     editor) would have been renamed and the morning's scores lost over
+     a transient error. Now the two cases are separate: content we read
+     and can't parse is junk we've seen, so it's set aside and the class
+     starts fresh; a file we could NOT read is left exactly where it is,
+     `save()` refuses until it can be read, and the UI says so. Pinned
+     as an invariant. Verified end to end by blocking the path with a
+     directory: the run was still scored 38/100, the attempt came back
+     None, `bests` stayed empty, the message reached `/state`, and the
+     real log survived untouched.
+  4.6 `attempts.py` added to verify.py's SERVED_SOURCES — it is app-level
+     code the running server imports, so editing it can leave a live
+     server stale exactly like editing app.py. Proven live: verify.py
+     refused a stale server BY NAME ("started BEFORE the last edit to
+     attempts.py") before `--restart` gave the PASS.
+  5. `pytest.ini` added: this machine's shared pytest scratch dir
+     (`%LOCALAPPDATA%\Temp\pytest-of-gator`, left by another project in
+     July) is ACL-locked and `tmp_path` died with WinError 5 before any
+     test ran. Basetemp now points at the repo's `.pytest_tmp/`, which
+     M0's .gitignore already anticipated. Plain `python -m pytest` still
+     needs no flags.
 
 ## 2026-08-15 — M25: Cold-store lock-in + Aid station (Phase 7 complete)
 - Shipped: two more challenges on the M24 machinery — "Cold-store

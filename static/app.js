@@ -65,6 +65,7 @@ async function poll() {
   applyServerState(j);
   updateBanner(loop, j.preset);
   updateChallenge(loop, j.challenge);
+  updateChallengeBest(loop, j.bests, j.attempts_error);
   updateReadouts(j.now);
   if (loop === "temp" && window.updateDiagram) {
     window.updateDiagram(j.now);
@@ -120,12 +121,31 @@ function updateBanner(loop, preset) {
 
 const CHALLENGE_IDS = {
   temp: { progress: "tempChallengeProgress",
-          report: "tempChallengeReport" },
+          report: "tempChallengeReport",
+          best: "tempChallengeBest", error: "tempAttemptsError" },
   glucose: { progress: "glucoseChallengeProgress",
-             report: "glucoseChallengeReport" },
+             report: "glucoseChallengeReport",
+             best: "glucoseChallengeBest", error: "glucoseAttemptsError" },
   water: { progress: "waterChallengeProgress",
-           report: "waterChallengeReport" },
+           report: "waterChallengeReport",
+           best: "waterChallengeBest", error: "waterAttemptsError" },
 };
+
+/* Points and medals (M26). Every number here was computed server-side by
+   score_report() from the same rows the report card shows — the JS adds
+   nothing, it only draws. */
+
+function medalChip(medal) {
+  const chip = document.createElement("span");
+  chip.className = "medal-chip medal-" + (medal || "none");
+  chip.textContent = medal ? medal.toUpperCase() : "NO MEDAL";
+  return chip;
+}
+
+function fmtWhen(iso) {          // "2026-08-16T15:10:42" -> "08/16 15:10"
+  if (!iso) return "";
+  return iso.slice(5, 7) + "/" + iso.slice(8, 10) + " " + iso.slice(11, 16);
+}
 
 function fmtSimHours(s) {
   const h = Math.floor(s / 3600);
@@ -167,6 +187,24 @@ function updateChallenge(loop, c) {
     ? `${c.title}: GOAL MET`
     : `${c.title}: NOT MET — read the rows, then the charts`;
   report.appendChild(verdict);
+  // The score rides ON TOP of the verdict, never instead of it (M26).
+  const worth = {};
+  if (c.score) {
+    const line = document.createElement("div");
+    line.className = "challenge-score";
+    if (c.score.zeroed) {
+      line.classList.add("score-zeroed");
+      line.textContent = `NO SCORE — ${c.score.zeroed}`;
+    } else {
+      const pts = document.createElement("strong");
+      pts.textContent = `${c.score.points} / ${c.score.max}`;
+      line.appendChild(pts);
+      line.appendChild(document.createTextNode(" "));
+      line.appendChild(medalChip(c.score.medal));
+      for (const b of c.score.rows) worth[b.key] = b;
+    }
+    report.appendChild(line);
+  }
   for (const row of c.report.rows) {
     const div = document.createElement("div");
     div.className = "challenge-row";
@@ -175,10 +213,53 @@ function updateChallenge(loop, c) {
       : row.met ? "row-met" : "row-missed";
     mark.textContent = row.met === null ? "·" : row.met ? "✓" : "✗";
     div.appendChild(mark);
-    div.appendChild(document.createTextNode(
-      ` ${row.label}: ${row.value}`));
+    const text = document.createElement("span");
+    text.className = "row-text";
+    text.textContent = ` ${row.label}: ${row.value}`;
+    div.appendChild(text);
+    const w = worth[row.key];    // where this row's points went
+    if (w) {
+      const pts = document.createElement("span");
+      pts.className = "row-points";
+      pts.textContent = `${w.points} / ${w.max}`;
+      div.appendChild(pts);
+    }
     report.appendChild(div);
   }
+  if (c.attempt) {
+    const saved = document.createElement("div");
+    saved.className = "challenge-saved";
+    saved.textContent = `Saved to the attempts log as run #${c.attempt.id}.`;
+    report.appendChild(saved);
+  }
+}
+
+/* --- best so far + a loud line if a score didn't save (M26) --- */
+
+function updateChallengeBest(loop, bests, error) {
+  const ids = CHALLENGE_IDS[loop];
+  if (!ids) return;
+  const div = document.getElementById(ids.best);
+  const best = bests ? bests[div.dataset.challenge] : null;
+  if (!best) {
+    div.hidden = true;
+  } else {
+    div.hidden = false;
+    div.innerHTML = "";
+    div.appendChild(document.createTextNode("Best so far: "));
+    const pts = document.createElement("strong");
+    pts.textContent = `${best.points} / 100`;
+    div.appendChild(pts);
+    div.appendChild(document.createTextNode(" "));
+    div.appendChild(medalChip(best.medal));
+    const tail = best.label ? ` — ${best.label}, ` : " — ";
+    div.appendChild(document.createTextNode(
+      `${tail}${fmtWhen(best.wall_time)} · ` +
+      `${best.runs} run${best.runs === 1 ? "" : "s"} so far`));
+  }
+  const warn = document.getElementById(ids.error);
+  warn.hidden = !error;
+  if (error) warn.textContent = error;
 }
 
 function updateReadouts(now) {

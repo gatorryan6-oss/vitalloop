@@ -170,6 +170,40 @@ The disease-knob API contract (built at M17):
   (dd) the three existing regression hashes stay untouched - the water
        loop is a NEW module riding the kit, not a change to any engine.
 
+--- Phase 8 (kickoff: vital_loop_phase8_kickoff.md) adds the game layer ---
+
+  (ee) score_report(entry, report) is PURE: fed a crafted report it returns
+       exact points and tier and never mutates its input. Every challenge
+       scores out of 100, and an INTEGRITY row (the "you cheated" lines)
+       zeroes the run rather than docking it,
+  (ff) every challenge carries all three medal thresholds, strictly
+       ordered gold > silver > bronze and all inside 0..max,
+  (gg) the attempts log round-trips (save -> load -> identical), starts
+       EMPTY AND LOUD on a missing or corrupt file instead of crashing,
+       preserves a corrupt file instead of overwriting it, keeps only the
+       most recent 500, writes atomically (no temp file left behind), and
+       RAISES rather than pretending a failed write saved,
+  (hh) an attempt carries the frozen fields from kickoff SS5, and data/ is
+       gitignored - student scores are runtime data, not source.
+
+  The engines are untouched by this entire phase (kickoff SS0: "no engine
+  file changes in this phase at all"); guards (h), (k), (n), (s) above are
+  the proof, and they are not repeated here.
+
+The game-layer API contract (built at M26):
+
+    app.score_report(entry, report)   # -> {"points","max","medal","rows",
+                                      #     "zeroed"}; entry needs
+                                      # "metrics" + "medals"
+    app.SCORING[metrics]              # per-row weights, twin of EVALUATORS
+    app.build_attempt(loop, name, report, score, label=None)
+
+    import attempts
+    attempts.load(path) / attempts.save(records, path)
+    attempts.append(record, path)     # load, append, cap, save atomically
+    attempts.last_warning()           # the loud bit, for the UI to show
+    attempts.MAX_ATTEMPTS == 500
+
 The water engine API contract (built at M20):
 
     from engine.water import WaterSimulation
@@ -1399,6 +1433,297 @@ def test_t1_shift_integrity_line():
     assert integrity["met"] is False, (
         "Switching the pancreas back on mid-shift must be REPORTED")
     assert report["met"] is False
+
+
+# ================= Phase 8: the game layer ================================
+# Still app-level only (kickoff SS0: "no engine file changes in this phase
+# at all") — the regression guards above are what prove the engines idle.
+# The evaluator says WHAT HAPPENED; the scorer says WHAT IT'S WORTH. Two
+# functions, two responsibilities, both pure, both tested on crafted rows.
+
+
+def _game():
+    """Import the game layer, or SKIP loudly if not built yet (M26)."""
+    import app as vital_app
+    if not hasattr(vital_app, "score_report"):
+        pytest.skip("score_report doesn't exist yet - it arrives at M26")
+    return vital_app
+
+
+def _attempts_module():
+    """Import the attempts log, or SKIP loudly if not built yet (M26)."""
+    if not (ROOT / "attempts.py").exists():
+        pytest.skip("attempts.py doesn't exist yet - it arrives at M26")
+    import attempts
+    return attempts
+
+
+# Kickoff SS5: the frozen fields of one attempt. Fields are added by
+# APPENDING (M28's diagnosis answer), never by renaming — a worksheets
+# phase or a gradebook export reads this file, not a screenshot.
+ATTEMPT_FIELDS = {"id", "wall_time", "loop", "mode", "name", "label",
+                  "points", "medal", "met", "rows"}
+
+# One crafted record per evaluator, enough for it to produce every row.
+CRAFTED_RECORD = {
+    "t1_shift": {"t": 0.0, "glucose": 100.0, "beta_enabled": False},
+    "cold_store": {"core_temp": 36.5, "exercise": False, "env_temp": -10.0,
+                   "shiver_enabled": False, "vaso_enabled": False},
+    "aid_station": {"osmolarity": 290.0, "exercise": True,
+                    "sensor_enabled": False, "urine_rate": 3.0},
+}
+
+
+def _crafted_report(vital_app, metrics, fraction, integrity_ok=True):
+    """A report whose every graded row earns exactly `fraction` of its
+    weight — so the expected points are arithmetic, not vibes."""
+    rows = []
+    for key, rule in vital_app.SCORING[metrics].items():
+        if rule.get("integrity"):
+            rows.append({"key": key, "label": key, "value": "crafted",
+                         "met": integrity_ok, "n": None})
+        else:
+            span = rule["full_at"] - rule["zero_at"]
+            rows.append({"key": key, "label": key, "value": "crafted",
+                         "met": True, "n": rule["zero_at"] + fraction * span})
+    return {"met": integrity_ok, "rows": rows}
+
+
+# ------------------------------------------------------ (ee) the scorer
+
+def test_score_report_grades_exactly():
+    """Fed a crafted report, the scorer returns exact points."""
+    vital_app = _game()
+    for loop, entries in vital_app.CHALLENGES.items():
+        for cid, entry in entries.items():
+            metrics = entry["metrics"]
+            full = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, 1.0))
+            assert full["max"] == 100, (
+                f"{loop}/{cid} scores out of {full['max']}, not 100 - every "
+                "challenge is out of 100 so medals mean the same thing "
+                "everywhere")
+            assert full["points"] == pytest.approx(100.0), (
+                f"{loop}/{cid}: a run at every ceiling must score full marks")
+            half = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, 0.5))
+            assert half["points"] == pytest.approx(50.0), (
+                f"{loop}/{cid}: halfway between floor and ceiling on every "
+                f"row must score exactly half, got {half['points']}")
+            none = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, 0.0))
+            assert none["points"] == pytest.approx(0.0), (
+                f"{loop}/{cid}: a run at every floor must score zero")
+            # Overshooting the ceiling earns no bonus; undershooting the
+            # floor is not negative - a graded row is clamped to 0..weight.
+            over = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, 3.0))
+            under = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, -2.0))
+            assert over["points"] == pytest.approx(100.0)
+            assert under["points"] == pytest.approx(0.0)
+
+
+def test_score_report_is_pure():
+    """Same input -> same output, and the report is never mutated."""
+    import json
+    vital_app = _game()
+    entry = vital_app.CHALLENGES["glucose"]["t1_shift"]
+    report = _crafted_report(vital_app, entry["metrics"], 0.7)
+    before = json.dumps(report, sort_keys=True)
+    first = vital_app.score_report(entry, report)
+    second = vital_app.score_report(entry, report)
+    assert first == second, "the scorer is not a pure function"
+    assert json.dumps(report, sort_keys=True) == before, (
+        "score_report() mutated the report it was given - the Phase 7 card "
+        "must come out exactly as the evaluator wrote it")
+
+
+def test_score_report_tiers_on_the_thresholds():
+    """The medal is a lookup on points, boundaries inclusive."""
+    vital_app = _game()
+    entry = {"metrics": "t1_shift",
+             "medals": {"gold": 90, "silver": 75, "bronze": 55}}
+    metrics = entry["metrics"]
+
+    def medal_at(fraction):
+        return vital_app.score_report(
+            entry, _crafted_report(vital_app, metrics, fraction))["medal"]
+
+    assert medal_at(1.0) == "gold"          # 100 points
+    assert medal_at(0.9) == "gold"          # exactly 90 - the line counts
+    assert medal_at(0.8) == "silver"
+    assert medal_at(0.75) == "silver"       # exactly 75
+    assert medal_at(0.6) == "bronze"
+    assert medal_at(0.55) == "bronze"       # exactly 55
+    assert medal_at(0.5) is None            # 50 - no medal, still a report
+
+
+def test_integrity_failure_zeroes_the_run():
+    """Switching a broken part back on isn't a deduction, it's no score."""
+    vital_app = _game()
+    for loop, entries in vital_app.CHALLENGES.items():
+        for cid, entry in entries.items():
+            metrics = entry["metrics"]
+            if not any(r.get("integrity")
+                       for r in vital_app.SCORING[metrics].values()):
+                continue
+            score = vital_app.score_report(
+                entry, _crafted_report(vital_app, metrics, 1.0,
+                                       integrity_ok=False))
+            assert score["points"] == 0 and score["medal"] is None, (
+                f"{loop}/{cid}: a perfect run that cheated must score 0 "
+                f"with no medal, got {score['points']} / {score['medal']}")
+            assert score["zeroed"], (
+                f"{loop}/{cid}: a zeroed run must SAY why, in words")
+
+
+def test_scoring_keys_match_the_rows_the_evaluator_emits():
+    """A typo in a scoring key would silently score zero forever."""
+    vital_app = _game()
+    for metrics, evaluator in vital_app.EVALUATORS.items():
+        report = evaluator([CRAFTED_RECORD[metrics]])
+        keys = [r["key"] for r in report["rows"]]
+        assert len(keys) == len(set(keys)), f"{metrics}: duplicate row keys"
+        unknown = set(vital_app.SCORING[metrics]) - set(keys)
+        assert not unknown, (
+            f"SCORING[{metrics!r}] scores rows {sorted(unknown)} that the "
+            "evaluator never emits")
+
+
+# ------------------------------------------------------- (ff) the medals
+
+def test_every_challenge_has_ordered_medals():
+    vital_app = _game()
+    for loop, entries in vital_app.CHALLENGES.items():
+        for cid, entry in entries.items():
+            medals = entry.get("medals")
+            assert medals and set(medals) == {"gold", "silver", "bronze"}, (
+                f"{loop}/{cid} must carry all three medal thresholds")
+            gold, silver, bronze = (medals["gold"], medals["silver"],
+                                    medals["bronze"])
+            assert gold > silver > bronze, (
+                f"{loop}/{cid} medals must be strictly ordered gold > "
+                f"silver > bronze, got {medals}")
+            top = vital_app.score_report(entry, {"met": True, "rows": []})
+            assert 0 < bronze and gold <= top["max"], (
+                f"{loop}/{cid}: thresholds must sit inside 0..{top['max']}")
+
+
+# -------------------------------------------------- (gg) the attempts log
+
+def _attempt(n=1):
+    return {"id": n, "wall_time": "2026-08-16T09:30:00", "loop": "glucose",
+            "mode": "challenge", "name": "t1_shift", "label": "Team 3",
+            "points": 88.0, "medal": "silver", "met": True,
+            "rows": [{"key": "in_range", "label": "time in range",
+                      "value": "88%", "met": True, "n": 88.0}]}
+
+
+def test_attempts_log_round_trips(tmp_path):
+    attempts = _attempts_module()
+    path = tmp_path / "attempts.json"
+    records = [_attempt(1), _attempt(2)]
+    attempts.save(records, path)
+    assert attempts.load(path) == records, (
+        "an attempt did not survive save -> load unchanged")
+    # Atomic write: temp file + replace, nothing left lying around.
+    assert [p.name for p in tmp_path.iterdir()] == ["attempts.json"]
+
+
+def test_attempts_append_assigns_ids_and_persists(tmp_path):
+    attempts = _attempts_module()
+    path = tmp_path / "attempts.json"
+    first = attempts.append({**_attempt(), "id": None}, path)
+    second = attempts.append({**_attempt(), "id": None}, path)
+    assert first["id"] == 1 and second["id"] == 2, (
+        "append() must assign the next id itself")
+    assert len(attempts.load(path)) == 2
+
+
+def test_attempts_missing_file_starts_empty(tmp_path):
+    attempts = _attempts_module()
+    assert attempts.load(tmp_path / "not_there.json") == [], (
+        "a missing log is a fresh classroom, not a crash")
+
+
+def test_attempts_corrupt_file_is_loud_and_preserved(tmp_path):
+    attempts = _attempts_module()
+    path = tmp_path / "attempts.json"
+    path.write_text("{ half a file, written as the power went ou",
+                    encoding="utf-8")
+    assert attempts.load(path) == [], "a corrupt log must not crash the class"
+    warning = attempts.last_warning()
+    assert warning and "attempts.json" in warning, (
+        "a corrupt log must produce a LOUD plain-English warning naming the "
+        f"file, got {warning!r}")
+    assert list(tmp_path.glob("*.corrupt.json")), (
+        "the corrupt file must be kept aside, not silently overwritten")
+
+
+def test_attempts_unreadable_log_is_never_overwritten(tmp_path):
+    """A log we can't READ may be the morning's scores.
+
+    Junk we can read is safe to set aside; a file we never saw inside is
+    not. Antivirus or an open editor locking it for a moment must not
+    cost a class its results, so the app starts empty, says so, and
+    refuses to write until the file can be read.
+    """
+    attempts = _attempts_module()
+    path = tmp_path / "attempts.json"
+    path.mkdir()                      # exists; unreadable as a file
+    assert attempts.load(path) == [], "an unreadable log must not crash"
+    warning = attempts.last_warning()
+    assert warning and "could not be read" in warning, (
+        f"an unreadable log must say so plainly, got {warning!r}")
+    assert not list(tmp_path.glob("*.corrupt.json")), (
+        "an unreadable file must be left exactly where it is")
+    with pytest.raises(attempts.AttemptsError):
+        attempts.save([_attempt()], path)
+
+
+def test_attempts_log_caps_at_the_most_recent_500(tmp_path):
+    attempts = _attempts_module()
+    assert attempts.MAX_ATTEMPTS == 500
+    path = tmp_path / "attempts.json"
+    attempts.save([{**_attempt(i), "id": i} for i in range(1, 621)], path)
+    kept = attempts.load(path)
+    assert len(kept) == 500, f"the cap kept {len(kept)} attempts"
+    assert kept[0]["id"] == 121 and kept[-1]["id"] == 620, (
+        "the cap must drop the OLDEST attempts, never the newest")
+
+
+def test_attempts_write_failure_raises_instead_of_pretending(tmp_path):
+    attempts = _attempts_module()
+    blocked = tmp_path / "attempts.json"
+    blocked.mkdir()          # a directory where the file should be
+    with pytest.raises(attempts.AttemptsError):
+        attempts.save([_attempt()], blocked)
+
+
+# ------------------------------------------- (hh) the attempt data product
+
+def test_attempt_record_has_the_frozen_fields():
+    import datetime
+    vital_app = _game()
+    entry = vital_app.CHALLENGES["glucose"]["t1_shift"]
+    report = vital_app.EVALUATORS["t1_shift"]([CRAFTED_RECORD["t1_shift"]])
+    score = vital_app.score_report(entry, report)
+    att = vital_app.build_attempt("glucose", "t1_shift", report, score)
+    missing = ATTEMPT_FIELDS - set(att)
+    assert not missing, f"an attempt lacks the frozen fields {sorted(missing)}"
+    assert att["mode"] == "challenge"
+    assert att["rows"] == report["rows"], (
+        "the attempt stores the report card VERBATIM - a later phase reads "
+        "this file, not a screenshot")
+    datetime.datetime.fromisoformat(att["wall_time"])   # raises if not ISO
+
+
+def test_attempts_data_dir_is_gitignored():
+    """Student scores are runtime data, not source (kickoff SS2)."""
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
+    assert "data/" in ignored, (
+        "data/ must be gitignored - a file of team scores is never committed")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}

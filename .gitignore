@@ -5,6 +5,10 @@ venv/
 .pytest_cache/
 .pytest_tmp/
 instance/
+
+# Runtime data, never source: the attempts log is a file of team scores
+# written on the teacher's machine (Phase 8 kickoff SS2).
+data/
 Thumbs.db
 .DS_Store
 

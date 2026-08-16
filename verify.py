@@ -69,10 +69,11 @@ EXTRA_PAGES = [                                # (path, must-contain) — more p
 STARTUP_TIMEOUT_SECONDS = 20
 SERVED_SOURCES = [                             # what the running app loads or
     "app.py",                                  # serves — the ONLY files whose
-    "engine/**/*.py",                          # edits can make a live server
-    "templates/**/*",                          # stale. NOT tests/ or verify.py
-    "static/**/*",                             # (they cannot change what a
-]                                              # page answers).
+    "attempts.py",                             # edits can make a live server
+    "engine/**/*.py",                          # stale. NOT tests/ or verify.py
+    "templates/**/*",                          # (they cannot change what a
+    "static/**/*",                             # page answers).
+]
 # ------------------------------------------------------------
 
 

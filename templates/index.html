@@ -109,6 +109,11 @@
       <button class="challenge-start" data-challenge="cold_store"
               type="button">Lock the door</button>
     </div>
+    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
+      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
+    <div class="challenge-best" id="tempChallengeBest"
+         data-challenge="cold_store" hidden></div>
+    <div class="attempts-error" id="tempAttemptsError" hidden></div>
     <div class="challenge-progress" id="tempChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>
@@ -249,6 +254,11 @@
       <button class="challenge-start" data-challenge="t1_shift"
               type="button">Start the shift</button>
     </div>
+    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
+      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
+    <div class="challenge-best" id="glucoseChallengeBest"
+         data-challenge="t1_shift" hidden></div>
+    <div class="attempts-error" id="glucoseAttemptsError" hidden></div>
     <div class="challenge-progress" id="glucoseChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>
@@ -370,6 +380,11 @@
       <button class="challenge-start" data-challenge="aid_station"
               type="button">Take the table</button>
     </div>
+    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
+      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
+    <div class="challenge-best" id="waterChallengeBest"
+         data-challenge="aid_station" hidden></div>
+    <div class="attempts-error" id="waterAttemptsError" hidden></div>
     <div class="challenge-progress" id="waterChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>
