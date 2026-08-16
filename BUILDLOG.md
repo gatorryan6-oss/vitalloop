@@ -23,9 +23,13 @@ Entry format:
   shipped and verified. The full lesson grammar now runs on every loop:
   disturb → break → name → CHALLENGE.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** awaiting the human's Phase 8 decision. Candidates: game
-  layer proper, SIADH + ADH-override knob, cross-loop coupling
-  (mellitus polyuria), student worksheets keyed to CSV exports.
+- **Next up:** Phase 8 DECIDED — the game layer, all four modes, spec
+  written as `vital_loop_phase8_kickoff.md` (M26–M30) and awaiting the
+  human's review before M26 starts. Score+medals, head-to-head,
+  the diagnosis game, crisis mode; projector model kept (per-student
+  devices deferred to Phase 9); results persist in `data/attempts.json`.
+  Deferred to Phase 9: per-student sessions, SIADH + ADH-override knob,
+  cross-loop coupling (mellitus polyuria), student worksheets.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
