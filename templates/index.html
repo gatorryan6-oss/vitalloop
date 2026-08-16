@@ -221,6 +221,24 @@
   </section>
 
   <section class="chart-card">
+    <h2>Challenge</h2>
+    {% set ch = challenges["glucose"]["t1_shift"] %}
+    <div class="disturb-row">
+      <div class="challenge-text">
+        <strong>{{ ch.title }}.</strong> {{ ch.story }}
+        <em>Goal: {{ ch.goal }}</em>
+      </div>
+      <button class="challenge-start" data-challenge="t1_shift"
+              type="button">Start the shift</button>
+    </div>
+    <div class="challenge-progress" id="glucoseChallengeProgress" hidden>
+      <div class="challenge-bar"><span></span></div>
+      <div class="challenge-clock"></div>
+    </div>
+    <div class="challenge-report" id="glucoseChallengeReport" hidden></div>
+  </section>
+
+  <section class="chart-card">
     <h2>The feedback loop, live</h2>
     <svg id="glucoseDiagram" viewBox="0 0 960 400"
          aria-label="Glucose negative feedback loop: stimulus, islet cells, beta and alpha cells, muscle and liver, response"></svg>

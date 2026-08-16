@@ -18,14 +18,15 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M23 — **Phase 6 complete.** Specs: phases 1–5 as
-  before, plus `vital_loop_phase6_kickoff.md` (M20–M23). All milestones
-  shipped and verified. Three loops now run the same lesson grammar:
-  disturb, break, name.
+- **Committed:** M24 — Phase 7 (scenario challenges) in progress.
+  Specs: phases 1–6 as before, plus `vital_loop_phase7_kickoff.md`
+  (M24–M25). The human chose scenario challenges on 2026-08-15.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** awaiting the human's Phase 7 decision. Candidates:
-  scenario challenges, game layer, SIADH + an ADH-override knob,
-  cross-loop coupling (mellitus polyuria).
+- **Next up:** M25 — Cold-water rescue (temp) + Aid station (water)
+  challenge cards on the shared machinery, full three-loop projector
+  pass, phase close. NOTE: a live type 1 shift (textbook play: 4 U with
+  breakfast) was started during M24 verification and runs at 16× —
+  collect its real completed report during M25.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -37,6 +38,33 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M24: Challenge framework + the type 1 shift
+- Shipped: Phase 7 contract (table shape, evaluator arithmetic on
+  crafted histories, integrity-line firing), `CHALLENGES` table +
+  pure-function `EVALUATORS` + `Runner.challenge` stamp + `/control
+  challenge` + `/state` progress/report block (report computed ONCE,
+  server-side, from the exact stamped window — a data product), the
+  glucose "Type 1 shift" card (story/goal from the table via Jinja —
+  one source), progress bar + clock, report card with ✓/✗/· rows and a
+  MET / NOT MET verdict. Verified: pipeline driven end to end in
+  Python through the production snapshot path (naive 4U+2U-correction
+  play scored 70%/lo 64 — NOT MET, the stacking lesson as a report
+  card); progress and report renderers verified live in the browser;
+  56 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: (1) SPEC AMENDMENT, pre-completion, logged not silent: the
+  kickoff checkpoint guessed the pump would ace the shift; a 12-strategy
+  sweep says a COLD-STARTED pump loses to a human dosing 4-5 U with the
+  meal (60% in range, lo 63), and a "helper bolus" stacks it to lo 23 —
+  this pump has no IOB awareness or meal announcements, so machines
+  need run-in. The inversion is the better lesson; checkpoint text
+  rewritten. (2) Targets validated by the sweep: 4U→88.5%, 5U→91.5%,
+  basal-only→76.9% all MET; 6U (hypo 58), 4U+basal-1.0 (hypo 64),
+  nothing (4.7%), pump-cold all NOT MET. Sloppy fails, textbook wins,
+  exactly the grading a teacher wants. (3) A challenge start clears the
+  disease banner — the challenge card owns the story.
 
 ## 2026-08-15 — M23: The two insipidus presets (Phase 6 complete)
 - Shipped: water Diseases card (Central DI / Nephrogenic DI / Healthy

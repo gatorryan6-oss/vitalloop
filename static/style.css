@@ -265,6 +265,64 @@ main {
 }
 .disease-banner strong { letter-spacing: 0.04em; }
 
+/* --- challenge card (M24) --- */
+
+.challenge-text {
+  flex: 1;
+  min-width: 320px;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.challenge-text strong { color: var(--ink); }
+.challenge-text em { display: block; margin-top: 0.25rem; }
+.challenge-start {
+  font-weight: 600;
+  border-color: var(--series-core);
+  color: var(--series-core);
+}
+.challenge-start:hover {
+  background: var(--series-core);
+  color: var(--surface);
+}
+.challenge-progress { padding: 0.4rem 0 0.5rem; }
+.challenge-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--grid);
+  overflow: hidden;
+}
+.challenge-bar span {
+  display: block;
+  height: 100%;
+  background: var(--series-core);
+  width: 0;
+}
+.challenge-clock {
+  margin-top: 0.35rem;
+  font-size: 0.92rem;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.challenge-report { padding: 0.4rem 0 0.5rem; }
+.challenge-verdict {
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+.verdict-met { background: #e7f6e7; color: #1c6e1c; }
+.verdict-missed { background: #fdeeee; color: #8c1f1f; }
+.challenge-row {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.98rem;
+  font-variant-numeric: tabular-nums;
+}
+.row-met { color: #0ca30c; font-weight: 700; }
+.row-missed { color: #d03b3b; font-weight: 700; }
+.row-info { color: var(--muted); font-weight: 700; }
+
 /* --- patient status on the glucose readout (M13) --- */
 
 #r1Value.hypo { color: #d03b3b; }

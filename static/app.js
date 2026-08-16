@@ -64,6 +64,7 @@ async function poll() {
   if (loop !== activeLoop) return;   // tab switched while we fetched
   applyServerState(j);
   updateBanner(loop, j.preset);
+  updateChallenge(loop, j.challenge);
   updateReadouts(j.now);
   if (loop === "temp" && window.updateDiagram) {
     window.updateDiagram(j.now);
@@ -112,6 +113,68 @@ function updateBanner(loop, preset) {
   document.querySelectorAll(`#${PAGE_IDS[loop]} .preset`).forEach(b =>
     b.classList.toggle("active",
       preset ? b.dataset.preset === preset.name : false));
+}
+
+/* --- challenge card (M24): the server's stamp and report are the only
+   sources; this renders them --- */
+
+const CHALLENGE_IDS = {
+  glucose: { progress: "glucoseChallengeProgress",
+             report: "glucoseChallengeReport" },
+};
+
+function fmtSimHours(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+function updateChallenge(loop, c) {
+  const ids = CHALLENGE_IDS[loop];
+  if (!ids) return;              // this loop has no challenge card (yet)
+  const progress = document.getElementById(ids.progress);
+  const report = document.getElementById(ids.report);
+  if (!c) {
+    progress.hidden = true;
+    report.hidden = true;
+    return;
+  }
+  if (!c.done) {
+    progress.hidden = false;
+    report.hidden = true;
+    const total = c.t_end - c.t_start;
+    const elapsed = Math.min(total,
+      Math.max(0, buffers[loop].lastT - c.t_start));
+    progress.querySelector(".challenge-bar span").style.width =
+      (100 * elapsed / total).toFixed(1) + "%";
+    progress.querySelector(".challenge-clock").textContent =
+      `${fmtSimHours(elapsed)} of ${fmtSimHours(total)} sim-hours — ` +
+      c.goal;
+    return;
+  }
+  progress.hidden = true;
+  if (!c.report) return;
+  report.hidden = false;
+  report.innerHTML = "";
+  const verdict = document.createElement("div");
+  verdict.className = "challenge-verdict "
+    + (c.report.met ? "verdict-met" : "verdict-missed");
+  verdict.textContent = c.report.met
+    ? `${c.title}: GOAL MET`
+    : `${c.title}: NOT MET — read the rows, then the charts`;
+  report.appendChild(verdict);
+  for (const row of c.report.rows) {
+    const div = document.createElement("div");
+    div.className = "challenge-row";
+    const mark = document.createElement("span");
+    mark.className = row.met === null ? "row-info"
+      : row.met ? "row-met" : "row-missed";
+    mark.textContent = row.met === null ? "·" : row.met ? "✓" : "✗";
+    div.appendChild(mark);
+    div.appendChild(document.createTextNode(
+      ` ${row.label}: ${row.value}`));
+    report.appendChild(div);
+  }
 }
 
 function updateReadouts(now) {
@@ -315,6 +378,12 @@ document.getElementById("pumpBtn").addEventListener("click", () =>
 document.querySelectorAll(".preset").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "preset", value: b.dataset.preset })));
+
+/* --- challenges (M24) --- */
+
+document.querySelectorAll(".challenge-start").forEach(b =>
+  b.addEventListener("click", () =>
+    control({ action: "challenge", value: b.dataset.challenge })));
 
 /* --- water disturbances (M21) --- */
 

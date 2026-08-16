@@ -106,9 +106,13 @@ is only done when `python verify.py` and
   Start button, live progress readout, report card with per-target
   MET/NOT MET rows and integrity lines.
   ✅ *Checkpoint: I start the shift, dose through breakfast, and when
-  the window closes a report card tells me how my pancreas-work went —
-  then I run it again letting the pump manage it, and the report
-  improves.*
+  the window closes a report card tells me how my pancreas-work went.
+  (Amended pre-M24 after a strategy sweep, logged in BUILDLOG: the spec
+  first guessed the pump would ace the shift — the model says a
+  cold-started pump with no meal announcement LOSES to a human dosing
+  4–5 U with the meal, and a "helper bolus" stacks and makes the
+  machine worse. That inversion is the better lesson, and the report
+  card is how the class discovers it.)*
 - **M25 — Cold-water rescue + Aid station + the full pass.** The other
   two challenge cards, sharing every part of M24's machinery. Final
   projector pass across all three loops: disturb → break → name →

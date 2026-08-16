@@ -39,6 +39,8 @@ class Runner:
         self.speed = 1
         self.preset = None       # active disease name (app-level; M18) —
                                  # the engine only ever sees mechanisms
+        self.challenge = None    # active challenge stamp (M24):
+                                 # {loop, name, t_start, t_end, report}
         self._last_wall = time.monotonic()
         self._tick_debt = 0.0    # fractional ticks owed, carried between polls
 
@@ -86,6 +88,25 @@ class Runner:
             out["doses"] = doses
         if drinks is not None:
             out["drinks"] = drinks
+        if self.challenge is not None:
+            c = self.challenge
+            entry = CHALLENGES[c["loop"]][c["name"]]
+            done = state["t"] >= c["t_end"]
+            if done and c["report"] is None:
+                # Evaluate ONCE, from the engine's records over exactly
+                # the stamped window — the report is a data product.
+                window = [r for r in records
+                          if c["t_start"] < r["t"] <= c["t_end"]]
+                c["report"] = EVALUATORS[entry["metrics"]](window)
+            out["challenge"] = {
+                "name": c["name"],
+                "title": entry["title"],
+                "goal": entry["goal"],
+                "t_start": c["t_start"],
+                "t_end": c["t_end"],
+                "done": done,
+                "report": c["report"],
+            }
         return out
 
 
@@ -104,7 +125,9 @@ def _runner():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    # The challenge table rides into the page via the template, so the
+    # card's story/goal text has ONE source (kickoff SS5).
+    return render_template("index.html", challenges=CHALLENGES)
 
 
 @app.route("/state")
@@ -218,6 +241,64 @@ PRESETS = {
 }
 
 
+# Scenario challenges (M24): setup + duration + metrics + targets +
+# story, one table (kickoff SS2). The REPORT is a data product: computed
+# here from history records over the challenge window, never in JS — the
+# strip charts and the report card can never disagree. No points, no
+# stars: MET / NOT MET and the numbers.
+
+def _eval_t1_shift(records):
+    """Five hours as the pancreas: time in range, no hypos, no cheating."""
+    n = max(1, len(records))
+    in_range = sum(1 for r in records if 70.0 <= r["glucose"] <= 180.0)
+    pct = 100.0 * in_range / n
+    lo = min((r["glucose"] for r in records), default=0.0)
+    hi = max((r["glucose"] for r in records), default=0.0)
+    beta_stayed_off = all(not r["beta_enabled"] for r in records)
+    rows = [
+        {"label": "time in 70-180 mg/dL",
+         "value": f"{pct:.0f}% (target: at least 75%)", "met": pct >= 75.0},
+        {"label": "lowest glucose",
+         "value": f"{lo:.0f} mg/dL (target: never below 65)",
+         "met": lo >= 65.0},
+        {"label": "highest glucose", "value": f"{hi:.0f} mg/dL",
+         "met": None},
+        {"label": "beta cells stayed off",
+         "value": "yes" if beta_stayed_off
+                  else "no — the pancreas came back on mid-shift",
+         "met": beta_stayed_off},
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
+EVALUATORS = {
+    "t1_shift": _eval_t1_shift,
+}
+
+CHALLENGES = {
+    "glucose": {
+        "t1_shift": {
+            "title": "The type 1 shift",
+            "story": "Your patient's beta cells are gone, breakfast "
+                     "(60 g) just landed, and for the next five "
+                     "sim-hours YOU are the control center. Boluses, "
+                     "basal, juice boxes — even the pump, if you decide "
+                     "a machine should take the shift.",
+            "goal": "At least 75% of the window in 70-180 mg/dL, never "
+                    "below 65. Beta cells stay off.",
+            "duration_s": 5 * 3600,
+            "speed": 16,
+            "setup": {**HEALTHY_GLUCOSE,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True}},
+            "start_actions": [("eat", (60, 1.0))],
+            "metrics": "t1_shift",
+        },
+    },
+}
+
+
 def _apply_preset(sim, p):
     """Push a preset's full configuration through the engine's public
     API. Only keys present in the entry are touched."""
@@ -259,6 +340,7 @@ def control():
             runner.sim.reset()
             runner.running = True
             runner.preset = None
+            runner.challenge = None
         elif action == "speed":
             value = cmd.get("value")
             if value not in (1, 4, 16):
@@ -377,6 +459,24 @@ def control():
                              {"name": name, "label": entry["label"],
                               "banner": entry["banner"]})
             runner.running = True   # a diagnosis should visibly happen
+        elif action == "challenge":
+            loop = request.args.get("loop", "temp")
+            name = cmd.get("value")
+            entry = CHALLENGES.get(loop, {}).get(name)
+            if entry is None:
+                return jsonify({"error": f"unknown challenge {name!r} "
+                                         f"for the {loop} loop"}), 400
+            _apply_preset(runner.sim, entry["setup"])
+            for method, args in entry.get("start_actions", []):
+                getattr(runner.sim, method)(*args)
+            runner.speed = entry["speed"]
+            t0 = runner.sim.state()["t"]
+            runner.challenge = {"loop": loop, "name": name,
+                                "t_start": t0,
+                                "t_end": t0 + entry["duration_s"],
+                                "report": None}
+            runner.preset = None   # the challenge card owns the story now
+            runner.running = True
         elif action == "scenario":
             # Dispatch by LOOP NAME (M21): three loops now share this
             # action, and hasattr-sniffing can't tell glucose from water.

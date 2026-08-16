@@ -1274,6 +1274,81 @@ def test_water_same_inputs_same_history():
         "The water sim must be deterministic (kickoff SS2)")
 
 
+# ================= Phase 7: scenario challenges ===========================
+# App-level machinery only (kickoff SS2): a table, a pure evaluator, no
+# engine changes — the regression hashes above prove the engines idle.
+
+
+def _challenges():
+    """Import the challenge layer, or SKIP loudly if not built (M24)."""
+    import app as vital_app
+    if not hasattr(vital_app, "CHALLENGES"):
+        pytest.skip("CHALLENGES doesn't exist yet - it arrives at M24")
+    return vital_app
+
+
+def test_challenge_table_shape():
+    """(a) Every entry carries what the card, report, and tests need."""
+    vital_app = _challenges()
+    required = {"title", "story", "goal", "duration_s", "speed",
+                "setup", "metrics"}
+    assert vital_app.CHALLENGES, "the challenge table is empty"
+    for loop, entries in vital_app.CHALLENGES.items():
+        assert loop in vital_app.runners, f"unknown loop {loop!r}"
+        for cid, entry in entries.items():
+            missing = required - set(entry)
+            assert not missing, f"{loop}/{cid} lacks {sorted(missing)}"
+            assert entry["duration_s"] > 0, f"{loop}/{cid} duration"
+            assert entry["metrics"] in vital_app.EVALUATORS, (
+                f"{loop}/{cid} names evaluator {entry['metrics']!r} "
+                "which doesn't exist")
+
+
+def _glucose_window(values, beta_off=True):
+    """Craft a minimal challenge-window history for the evaluator."""
+    return [{"t": float(i), "glucose": g, "beta_enabled": not beta_off}
+            for i, g in enumerate(values)]
+
+
+def test_t1_shift_evaluator_arithmetic():
+    """(b) Exact percentages and extremes from a crafted history —
+    test the arithmetic, not the vibes."""
+    vital_app = _challenges()
+    ev = vital_app.EVALUATORS["t1_shift"]
+    # 80 ticks in range at 100, 20 out at 200 -> exactly 80 %
+    report = ev(_glucose_window([100.0] * 80 + [200.0] * 20))
+    rows = {r["label"]: r for r in report["rows"]}
+    in_range = rows["time in 70-180 mg/dL"]
+    assert "80%" in in_range["value"] and in_range["met"] is True
+    assert rows["lowest glucose"]["met"] is True
+    assert report["met"] is True
+    # 60 % in range -> the target line must fail
+    report = ev(_glucose_window([100.0] * 60 + [200.0] * 40))
+    rows = {r["label"]: r for r in report["rows"]}
+    assert rows["time in 70-180 mg/dL"]["met"] is False
+    assert report["met"] is False
+    # one dip to 60 -> the hypo line must fail even at 99 % in range
+    report = ev(_glucose_window([100.0] * 99 + [60.0]))
+    rows = {r["label"]: r for r in report["rows"]}
+    assert rows["lowest glucose"]["met"] is False
+    assert report["met"] is False
+
+
+def test_t1_shift_integrity_line():
+    """(c) Flip the guarded flag mid-window and the report says so."""
+    vital_app = _challenges()
+    ev = vital_app.EVALUATORS["t1_shift"]
+    window = _glucose_window([100.0] * 50)
+    window += [{"t": 50.0 + i, "glucose": 100.0, "beta_enabled": True}
+               for i in range(50)]
+    report = ev(window)
+    rows = {r["label"]: r for r in report["rows"]}
+    integrity = rows["beta cells stayed off"]
+    assert integrity["met"] is False, (
+        "Switching the pancreas back on mid-shift must be REPORTED")
+    assert report["met"] is False
+
+
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
 
 
