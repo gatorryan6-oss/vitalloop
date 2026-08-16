@@ -99,6 +99,24 @@
   </section>
 
   <section class="chart-card">
+    <h2>Challenge</h2>
+    {% set ch = challenges["temp"]["cold_store"] %}
+    <div class="disturb-row">
+      <div class="challenge-text">
+        <strong>{{ ch.title }}.</strong> {{ ch.story }}
+        <em>Goal: {{ ch.goal }}</em>
+      </div>
+      <button class="challenge-start" data-challenge="cold_store"
+              type="button">Lock the door</button>
+    </div>
+    <div class="challenge-progress" id="tempChallengeProgress" hidden>
+      <div class="challenge-bar"><span></span></div>
+      <div class="challenge-clock"></div>
+    </div>
+    <div class="challenge-report" id="tempChallengeReport" hidden></div>
+  </section>
+
+  <section class="chart-card">
     <h2>The feedback loop, live</h2>
     <svg id="loopDiagram" viewBox="0 0 960 340"
          aria-label="Negative feedback loop diagram: stimulus, receptor, control center, effectors, response"></svg>
@@ -339,6 +357,24 @@
       <a class="export-link" href="/export.csv?loop=water" download>
         Export run (CSV)</a>
     </div>
+  </section>
+
+  <section class="chart-card">
+    <h2>Challenge</h2>
+    {% set ch = challenges["water"]["aid_station"] %}
+    <div class="disturb-row">
+      <div class="challenge-text">
+        <strong>{{ ch.title }}.</strong> {{ ch.story }}
+        <em>Goal: {{ ch.goal }}</em>
+      </div>
+      <button class="challenge-start" data-challenge="aid_station"
+              type="button">Take the table</button>
+    </div>
+    <div class="challenge-progress" id="waterChallengeProgress" hidden>
+      <div class="challenge-bar"><span></span></div>
+      <div class="challenge-clock"></div>
+    </div>
+    <div class="challenge-report" id="waterChallengeReport" hidden></div>
   </section>
 
   <section class="chart-card">

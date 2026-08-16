@@ -119,8 +119,12 @@ function updateBanner(loop, preset) {
    sources; this renders them --- */
 
 const CHALLENGE_IDS = {
+  temp: { progress: "tempChallengeProgress",
+          report: "tempChallengeReport" },
   glucose: { progress: "glucoseChallengeProgress",
              report: "glucoseChallengeReport" },
+  water: { progress: "waterChallengeProgress",
+           report: "waterChallengeReport" },
 };
 
 function fmtSimHours(s) {

@@ -272,11 +272,98 @@ def _eval_t1_shift(records):
             "rows": rows}
 
 
+def _eval_cold_store(records):
+    """An hour locked in at -10 with severe-hypothermia physiology:
+    the rescue is a heat BUDGET, and exhaustion caps the spend."""
+    n = max(1, len(records))
+    end = records[-1]["core_temp"] if records else 0.0
+    lo = min((r["core_temp"] for r in records), default=0.0)
+    duty = 100.0 * sum(1 for r in records if r["exercise"]) / n
+    door_shut = max((r["env_temp"] for r in records), default=-10.0) <= -5.0
+    stayed_failed = all(not r["shiver_enabled"] and not r["vaso_enabled"]
+                        for r in records)
+    rows = [
+        {"label": "core at the hour's end",
+         "value": f"{end:.2f} °C (target: at least 36.0)",
+         "met": end >= 36.0},
+        {"label": "lowest core",
+         "value": f"{lo:.2f} °C (target: never below 35.0)",
+         "met": lo >= 35.0},
+        {"label": "exercise used",
+         "value": f"{duty:.0f}% of the hour (exhaustion cap: 50%)",
+         "met": duty <= 50.0},
+        {"label": "the door stayed shut (room at -5 °C or colder)",
+         "value": "yes" if door_shut else "no — the room was warmed",
+         "met": door_shut},
+        {"label": "shivering and vessel control stayed failed",
+         "value": "yes" if stayed_failed else "no — a broken part came "
+                  "back mid-rescue", "met": stayed_failed},
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
+def _eval_aid_station(records):
+    """Four hours as someone else's osmoreceptor: read the charts,
+    pour the drinks, don't commit the aid station's classic kill."""
+    n = max(1, len(records))
+    inside = sum(1 for r in records if 280.0 <= r["osmolarity"] <= 300.0)
+    pct = 100.0 * inside / n
+    lo = min((r["osmolarity"] for r in records), default=0.0)
+    hi = max((r["osmolarity"] for r in records), default=0.0)
+    kept_moving = all(r["exercise"] for r in records)
+    sensor_dead = all(not r["sensor_enabled"] for r in records)
+    urine_l = sum(r["urine_rate"] for r in records) / 60.0 / 1000.0
+    rows = [
+        {"label": "time inside 280-300 mOsm/L",
+         "value": f"{pct:.0f}% (target: at least 90%)", "met": pct >= 90.0},
+        {"label": "lowest osmolarity",
+         "value": f"{lo:.1f} mOsm/L (target: never below 275 - "
+                  "overhydration kills at aid stations)", "met": lo >= 275.0},
+        {"label": "highest osmolarity",
+         "value": f"{hi:.1f} mOsm/L (target: never above 305)",
+         "met": hi <= 305.0},
+        {"label": "urine passed", "value": f"{urine_l:.1f} L", "met": None},
+        {"label": "the runner kept moving",
+         "value": "yes" if kept_moving else "no — exercise was switched "
+                  "off", "met": kept_moving},
+        {"label": "the osmoreceptors stayed dead",
+         "value": "yes" if sensor_dead else "no — the sensor came back",
+         "met": sensor_dead},
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
 EVALUATORS = {
     "t1_shift": _eval_t1_shift,
+    "cold_store": _eval_cold_store,
+    "aid_station": _eval_aid_station,
 }
 
 CHALLENGES = {
+    "temp": {
+        "cold_store": {
+            "title": "Cold-store lock-in",
+            "story": "The door shut behind you: -10 °C for one sim-hour. "
+                     "This body is past shivering and its vessel "
+                     "response has failed (severe hypothermia really "
+                     "does both). Movement is the only heat you have — "
+                     "and exhaustion caps exercise at half the hour. "
+                     "Spend it well.",
+            "goal": "Core at 36.0 °C or better when the door opens, "
+                    "never below 35.0, exercise at most 50% of the "
+                    "hour. The room stays at -5 °C or colder.",
+            "duration_s": 3600,
+            "speed": 4,
+            "setup": {"fever": 0.0, "exercise": False, "sensor": True,
+                      "env": -10.0,
+                      "effectors": {"sweat": True, "shiver": False,
+                                    "vaso": False}},
+            "start_actions": [],
+            "metrics": "cold_store",
+        },
+    },
     "glucose": {
         "t1_shift": {
             "title": "The type 1 shift",
@@ -294,6 +381,28 @@ CHALLENGES = {
                                     "liver": True}},
             "start_actions": [("eat", (60, 1.0))],
             "metrics": "t1_shift",
+        },
+    },
+    "water": {
+        "aid_station": {
+            "title": "Aid station",
+            "story": "Your runner's thirst has gone silent (hard "
+                     "exercise really does mute it) and their ADH sits "
+                     "frozen mid-range — the charts are the only "
+                     "osmoreceptor left, and you are reading them. Four "
+                     "sim-hours of sweating: pour the drinks at the "
+                     "right rhythm. Remember the aid station's classic "
+                     "kill is too MUCH water.",
+            "goal": "At least 90% of the window inside 280-300 mOsm/L, "
+                    "never below 275 or above 305. The runner keeps "
+                    "moving; the sensor stays dead.",
+            "duration_s": 4 * 3600,
+            "speed": 16,
+            "setup": {"exercise": True, "sensor": False,
+                      "effectors": {"adh": True, "kidney": True,
+                                    "access": True}},
+            "start_actions": [],
+            "metrics": "aid_station",
         },
     },
 }

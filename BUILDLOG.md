@@ -18,15 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M24 — Phase 7 (scenario challenges) in progress.
-  Specs: phases 1–6 as before, plus `vital_loop_phase7_kickoff.md`
-  (M24–M25). The human chose scenario challenges on 2026-08-15.
+- **Committed:** M25 — **Phase 7 complete.** Specs: phases 1–6 as
+  before, plus `vital_loop_phase7_kickoff.md` (M24–M25). All milestones
+  shipped and verified. The full lesson grammar now runs on every loop:
+  disturb → break → name → CHALLENGE.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M25 — Cold-water rescue (temp) + Aid station (water)
-  challenge cards on the shared machinery, full three-loop projector
-  pass, phase close. NOTE: a live type 1 shift (textbook play: 4 U with
-  breakfast) was started during M24 verification and runs at 16× —
-  collect its real completed report during M25.
+- **Next up:** awaiting the human's Phase 8 decision. Candidates: game
+  layer proper, SIADH + ADH-override knob, cross-loop coupling
+  (mellitus polyuria), student worksheets keyed to CSV exports.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -38,6 +37,28 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-15 — M25: Cold-store lock-in + Aid station (Phase 7 complete)
+- Shipped: two more challenges on the M24 machinery — "Cold-store
+  lock-in" (temp: −10 °C, shivering AND vessel control failed — severe
+  hypothermia does both — exercise is the only heat and exhaustion
+  caps it at 50% of the hour; integrity lines catch warming the room
+  or re-enabling parts) and "Aid station" (water: osmoreceptors dead,
+  runner sweating for 4 h, the class IS the receptor; the overhydration
+  kill is a graded line). Both calibrated by sweep BEFORE pinning:
+  cold store — resting ends 34.1 (fail), full-hour sprint blows the
+  cap, 38–50% bursts win, wait-20-then-work ends 36.01 (knife-edge
+  win); aid station — never-drink peaks 318 (fail), steady rhythms
+  score 100%, the 3 L chug scores 76.9% (fail). Both verified through
+  the production pipeline (winning and losing plays each) and armed
+  live in the browser. ALSO: M24's live type 1 shift completed during
+  this milestone through real wall-clock and real UI clicks — GOAL
+  MET, 87% in range, lowest 76, beta stayed off; matches the sweep's
+  88.5% prediction for the textbook play. 58 invariants + verify pass.
+- Deferred: nothing. Phase 8 candidates under Current state.
+- Open bugs: none.
+- Decisions: evaluator info-rows (urine passed, highest glucose) carry
+  no met flag on purpose — debrief numbers, not judgments.
 
 ## 2026-08-15 — M24: Challenge framework + the type 1 shift
 - Shipped: Phase 7 contract (table shape, evaluator arithmetic on

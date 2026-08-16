@@ -1334,6 +1334,58 @@ def test_t1_shift_evaluator_arithmetic():
     assert report["met"] is False
 
 
+def test_cold_store_evaluator_arithmetic():
+    """(b) The heat-budget challenge grades ends, floors, and the
+    exhaustion cap exactly."""
+    vital_app = _challenges()
+    ev = vital_app.EVALUATORS["cold_store"]
+
+    def rec(core, ex):
+        return {"core_temp": core, "exercise": ex, "env_temp": -10.0,
+                "shiver_enabled": False, "vaso_enabled": False}
+
+    # 40% duty, ends warm, floor safe -> met
+    window = [rec(36.5, i % 5 < 2) for i in range(100)]
+    report = ev(window)
+    assert report["met"] is True
+    # 60% duty -> the exhaustion cap fails even though the body is warm
+    window = [rec(36.5, i % 5 < 3) for i in range(100)]
+    report = ev(window)
+    rows = {r["label"]: r for r in report["rows"]}
+    assert rows["exercise used"]["met"] is False
+    assert report["met"] is False
+    # warming the room -> the door line fails
+    window = [rec(36.5, False) for _ in range(99)]
+    window.append({**rec(36.5, False), "env_temp": 22.0})
+    rows = {r["label"]: r for r in ev(window)["rows"]}
+    assert rows["the door stayed shut (room at -5 °C or colder)"][
+        "met"] is False
+
+
+def test_aid_station_evaluator_arithmetic():
+    """(b) The osmoreceptor-replacement challenge grades range time and
+    the overhydration kill exactly."""
+    vital_app = _challenges()
+    ev = vital_app.EVALUATORS["aid_station"]
+
+    def rec(osm):
+        return {"osmolarity": osm, "exercise": True,
+                "sensor_enabled": False, "urine_rate": 3.0}
+
+    # 95% inside -> met
+    report = ev([rec(290.0)] * 95 + [rec(302.0)] * 5)
+    assert report["met"] is True
+    # 85% inside -> the range target fails
+    report = ev([rec(290.0)] * 85 + [rec(302.0)] * 15)
+    rows = {r["label"]: r for r in report["rows"]}
+    assert rows["time inside 280-300 mOsm/L"]["met"] is False
+    # one dip to 273 -> the overhydration line fails at 99% in range
+    report = ev([rec(290.0)] * 99 + [rec(273.0)])
+    rows = {r["label"]: r for r in report["rows"]}
+    assert rows["lowest osmolarity"]["met"] is False
+    assert report["met"] is False
+
+
 def test_t1_shift_integrity_line():
     """(c) Flip the guarded flag mid-window and the report says so."""
     vital_app = _challenges()
