@@ -74,6 +74,7 @@ class WaterSimulation:
         self._exercise = False
         self._enabled = {"adh": True, "kidney": True, "access": True}
         self._sensor_enabled = True
+        self._adh_override = None        # SIADH knob (M31), None = healthy
         self._drinks = []                # {"t", "ml", "auto"}
         self._t = 0.0
         self._history = []
@@ -112,6 +113,24 @@ class WaterSimulation:
     def set_sensor_enabled(self, on):
         self._sensor_enabled = bool(on)
 
+    def set_adh_override(self, level):
+        """SIADH (M31): ADH held at `level` no matter what the
+        osmoreceptors say — secretion inappropriate to the stimulus,
+        which IS the disease. None restores normal control. The source
+        is ectopic (a tumor, a drug effect), so it bypasses the
+        pituitary toggle too."""
+        if level is None:
+            self._adh_override = None
+            return
+        level = float(level)
+        if level <= 0.0:
+            raise ValueError(
+                "an override of 0 isn't SIADH — no hormone at all is "
+                "central DI; use the ADH toggle for that")
+        if level > 1.0:
+            raise ValueError("adh override is a 0-1 activity level")
+        self._adh_override = level
+
     def drinks(self):
         """The intake event log, oldest first — a data product, like
         doses(). Auto-drinks are marked: the class can SEE the loop
@@ -133,6 +152,9 @@ class WaterSimulation:
                          0.0, 1.0)
             if not self._enabled["adh"]:
                 adh = 0.0                # central DI: no hormone released
+            if self._adh_override is not None:
+                adh = self._adh_override   # SIADH: the level ignores both
+                                           # the receptors and the pituitary
             thirst = _clamp(
                 (sensed - THIRST_START) / (THIRST_FULL - THIRST_START),
                 0.0, 1.0)
@@ -192,6 +214,7 @@ class WaterSimulation:
             "kidney_enabled": self._enabled["kidney"],
             "water_access": self._enabled["access"],
             "sensor_enabled": self._sensor_enabled,
+            "adh_override": self._adh_override,
         })
 
     def history(self):

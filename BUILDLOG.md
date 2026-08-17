@@ -18,27 +18,17 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M30 — **PHASE 8 COMPLETE** (eight phases done: M0–M30).
-  Specs: `vital_loop_v1_kickoff.md` plus phases 2–8. The lesson grammar
-  is whole: disturb → break → name → challenge → score → race →
-  diagnose → survive, on all three loops.
+- **Committed:** M31 — Phase 9 underway. Spec:
+  `vital_loop_phase9_kickoff.md` (scope picked 2026-08-17: per-student
+  sessions + SIADH + student worksheets; **cross-loop coupling deferred
+  to Phase 10**). The four kickoff-interview questions went unanswered,
+  so the spec carries flagged ASSUMPTIONS, changeable before their
+  milestones: LAN + cookie sessions (no join screen), leaderboard-only
+  (no teacher dashboard), worksheets as printable app routes (no docx),
+  verbal class direction (no mode gating).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** STOPPED for confirmation before Phase 9. Candidates,
-  as decided in the Phase 8 kickoff:
-  1. **Per-student sessions** — one Runner per browser session instead
-     of three global ones, so a class can play on their own devices.
-     Phase 8 was built not to close this door: game state hangs off the
-     `Runner` and the attempts log is keyed by label, so it is a
-     plumbing change, not a rewrite.
-  2. **SIADH + an ADH-override knob** — the water loop's missing
-     disease, deferred from M23 because it needs a new engine knob.
-  3. **Cross-loop coupling** — mellitus polyuria: the glucose loop
-     finally talking to the water loop (renal spill above 180 mg/dL
-     dragging water with it). The first time two loops meet.
-  4. **Student worksheets** keyed to the CSV and attempts exports.
-  Phase 9 would be the first phase since Phase 6 to touch `engine/`
-  (candidates 2 and 3), so the regression guards (h)/(k)/(n)/(s) matter
-  again — read them before changing a constant.
+- **Next up:** M32 — SIADH preset row + banner + the fifth blind water
+  case. Then M33 sessions, M34 LAN, M35 worksheets, M36 lab pass.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -50,6 +40,43 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M31: SIADH — contract + engine knob + demo (Phase 9 starts)
+- Shipped: Phase 9 kickoff (`vital_loop_phase9_kickoff.md`) and the M31
+  contract in `tests/test_invariants.py` (7 tests: the PHASE 6 SUBSET
+  HASH recorded from M30-committed code BEFORE the engine changed
+  (d884ef86…) so the knob, unset, is proven byte-identical; the SIADH
+  signature — ordinary drinking (a glass every 30 min) slides osmolarity
+  under 285 between 1 and 2.5 h and under 282 by 4 h while urine stays
+  ≤ 1 mL/min at ≥ 600 mOsm/L and thirst reads 0.00 the whole way;
+  water restriction as the treatment — the same disease with no drinks
+  drifts < 3 mOsm/L and never leaves the band; the control arm — a
+  healthy body on the identical schedule never dips below 285 because
+  the kidneys flood > 5 mL/min at < 150 mOsm/L; knob validation;
+  determinism). `set_adh_override(level)` in `engine/water.py`, M17
+  pattern; the record and the water CSV grow `adh_override` (appended,
+  like every growth since M12); `ANSWER_KEY_FIELDS` in the redaction
+  contract grew it too, so the allowlist can never ship it. Act 2 in
+  `python -m engine.water_demo`: the slide, the silent alarm, the
+  restriction. 120 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The override models ECTOPIC secretion** (tumor, drug effect), so
+     it bypasses the pituitary toggle as well as the receptors — SIADH
+     stacked on a "broken ADH release" breaker still shows hormone,
+     which is physiologically the point.
+  2. **An override of 0 is rejected** with "that's central DI by another
+     name — use the ADH toggle", mirroring M17's sensitivity-0 refusal.
+  3. **Sweep before pins** (SS2 discipline, numbers now in the test
+     margins): drinking run 290 → 277.6 crossing 285 at 1.52 h and the
+     280 line at 3.05 h; restriction 290 → 291.8 (insensible losses,
+     rising not falling); healthy control arm bottomed at 286.5 while
+     flooding 8.9 mL/min at 51 mOsm/L. Thirst 0.00 in every SIADH run —
+     the alarm-that-cannot-ring is emergent, not scripted.
+  4. The water loop had no pinned regression hash (thermo and glucose
+     got theirs at M13/M17); recording one from the last committed code
+     BEFORE editing was the first act of the milestone.
 
 ## 2026-08-17 — M30: The full pass, and Phase 8 closes
 - Shipped: the M30 contract in `tests/test_invariants.py` (5 tests: every

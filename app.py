@@ -2062,7 +2062,9 @@ CSV_FIELDS = {
     "water": ["t", "osmolarity", "water_liters", "gut_water", "exercise",
               "error", "adh", "thirst", "urine_rate", "urine_osm",
               "adh_enabled", "kidney_enabled", "water_access",
-              "sensor_enabled"],
+              "sensor_enabled",
+              # grown at M31 with the Phase 9 SIADH knob, same rule
+              "adh_override"],
 }
 
 

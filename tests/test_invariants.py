@@ -1224,7 +1224,8 @@ WATER_FIELDS = {
     "kidney_enabled",   # modeled from M20 so the physiology tests below
     "water_access",     # can prove they matter)
     "sensor_enabled",
-}
+    "adh_override",     # grown at M31 (Phase 9): the SIADH knob — appended,
+}                       # like every record growth since M12
 
 
 def _water():
@@ -2024,9 +2025,10 @@ def _diag():
 
 
 # Fields that NAME the answer rather than describe the physiology. The
-# `*_enabled` flags are caught by their suffix; these three are the ones
-# that aren't.
-ANSWER_KEY_FIELDS = {"water_access", "fever_offset", "insulin_sensitivity"}
+# `*_enabled` flags are caught by their suffix; these are the ones that
+# aren't. (`adh_override` joined at M31 — a new knob is a new answer key.)
+ANSWER_KEY_FIELDS = {"water_access", "fever_offset", "insulin_sensitivity",
+                     "adh_override"}
 
 # What the strip charts, the readouts, the tooltip and the diagram read on
 # each page. Redaction must leave ALL of this in place: it withholds the
@@ -2921,6 +2923,171 @@ def test_nothing_wedges(period):
         assert client.get(f"/state?loop={loop}").status_code == 200
         assert client.get(f"/export.csv?loop={loop}").status_code == 200
     assert client.get("/").status_code == 200
+
+
+# ================= Phase 9: SIADH =========================================
+# The first engine change since Phase 6, so the water loop gets what the
+# other two engines got at M17: a hash of the OLD field subset, recorded
+# from the code BEFORE the knob existed, proving the growth is shape-only.
+#
+# SIADH is the mirror image of the two insipidus presets: not too little
+# ADH but ADH that will not stop — secretion inappropriate to the
+# stimulus. The kidney obeys a hormone that shouldn't be there, ordinary
+# drinking dilutes the blood, and the loop's own alarm (thirst) stays
+# silent because low osmolarity is exactly what thirst does NOT respond
+# to. The treatment that falls out of the model is the real first-line
+# treatment: restrict water.
+
+# (aaa) sha256 of json.dumps of the PHASE 6 FIELD SUBSET of
+# _scripted_water_run's records, recorded 2026-08-17 with M30 committed —
+# the last Phase 6-era state of engine/water.py.
+PHASE6_WATER_FIELDS = [
+    "t", "osmolarity", "water_liters", "gut_water", "exercise", "error",
+    "adh", "thirst", "urine_rate", "urine_osm", "adh_enabled",
+    "kidney_enabled", "water_access", "sensor_enabled"]
+WATER_PHASE6_HASH = \
+    "d884ef86eed5de7f60225ec7226541efb905bc1545a87c1efe0438e0c509137e"
+
+
+def _siadh():
+    """The water engine once it speaks set_adh_override, or SKIP (M31)."""
+    WaterSimulation = _water()
+    if not hasattr(WaterSimulation, "set_adh_override"):
+        pytest.skip("set_adh_override() doesn't exist yet - it arrives "
+                    "at M31")
+    return WaterSimulation
+
+
+def test_water_phase6_subset_unchanged_by_phase9():
+    """(aaa) Byte-identical old behavior: the knob, unset, changes nothing."""
+    import hashlib
+    import json
+    WaterSimulation = _water()
+    records, _ = _scripted_water_run(WaterSimulation)
+    subset = [{k: r[k] for k in PHASE6_WATER_FIELDS} for r in records]
+    digest = hashlib.sha256(
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
+    assert digest == WATER_PHASE6_HASH, (
+        "The Phase 6 subset of the scripted water run changed - Phase 9 "
+        "may only APPEND to the record, never alter recorded behavior")
+
+
+def test_siadh_dilutes_a_body_that_drinks_normally():
+    """(bbb) The signature: ordinary drinking + a hormone that won't stop
+    = dilutional hyponatremia. Dilute blood, concentrated urine — the
+    inappropriate combination — while thirst never says a word."""
+    WaterSimulation = _siadh()
+    sim = WaterSimulation()
+    sim.set_adh_override(1.0)
+    for _ in range(8):                     # a glass every 30 min, 4 h —
+        sim.drink(250)                     # ordinary intake, not a chug
+        sim.step(1800)
+    records = [r for r in sim.history() if r["t"] > 0]
+    crossed = next((r["t"] for r in records if r["osmolarity"] < 285.0),
+                   None)
+    assert crossed is not None and 3600 <= crossed <= 9000, (
+        "SIADH + normal drinking must slide osmolarity under 285 between "
+        "1 and 2.5 h"
+        + ("" if crossed is None else f" (crossed at {crossed / 3600:.1f} h)")
+        + " - too fast isn't 'ordinary drinking', too slow won't fit a "
+        "lesson")
+    assert min(r["osmolarity"] for r in records) < 282.0, (
+        "4 h of ordinary drinking must reach genuine hyponatremia, "
+        "not a wobble")
+    assert max(r["urine_rate"] for r in records) <= 1.0, (
+        "SIADH urine must stay scant - the kidney is obeying a hormone "
+        "that shouldn't be there")
+    assert min(r["urine_osm"] for r in records) >= 600.0, (
+        "SIADH urine must stay CONCENTRATED while the blood dilutes - "
+        "that mismatch is the diagnosis")
+    assert all(r["thirst"] == 0.0 for r in records), (
+        "Thirst spoke during SIADH - the loop's alarm must stay silent, "
+        "because LOW osmolarity is what thirst doesn't answer")
+    assert not any(d["auto"] for d in sim.drinks()), (
+        "The body auto-drank during SIADH - every glass here is the "
+        "patient's own habit, which is the point of the restriction fix")
+    assert all(r["adh"] == 1.0 for r in records), (
+        "ADH left the override level - the knob must pin secretion no "
+        "matter what the receptors say")
+
+
+def test_water_restriction_is_the_treatment():
+    """(bbb) The same disease with the water bottle taken away barely
+    moves - restriction, the real first-line treatment, falls out of
+    the physics instead of being scripted."""
+    WaterSimulation = _siadh()
+    sim = WaterSimulation()
+    sim.set_adh_override(1.0)
+    sim.step(4 * 3600)
+    osm = [r["osmolarity"] for r in sim.history()]
+    assert max(osm) - min(osm) < 3.0, (
+        f"Osmolarity drifted {max(osm) - min(osm):.1f} mOsm/L under "
+        "restriction - SIADH with no water coming in should barely move")
+    assert all(WATER_BAND[0] <= v <= WATER_BAND[1] for v in osm[1:]), (
+        "Restricted SIADH left the band - the class must see the slide "
+        "STOP when the drinking stops")
+
+
+def test_healthy_kidneys_shrug_off_the_same_drinking():
+    """(bbb) The control arm: the identical glass-every-30-min habit in a
+    healthy body never leaves the band, because ADH dies and the kidneys
+    flood the excess away dilute. Same input, opposite fate - the
+    difference IS the disease."""
+    WaterSimulation = _siadh()
+    sim = WaterSimulation()
+    for _ in range(8):
+        sim.drink(250)
+        sim.step(1800)
+    records = [r for r in sim.history() if r["t"] > 0]
+    assert min(r["osmolarity"] for r in records) >= 285.0, (
+        "A healthy body diluted below 285 on a glass every 30 min - "
+        "ordinary drinking must be something working kidneys shrug off")
+    assert max(r["urine_rate"] for r in records) > 5.0, (
+        "Healthy kidneys never flooded while absorbing the glasses - the "
+        "dumped excess is the contrast the SIADH lesson needs")
+    assert min(r["urine_osm"] for r in records) < 150.0, (
+        "Healthy urine never turned dilute during the drinking - "
+        "dilute-and-flooding is the working kidney's answer")
+
+
+def test_adh_override_validation():
+    """(ccc) Zero isn't SIADH (that's central DI by another name), and the
+    override is an activity level, not a free number."""
+    WaterSimulation = _siadh()
+    sim = WaterSimulation()
+    for bad in (0.0, -0.5, 1.5):
+        with pytest.raises(ValueError):
+            sim.set_adh_override(bad)
+    sim.set_adh_override(0.9)
+    sim.step(10)
+    assert sim.state()["adh"] == 0.9
+    sim.set_adh_override(None)             # the disease clears
+    sim.step(10)
+    s = sim.state()
+    assert s["adh_override"] is None and abs(s["adh"] - 0.5) < 0.2, (
+        "Clearing the override must hand ADH back to the osmoreceptors "
+        "(resting osmolarity ~290 reads ~0.5 on the staged curve)")
+
+
+def _scripted_siadh_run():
+    """Sets, exercises, and clears the knob mid-run, for determinism."""
+    WaterSimulation = _siadh()
+    sim = WaterSimulation()
+    sim.step(600)
+    sim.set_adh_override(1.0)
+    sim.drink(500)
+    sim.step(3600)
+    sim.set_exercise(True)
+    sim.step(1800)
+    sim.set_exercise(False)
+    sim.set_adh_override(None)
+    sim.step(1800)
+    return sim.history(), sim.drinks()
+
+
+def test_siadh_is_deterministic():
+    assert _scripted_siadh_run() == _scripted_siadh_run(), (
+        "Two identical SIADH runs diverged (kickoff SS2)")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
