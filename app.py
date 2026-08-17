@@ -1702,8 +1702,19 @@ def start_challenge(runner, loop, name, label=None):
     invariant tests and the M29 strategy sweep all take this path, so a
     sweep that says a strategy scores 88 is describing the same machinery
     the class will play.
+
+    It starts a FRESH RUN (M30.1). A challenge used to inherit whatever
+    body the sandbox had been left in, and the full pass found what that
+    costs: the identical 40 % duty play on cold_store scored 88 and gold
+    from a fresh app and 21 and no medal when the previous class had
+    just finished demonstrating the freezer. Two teams' report cards are
+    only comparable if the runs start the same way — "the engine's
+    determinism is what makes the comparison fair: same inputs, same
+    curves" (kickoff SS1) is a claim about the inputs, and the starting
+    body is an input. A case has reset since M28 for the same reason.
     """
     entry = CHALLENGES[loop][name]
+    runner.sim.reset()
     _apply_preset(runner.sim, entry["setup"])
     for method, args in entry.get("start_actions", []):
         getattr(runner.sim, method)(*args)

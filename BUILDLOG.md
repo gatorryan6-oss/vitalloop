@@ -18,17 +18,27 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M29 — Phase 8 underway. Specs: phases 1–7 as before,
-  plus `vital_loop_phase8_kickoff.md` (M26–M30). The lesson grammar now
-  runs disturb → break → name → challenge → score → race → diagnose →
-  SURVIVE. Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M30 — the full pass and the phase close: all four modes
-  across all three loops on the projector, back to back; confirm the
-  sandbox is still gameless with no game running, that a page reload
-  mid-game loses nothing, and that relaunching preserves the log. Then
-  STOP for confirmation before Phase 9. Deferred to Phase 9: per-student
-  sessions, SIADH + ADH-override knob, cross-loop coupling (mellitus
-  polyuria), student worksheets.
+- **Committed:** M30 — **PHASE 8 COMPLETE** (eight phases done: M0–M30).
+  Specs: `vital_loop_v1_kickoff.md` plus phases 2–8. The lesson grammar
+  is whole: disturb → break → name → challenge → score → race →
+  diagnose → survive, on all three loops.
+  Remote: https://github.com/gatorryan6-oss/vitalloop
+- **Next up:** STOPPED for confirmation before Phase 9. Candidates,
+  as decided in the Phase 8 kickoff:
+  1. **Per-student sessions** — one Runner per browser session instead
+     of three global ones, so a class can play on their own devices.
+     Phase 8 was built not to close this door: game state hangs off the
+     `Runner` and the attempts log is keyed by label, so it is a
+     plumbing change, not a rewrite.
+  2. **SIADH + an ADH-override knob** — the water loop's missing
+     disease, deferred from M23 because it needs a new engine knob.
+  3. **Cross-loop coupling** — mellitus polyuria: the glucose loop
+     finally talking to the water loop (renal spill above 180 mg/dL
+     dragging water with it). The first time two loops meet.
+  4. **Student worksheets** keyed to the CSV and attempts exports.
+  Phase 9 would be the first phase since Phase 6 to touch `engine/`
+  (candidates 2 and 3), so the regression guards (h)/(k)/(n)/(s) matter
+  again — read them before changing a constant.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -40,6 +50,100 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M30: The full pass, and Phase 8 closes
+- Shipped: the M30 contract in `tests/test_invariants.py` (5 tests: every
+  loop carries every verb of the lesson grammar; THE SANDBOX STAYS
+  GAMELESS with no game running; A RELOAD MID-GAME LOSES NOTHING,
+  including a blind case that must still be blind; NOTHING WEDGES —
+  every action the UI can send, plus the malformed and wrong-loop
+  version of each, fired at all three loops, must answer 200 or a
+  plain-English 400 and leave every loop still teaching; and M30.1's
+  fairness pin below). **M30.1 — a challenge now starts a FRESH RUN**,
+  the one real defect the full pass found. A whole-period pass driven
+  through the production routes: all four modes on all three loops, 18
+  attempts, every check green. 114 invariants + verify pass.
+- Deferred: nothing. Phase 9 candidates are under Current state.
+- Open bugs: none.
+- Decisions:
+  1. **M30.1 — A CHALLENGE STARTS A FRESH RUN, and this was a real bug.**
+     Until now a challenge inherited whatever body the sandbox had been
+     left in (only a diagnosis case reset — M28 decision 3 says so
+     explicitly). The full pass ran the identical 40 % duty play on
+     cold_store from three different lead-ins and got **88 / gold from a
+     fresh app, 21 / no medal straight after a freezer demonstration,
+     and 88 again after a fever demo**. Two teams' report cards are only
+     comparable if the runs start the same way, and the whole head-to-
+     head rests on that: "the engine's determinism is what makes the
+     comparison fair — same inputs, same curves" (kickoff SS1). The
+     starting body IS an input. One line in `start_challenge`
+     (`runner.sim.reset()`), pinned as a test that runs the same
+     challenge after two different lead-ins and demands byte-identical
+     history. Nothing else changes: `reset()` was already the case
+     path, the browser already handles a sim reset behind its back
+     (M10), and no challenge story ever depended on continuing from
+     what came before.
+  2. **The "nothing wedges" checkpoint is now a test, not a promise.**
+     47 payloads × 3 loops, covering every action the UI can send and
+     the broken versions (`speed 7`, `effector gills`, `eat lots`,
+     `preset consumption`, `diagnose 99`, `answer the vibes`, `{}`,
+     `action: null`), plus unknown loops and `/compare` with nonsense
+     ids. Every one answers 200 or a 400 that says why, and every loop
+     still serves `/state` and its CSV afterwards. This is a projector
+     in a classroom: a wrong click cannot cost the lesson.
+  3. **Two script bugs in the pass were worth keeping as notes**, since
+     both will bite the next person: (a) a knob set between ticks is not
+     in the newest RECORD until the next tick runs — `state()` is
+     `history()[-1]`, the last COMPLETED tick — which is invisible live
+     because polls step constantly, and (b) this machine's console is
+     cp1252, so a verification script that prints the app's own em
+     dashes and arrows dies on `UnicodeEncodeError` unless stdout is
+     reconfigured to utf-8.
+  4. **THE FULL PERIOD, driven end to end through the routes** (`/control`,
+     `/state`, `/export.csv`, `/compare`) with sim time advanced by
+     `Runner._step`, so nothing was a shortcut around the app:
+     - *disturb*: the freezer cools and shivers (36.81 / 0.46), a 60 g
+       meal is answered by insulin (143 mg/dL, insulin 1.00), a salt
+       load raises ADH (291.4, 0.64);
+     - *break*: all three effectors off in a −10 °C room drives the core
+       37.00 → 35.53 monotonically, and the CSV exports it;
+     - *name*: fever / type 1 / central DI each raise their banner and
+       set their mechanism, and Healthy clears all three;
+     - *challenge + score + race + survive*: all six entries reported,
+       scored and logged — cold_store 88 gold, blast_freezer 85 gold
+       (both ambushes fired), t1_shift 91 gold, crisis_shift 86 gold
+       (three ambushes), aid_station 100 gold, race_day 57 bronze on a
+       deliberately sloppy play. **Every one of those matches its sweep
+       number exactly** — the number the sweep predicted is the number
+       the class gets, which is the determinism promise paying out
+       across the whole game layer;
+     - *diagnose*: all 12 cases started blind (nothing ending in
+       `_enabled`, no disease knob, CSV 409), answered with the truth,
+       graded correct, CSV released;
+     - and every loop handed the sandbox back afterwards.
+  5. VERIFIED LIVE in the browser, on a server relaunched from cold:
+     - **the log survived the relaunch** — "best so far" read straight
+       off disk on all three loops (cold_store 83 SILVER over 2 runs,
+       race_day 93 GOLD, crisis_shift 0 from the ER run), with attempts
+       #1–#7 spanning M26 → M29 and every mode;
+     - **the sandbox was gameless** — no challenge block, no case block,
+       no preset, every `*_enabled` flag present, CSV 200, on all three;
+     - **the head-to-head drew off the real log** — leaderboard ranked
+       the two cold_store runs, Compare read "(no team) takes it, 83 to
+       51 — row by row, here's where", and the crisis card beside it
+       stayed empty, which is the per-card scoping of the M29 refactor
+       working;
+     - **a reload mid-game lost nothing** — started cold_store as
+       "Period 5 Green", turned exercise on, reloaded the page: the team
+       label, the progress clock and bar (3.9 %), the exercise button
+       and "Shivering — DISABLED" all came back from server state, and
+       the chart buffer refilled from t = 0 off server history;
+     - **a blind case, live** — case 4 of 4 on temp: nothing leaked,
+       both `data-blind-hide` cards gone, CSV 409; answered effector /
+       sweat → RIGHT, 100 / 100, teaching note, cards back, CSV 200,
+       saved as run #8.
+     Console clean (the one error is the 409 from a deliberate CSV
+     probe during the blind case — the gate working).
 
 ## 2026-08-17 — M29: Crisis mode
 - Shipped: M29 contract in `tests/test_invariants.py` (12 tests: one

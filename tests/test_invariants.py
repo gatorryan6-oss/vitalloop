@@ -253,6 +253,25 @@ The disease-knob API contract (built at M17):
        window closes, and the feed is APPENDED to the attempt record so a
        later phase can ask what a team was hit with.
 
+  (ww) M30 close: every loop carries every verb of the lesson grammar —
+       a disease to name and a way back, a plain challenge to score and
+       race, a crisis to survive, cases to diagnose, a CSV and an answer
+       vocabulary,
+  (xx) THE SANDBOX STAYS GAMELESS. With no challenge and no case running
+       there is no game block in /state at all, no preset, nothing
+       redacted and the CSV works — a teacher who wants to explore for
+       forty minutes never has to dismiss a game (kickoff SS2),
+  (yy) A RELOAD MID-GAME LOSES NOTHING, because game state hangs off the
+       Runner and never off the page: the label, the stamp and the event
+       feed all come back from server state, a reloaded page asking
+       `since=-1` gets the whole run to redraw from, and a blind case is
+       still blind afterwards,
+  (zz) NOTHING WEDGES. Every action the UI can send — plus the malformed
+       and wrong-loop versions of each — fired at all three loops must
+       answer 200 or a plain-English 400, never a 500 and never a hang,
+       and every loop must still be teaching afterwards. It runs on a
+       projector in a classroom; a wrong click cannot cost the lesson.
+
   The engines are untouched by this entire phase (kickoff SS0: "no engine
   file changes in this phase at all"); guards (h), (k), (n), (s) above are
   the proof, and they are not repeated here.
@@ -2692,6 +2711,216 @@ def test_no_ambush_is_written_into_the_page():
         for stop in vital_app.STOPS[entry["metrics"]]:
             assert stop["line"] not in html, (
                 f"{loop}/{cid} renders a hard-stop line into the page")
+
+
+# ================= M30: the full pass ======================================
+# The phase closes on a whole period taught off this thing: disturb, break,
+# name, challenge, score, race, diagnose, survive. Three claims from the
+# kickoff are checkable rather than merely demonstrable, so they are pinned
+# here — the sandbox stays gameless when no game is running, a reload
+# mid-game loses nothing, and nothing wedges.
+
+
+@pytest.fixture
+def period(monkeypatch):
+    """A client for a whole class period, with the scores kept off disk.
+
+    Like `diag_client`, this drives the REAL shared runners — the
+    projector model has exactly one per loop — so it puts them back the
+    way it found them.
+    """
+    vital_app = _crisis()
+    logged = []
+
+    def fake_log(record):
+        logged.append(record)
+        return {**record, "id": len(logged)}, None
+
+    monkeypatch.setattr(vital_app, "log_attempt", fake_log)
+    yield vital_app, vital_app.app.test_client(), logged
+    for runner in vital_app.runners.values():
+        runner.sim.reset()
+        runner.challenge = None
+        runner.case = None
+        runner.case_index = 0
+        runner.preset = None
+        runner.attempt_error = None
+
+
+def test_a_challenge_starts_from_the_same_body_every_time(period):
+    """(vv) M30.1. Two teams running the identical challenge must get the
+    identical run — that is the whole basis of the head-to-head, and the
+    starting body is an input like any other.
+
+    Found by the M30 full pass: the same 40 % duty play on cold_store
+    scored 88 from a fresh app and 21 straight after a freezer demo.
+    """
+    vital_app, client, _ = period
+    loop, cid = "temp", "cold_store"
+    runs = []
+    for lead_in in (lambda r: None, lambda r: r._step(1800)):
+        runner = vital_app.runners[loop]
+        with runner.lock:
+            runner.sim.reset()
+            # ...whatever the previous class left on the projector
+            for part in ("sweat", "shiver", "vaso"):
+                runner.sim.set_effector_enabled(part, False)
+            runner.sim.set_env_temp(-10.0)
+            lead_in(runner)
+        client.post(f"/control?loop={loop}",
+                    json={"action": "challenge", "value": cid})
+        with runner.lock:
+            runner._step(600)
+        runs.append(runner.sim.history())
+    assert runs[0] == runs[1], (
+        "the same challenge produced different physiology depending on "
+        "what the sandbox had been doing beforehand - two teams' report "
+        "cards are not comparable unless the run starts the same way")
+    assert runs[0][0]["t"] == 0.0, "a challenge starts a fresh run"
+
+
+def test_every_loop_can_teach_the_whole_lesson():
+    """(ww) Every verb of the lesson grammar exists on every loop."""
+    vital_app = _crisis()
+    for loop in vital_app.runners:
+        presets = vital_app.PRESETS[loop]
+        assert "healthy" in presets and len(presets) >= 2, (
+            f"{loop} has no disease to name, or no way back")
+        entries = vital_app.CHALLENGES[loop]
+        assert any(not e.get("events") for e in entries.values()), (
+            f"{loop} has no plain challenge to score and race")
+        assert any(e.get("events") for e in entries.values()), (
+            f"{loop} has no crisis to survive")
+        assert len(vital_app.CASES[loop]) >= 2, f"{loop} has too few cases"
+        assert vital_app.CSV_FIELDS[loop] and vital_app.ANSWER_OPTIONS[loop]
+
+
+def test_the_sandbox_is_gameless_when_no_game_is_running(period):
+    """(xx) Kickoff SS2: with no game started this is exactly the Phase 7
+    sandbox. A teacher who wants to explore for forty minutes must never
+    have to dismiss a game."""
+    vital_app, client, _ = period
+    for loop in vital_app.runners:
+        # Play a bit of every mode first, then hand the sandbox back.
+        cid = list(vital_app.CHALLENGES[loop])[0]
+        client.post(f"/control?loop={loop}",
+                    json={"action": "challenge", "value": cid})
+        client.post(f"/control?loop={loop}",
+                    json={"action": "diagnose", "value": 1})
+        client.post(f"/control?loop={loop}", json={"action": "reset"})
+        j = client.get(f"/state?loop={loop}").get_json()
+        assert "challenge" not in j and "case" not in j, (
+            f"{loop} still has a game block after reset")
+        assert j["preset"] is None, f"{loop} still names a disease"
+        flags = [k for k in j["now"] if k.endswith("_enabled")]
+        assert flags, (
+            f"{loop} is still redacting with no case running - the "
+            "breaker card would have nothing to mirror")
+        assert client.get(f"/export.csv?loop={loop}").status_code == 200, (
+            f"{loop}'s spreadsheet must come back when the game ends")
+
+
+def test_a_reload_mid_game_loses_nothing(period):
+    """(yy) Game state hangs off the Runner, never off the page — so the
+    projector can be refreshed mid-lesson without losing the run."""
+    vital_app, client, _ = period
+    loop = "glucose"
+    cid = [c for c, e in vital_app.CHALLENGES[loop].items()
+           if e.get("events")][0]
+    client.post(f"/control?loop={loop}",
+                json={"action": "challenge", "value": cid,
+                      "label": "Period 4 Red"})
+    runner = vital_app.runners[loop]
+    with runner.lock:
+        runner._step(60 * 60)              # an hour in, mid-ambush
+    before = client.get(f"/state?loop={loop}").get_json()
+    assert client.get("/").status_code == 200          # <- the reload
+    after = client.get(f"/state?loop={loop}&since=-1").get_json()
+    assert after["challenge"]["label"] == "Period 4 Red"
+    assert after["challenge"]["t_start"] == before["challenge"]["t_start"]
+    assert after["challenge"]["events"] == before["challenge"]["events"], (
+        "the event feed must come back from server state, not from a "
+        "buffer in the page")
+    assert after["points"][0]["t"] == 0.0, (
+        "a reloaded page asks for the whole run and must get it - the "
+        "charts redraw from server history, not from what the old page "
+        "happened to be holding")
+
+    # ...and the same for a blind case, which must still be blind.
+    client.post(f"/control?loop={loop}",
+                json={"action": "diagnose", "value": 1})
+    assert client.get("/").status_code == 200
+    j = client.get(f"/state?loop={loop}&since=-1").get_json()
+    assert j["case"]["answered"] is False
+    assert not [k for k in j["now"] if k.endswith("_enabled")], (
+        "a reload during a blind case must not un-redact it")
+
+
+# Every action the UI can send, plus the malformed versions of each. A
+# wrong-loop action is a 400 with words, never a 500 and never a wedge.
+ALL_CONTROL_CALLS = [
+    {"action": "pause"}, {"action": "resume"}, {"action": "reset"},
+    {"action": "speed", "value": 16}, {"action": "speed", "value": 7},
+    {"action": "speed"}, {"action": "env_temp", "value": 40.0},
+    {"action": "env_temp", "value": "warm"}, {"action": "env_temp"},
+    {"action": "exercise", "value": True}, {"action": "exercise"},
+    {"action": "effector", "name": "sweat", "value": False},
+    {"action": "effector", "name": "gills", "value": False},
+    {"action": "effector"}, {"action": "sensor", "value": False},
+    {"action": "eat", "grams": 60, "rate": 1.0}, {"action": "eat"},
+    {"action": "eat", "grams": "lots"}, {"action": "inject", "units": 4},
+    {"action": "inject", "units": -1}, {"action": "inject"},
+    {"action": "basal", "value": 1.0}, {"action": "basal", "value": 99},
+    {"action": "pump", "value": True}, {"action": "drink", "ml": 250},
+    {"action": "drink", "ml": "some"}, {"action": "drink"},
+    {"action": "salty", "mosm": 300}, {"action": "salty", "mosm": "salty"},
+    {"action": "preset", "value": "healthy"},
+    {"action": "preset", "value": "consumption"},
+    {"action": "challenge", "value": "cold_store"},
+    {"action": "challenge", "value": "a_nice_walk"},
+    {"action": "diagnose", "value": 1}, {"action": "diagnose"},
+    {"action": "diagnose", "value": 99}, {"action": "diagnose", "value": "x"},
+    {"action": "answer", "role": "receptor", "part": "sensor"},
+    {"action": "answer", "role": "the vibes", "part": "sensor"},
+    {"action": "answer"}, {"action": "scenario", "value": "freezer"},
+    {"action": "scenario", "value": "a_lie_down"}, {"action": "scenario"},
+    {"action": "sudo"}, {}, {"action": None},
+]
+
+
+def test_nothing_wedges(period):
+    """(zz) The checkpoint, as a test: fire every action at every loop —
+    including all the ones that belong to a different loop — and the app
+    must answer every one of them and still be teaching afterwards.
+
+    It runs on the projector in a classroom, so a wrong click is a
+    plain-English 400, never a 500 and never a hang.
+    """
+    vital_app, client, _ = period
+    for loop in vital_app.runners:
+        for call in ALL_CONTROL_CALLS:
+            r = client.post(f"/control?loop={loop}", json=call)
+            assert r.status_code in (200, 400), (
+                f"{loop} answered {r.status_code} to {call} - every refusal "
+                "is a 400 with words")
+            if r.status_code == 400:
+                assert r.get_json()["error"].strip(), (
+                    f"{loop} refused {call} without saying why")
+    # Unknown loops, and the read-only routes with nonsense on them.
+    assert client.get("/state?loop=spleen").status_code == 400
+    assert client.post("/control?loop=spleen",
+                       json={"action": "pause"}).status_code == 400
+    assert client.get("/export.csv?loop=spleen").status_code == 400
+    assert client.get("/compare?loop=temp&name=cold_store").status_code == 400
+    assert client.get("/compare?loop=temp&name=cold_store&a=1&b=99999"
+                      ).status_code == 400
+    assert client.get("/compare?loop=temp&name=nope&a=1&b=2").status_code == 400
+    # ...and after all of that, every loop is still answering.
+    for loop in vital_app.runners:
+        client.post(f"/control?loop={loop}", json={"action": "reset"})
+        assert client.get(f"/state?loop={loop}").status_code == 200
+        assert client.get(f"/export.csv?loop={loop}").status_code == 200
+    assert client.get("/").status_code == 200
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
