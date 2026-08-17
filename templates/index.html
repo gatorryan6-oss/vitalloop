@@ -106,6 +106,9 @@
         <strong>{{ ch.title }}.</strong> {{ ch.story }}
         <em>Goal: {{ ch.goal }}</em>
       </div>
+      <input class="challenge-label" data-challenge="cold_store"
+             type="text" maxlength="24" placeholder="Team 3"
+             aria-label="Team name for this run" />
       <button class="challenge-start" data-challenge="cold_store"
               type="button">Lock the door</button>
     </div>
@@ -114,6 +117,19 @@
     <div class="challenge-best" id="tempChallengeBest"
          data-challenge="cold_store" hidden></div>
     <div class="attempts-error" id="tempAttemptsError" hidden></div>
+    <div class="challenge-board" id="tempChallengeBoard"
+         data-challenge="cold_store" hidden></div>
+    <div class="challenge-h2h" id="tempChallengeH2H"
+         data-challenge="cold_store" hidden>
+      <div class="h2h-pick">
+        <span class="h2h-title">Head to head</span>
+        <select class="h2h-a" aria-label="First run"></select>
+        <span>vs</span>
+        <select class="h2h-b" aria-label="Second run"></select>
+        <button class="h2h-go" type="button">Compare</button>
+      </div>
+      <div class="h2h-out"></div>
+    </div>
     <div class="challenge-progress" id="tempChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>
@@ -251,6 +267,9 @@
         <strong>{{ ch.title }}.</strong> {{ ch.story }}
         <em>Goal: {{ ch.goal }}</em>
       </div>
+      <input class="challenge-label" data-challenge="t1_shift"
+             type="text" maxlength="24" placeholder="Team 3"
+             aria-label="Team name for this run" />
       <button class="challenge-start" data-challenge="t1_shift"
               type="button">Start the shift</button>
     </div>
@@ -259,6 +278,19 @@
     <div class="challenge-best" id="glucoseChallengeBest"
          data-challenge="t1_shift" hidden></div>
     <div class="attempts-error" id="glucoseAttemptsError" hidden></div>
+    <div class="challenge-board" id="glucoseChallengeBoard"
+         data-challenge="t1_shift" hidden></div>
+    <div class="challenge-h2h" id="glucoseChallengeH2H"
+         data-challenge="t1_shift" hidden>
+      <div class="h2h-pick">
+        <span class="h2h-title">Head to head</span>
+        <select class="h2h-a" aria-label="First run"></select>
+        <span>vs</span>
+        <select class="h2h-b" aria-label="Second run"></select>
+        <button class="h2h-go" type="button">Compare</button>
+      </div>
+      <div class="h2h-out"></div>
+    </div>
     <div class="challenge-progress" id="glucoseChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>
@@ -377,6 +409,9 @@
         <strong>{{ ch.title }}.</strong> {{ ch.story }}
         <em>Goal: {{ ch.goal }}</em>
       </div>
+      <input class="challenge-label" data-challenge="aid_station"
+             type="text" maxlength="24" placeholder="Team 3"
+             aria-label="Team name for this run" />
       <button class="challenge-start" data-challenge="aid_station"
               type="button">Take the table</button>
     </div>
@@ -385,6 +420,19 @@
     <div class="challenge-best" id="waterChallengeBest"
          data-challenge="aid_station" hidden></div>
     <div class="attempts-error" id="waterAttemptsError" hidden></div>
+    <div class="challenge-board" id="waterChallengeBoard"
+         data-challenge="aid_station" hidden></div>
+    <div class="challenge-h2h" id="waterChallengeH2H"
+         data-challenge="aid_station" hidden>
+      <div class="h2h-pick">
+        <span class="h2h-title">Head to head</span>
+        <select class="h2h-a" aria-label="First run"></select>
+        <span>vs</span>
+        <select class="h2h-b" aria-label="Second run"></select>
+        <button class="h2h-go" type="button">Compare</button>
+      </div>
+      <div class="h2h-out"></div>
+    </div>
     <div class="challenge-progress" id="waterChallengeProgress" hidden>
       <div class="challenge-bar"><span></span></div>
       <div class="challenge-clock"></div>

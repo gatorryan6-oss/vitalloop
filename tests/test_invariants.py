@@ -186,6 +186,19 @@ The disease-knob API contract (built at M17):
   (hh) an attempt carries the frozen fields from kickoff SS5, and data/ is
        gitignored - student scores are runtime data, not source.
 
+  (ii) M27 head-to-head: a team label is free text, TIDIED and CAPPED
+       server-side, and an empty or non-string one stores as None (it is
+       a TEAM name, never a student's - kickoff SS2),
+  (jj) compare_attempts(a, b) is PURE and SYMMETRIC: swap the two runs
+       and every winner flips, an equal row has NO winner, a row with no
+       points goes to the honest run, and the overall winner is simply
+       the higher total. It reads the log and computes no physiology,
+  (kk) the leaderboard is one line per run, best first, ties to the
+       EARLIER run, capped, and never mixes in another challenge's runs,
+  (ll) an attempt GROWS `score_rows` and `zeroed` (appended at M27, so
+       M26 records still load) - and an attempt logged without them must
+       still compare rather than crash.
+
   The engines are untouched by this entire phase (kickoff SS0: "no engine
   file changes in this phase at all"); guards (h), (k), (n), (s) above are
   the proof, and they are not repeated here.
@@ -197,6 +210,9 @@ The game-layer API contract (built at M26):
                                       # "metrics" + "medals"
     app.SCORING[metrics]              # per-row weights, twin of EVALUATORS
     app.build_attempt(loop, name, report, score, label=None)
+    app.clean_label(raw)              # -> a short team name, or None
+    app.leaderboard(loop, name)       # -> compact lines, best first (M27)
+    app.compare_attempts(a, b)        # -> merged rows + winners (M27)
 
     import attempts
     attempts.load(path) / attempts.save(records, path)
@@ -1717,6 +1733,160 @@ def test_attempt_record_has_the_frozen_fields():
         "the attempt stores the report card VERBATIM - a later phase reads "
         "this file, not a screenshot")
     datetime.datetime.fromisoformat(att["wall_time"])   # raises if not ISO
+
+
+# ================= M27: head-to-head =======================================
+# Two teams, the same deterministic challenge, and the log put side by
+# side. Nothing new is computed here — every number was already a data
+# product, which is exactly what makes the comparison fair.
+
+
+def _h2h():
+    """Import the head-to-head layer, or SKIP loudly (M27)."""
+    import app as vital_app
+    if not hasattr(vital_app, "compare_attempts"):
+        pytest.skip("compare_attempts doesn't exist yet - it arrives at M27")
+    return vital_app
+
+
+def _run(points, medal, met, cells, label="Team A", rid=1,
+         when="2026-08-16T10:00:00", loop="water", name="aid_station"):
+    """One logged attempt; cells are (key, value, met, points, max)."""
+    return {
+        "id": rid, "wall_time": when, "loop": loop, "mode": "challenge",
+        "name": name, "label": label, "points": points, "medal": medal,
+        "met": met,
+        "rows": [{"key": k, "label": k, "value": v, "met": m, "n": None}
+                 for k, v, m, _, _ in cells],
+        "score_rows": [{"key": k, "label": k, "points": p, "max": mx}
+                       for k, _, _, p, mx in cells if p is not None],
+        "zeroed": None,
+    }
+
+
+def _pair():
+    a = _run(80, "silver", True,
+             [("in_band", "95%", True, 50.0, 60),
+              ("lowest", "287.4", True, 20.0, 20),
+              ("moving", "yes", True, None, None)])
+    b = _run(66, None, False,
+             [("in_band", "82%", False, 32.0, 60),
+              ("lowest", "290.0", True, 20.0, 20),
+              ("moving", "no", False, None, None)],
+             label="Team B", rid=2, when="2026-08-16T10:30:00")
+    return a, b
+
+
+# ------------------------------------------------------- (ii) team labels
+
+def test_team_label_is_tidied_and_capped():
+    vital_app = _h2h()
+    clean = vital_app.clean_label
+    assert clean("  Period 2   Red  ") == "Period 2 Red", (
+        "a team name is tidied, not stored with the teacher's stray spaces")
+    assert clean("") is None and clean("    ") is None
+    assert clean(None) is None and clean(42) is None
+    assert len(clean("T" * 500)) == vital_app.MAX_LABEL_CHARS, (
+        "a label must be capped short server-side, not just in the box")
+
+
+# -------------------------------------------------------- (jj) the compare
+
+def test_compare_attempts_is_pure_and_symmetric():
+    import json
+    vital_app = _h2h()
+    a, b = _pair()
+    before = json.dumps([a, b], sort_keys=True)
+    ab = vital_app.compare_attempts(a, b)
+    ba = vital_app.compare_attempts(b, a)
+    assert json.dumps([a, b], sort_keys=True) == before, (
+        "compare_attempts() mutated the log records it was handed")
+    assert ab == vital_app.compare_attempts(a, b), "the compare is not pure"
+    assert ab["winner"] == "a" and ba["winner"] == "b"
+    wins = {r["key"]: r["winner"] for r in ab["rows"]}
+    assert wins["in_band"] == "a"      # 50.0 beats 32.0
+    assert wins["lowest"] is None      # 20 == 20: a tie is a tie
+    assert wins["moving"] == "a"       # no points -> the honest run wins
+    flip = {r["key"]: r["winner"] for r in ba["rows"]}
+    mirror = {"a": "b", "b": "a", None: None}
+    for key, side in wins.items():
+        assert flip[key] == mirror[side], (
+            f"row {key!r} changed its mind when the teams swapped sides")
+
+
+def test_compare_carries_both_teams_numbers_row_for_row():
+    """The class must see WHERE one team beat the other, not just that."""
+    vital_app = _h2h()
+    a, b = _pair()
+    cmp = vital_app.compare_attempts(a, b)
+    row = next(r for r in cmp["rows"] if r["key"] == "in_band")
+    assert row["a"]["value"] == "95%" and row["b"]["value"] == "82%"
+    assert row["a"]["points"] == 50.0 and row["b"]["points"] == 32.0
+    assert row["a"]["max"] == row["b"]["max"] == 60
+    assert row["a"]["met"] is True and row["b"]["met"] is False
+    assert cmp["a"]["label"] == "Team A" and cmp["b"]["label"] == "Team B"
+    assert cmp["a"]["points"] == 80 and cmp["b"]["medal"] is None
+    assert [r["key"] for r in cmp["rows"]] == ["in_band", "lowest", "moving"], (
+        "the compare keeps the report card's row order")
+
+
+def test_compare_ties_have_no_winner():
+    vital_app = _h2h()
+    a, _ = _pair()
+    twin = {**a, "id": 9, "label": "Team B"}
+    cmp = vital_app.compare_attempts(a, twin)
+    assert cmp["winner"] is None, "an identical run is a draw, not a win"
+    assert all(r["winner"] is None for r in cmp["rows"])
+
+
+def test_compare_tolerates_an_attempt_logged_before_score_rows():
+    """(ll) M26 wrote no per-row points; those runs must still compare."""
+    vital_app = _h2h()
+    a, b = _pair()
+    old = {k: v for k, v in b.items() if k not in ("score_rows", "zeroed")}
+    cmp = vital_app.compare_attempts(a, old)
+    assert cmp["winner"] == "a", "the totals still compare"
+    row = next(r for r in cmp["rows"] if r["key"] == "in_band")
+    assert row["b"]["points"] is None and row["b"]["value"] == "82%"
+
+
+# ---------------------------------------------------- (kk) the leaderboard
+
+def test_leaderboard_is_best_first_with_ties_to_the_earlier_run(monkeypatch):
+    vital_app = _h2h()
+    log = [
+        _run(70, None, False, [], label="Later 70", rid=1,
+             when="2026-08-16T11:00:00"),
+        _run(91, "gold", True, [], label="Best", rid=2,
+             when="2026-08-16T12:00:00"),
+        _run(70, None, False, [], label="Earlier 70", rid=3,
+             when="2026-08-16T09:00:00"),
+        _run(88, "gold", True, [], label="Another challenge", rid=4,
+             when="2026-08-16T09:30:00", loop="temp", name="cold_store"),
+    ]
+    monkeypatch.setattr(vital_app, "ATTEMPTS", log)
+    board = vital_app.leaderboard("water", "aid_station")
+    assert [e["label"] for e in board] == ["Best", "Earlier 70", "Later 70"], (
+        "best first, and a tie goes to the run that got there first")
+    assert all(set(e) >= {"id", "label", "points", "medal", "met",
+                          "wall_time"} for e in board)
+    assert len(vital_app.leaderboard("water", "aid_station", limit=2)) == 2
+    assert vital_app.best_attempt("water", "aid_station")["runs"] == 3, (
+        "the run count is every run of THIS challenge and no other")
+
+
+def test_attempt_grows_the_score_breakdown():
+    """(ll) Stored, not recomputed: what a run was worth THAT DAY stays
+    true even if a later phase swaps the scorer for an honors section."""
+    vital_app = _h2h()
+    entry = vital_app.CHALLENGES["glucose"]["t1_shift"]
+    report = vital_app.EVALUATORS["t1_shift"]([CRAFTED_RECORD["t1_shift"]])
+    score = vital_app.score_report(entry, report)
+    att = vital_app.build_attempt("glucose", "t1_shift", report, score,
+                                  label="Team 3")
+    assert att["label"] == "Team 3"
+    assert att["score_rows"] == score["rows"]
+    assert att["zeroed"] == score["zeroed"]
 
 
 def test_attempts_data_dir_is_gitignored():

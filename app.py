@@ -98,6 +98,7 @@ class Runner:
             "name": c["name"],
             "title": entry["title"],
             "goal": entry["goal"],
+            "label": c.get("label"),      # whose run this is (M27)
             "t_start": c["t_start"],
             "t_end": c["t_end"],
             "done": done,
@@ -139,6 +140,8 @@ class Runner:
         # a score that failed to save says so on screen (M26).
         out["bests"] = {cid: best_attempt(self.loop, cid)
                         for cid in CHALLENGES.get(self.loop, {})}
+        out["leaderboard"] = {cid: leaderboard(self.loop, cid)
+                              for cid in CHALLENGES.get(self.loop, {})}
         out["attempts_error"] = self.attempt_error or ATTEMPTS_WARNING
         return out
 
@@ -515,6 +518,21 @@ ATTEMPTS_WARNING = attempts.last_warning()   # loud if the file was junk
 _log_lock = threading.Lock()                 # two loops can finish at once
 
 
+MAX_LABEL_CHARS = 24        # a team name, not an essay
+
+
+def clean_label(raw):
+    """A team name: free text, whitespace tidied, capped short.
+
+    Capped on the SERVER, not just in the box — and it is a TEAM name by
+    design (kickoff SS2). A file of named minors on a teacher's laptop is
+    a thing we simply don't create.
+    """
+    if not isinstance(raw, str):
+        return None
+    return " ".join(raw.split())[:MAX_LABEL_CHARS] or None
+
+
 def build_attempt(loop, name, report, score, label=None, mode="challenge"):
     """One finished run as a log record (Phase 8 kickoff SS5 fields).
 
@@ -532,6 +550,12 @@ def build_attempt(loop, name, report, score, label=None, mode="challenge"):
         "medal": score["medal"],
         "met": report["met"],
         "rows": report["rows"],   # the report card, verbatim
+        # -- appended at M27 so the side-by-side can show WHERE a team
+        # won. STORED, not recomputed later: if a future phase swaps the
+        # scorer for an honors section (kickoff SS5), what this run was
+        # worth THAT DAY stays true.
+        "score_rows": score["rows"],
+        "zeroed": score["zeroed"],
     }
 
 
@@ -553,8 +577,8 @@ def log_attempt(record):
         return stored, None
 
 
-def best_attempt(loop, name):
-    """The best run of one challenge so far, for the card's line.
+def challenge_runs(loop, name):
+    """Every logged run of ONE challenge, best first.
 
     Ties go to the earlier run — to take the top spot you have to BEAT
     it, not match it.
@@ -562,12 +586,88 @@ def best_attempt(loop, name):
     runs = [a for a in ATTEMPTS
             if a.get("loop") == loop and a.get("name") == name
             and a.get("mode") == "challenge"]
+    return sorted(runs, key=lambda a: (-(a.get("points") or 0),
+                                       a.get("wall_time") or ""))
+
+
+def best_attempt(loop, name):
+    """The best run of one challenge so far, for the card's line."""
+    runs = challenge_runs(loop, name)
     if not runs:
         return None
-    best = max(runs, key=lambda a: a.get("points") or 0)
+    best = runs[0]
     return {"points": best.get("points"), "medal": best.get("medal"),
             "met": best.get("met"), "label": best.get("label"),
             "wall_time": best.get("wall_time"), "runs": len(runs)}
+
+
+LEADERBOARD_LIMIT = 20      # a class period has teams, not thousands
+
+
+def leaderboard(loop, name, limit=LEADERBOARD_LIMIT):
+    """One compact line per run, best first (M27).
+
+    Read straight off the log — the browser gets the same numbers the
+    report cards showed, so a leaderboard can never drift from them.
+    """
+    return [{"id": a.get("id"), "label": a.get("label"),
+             "points": a.get("points"), "medal": a.get("medal"),
+             "met": a.get("met"), "wall_time": a.get("wall_time")}
+            for a in challenge_runs(loop, name)[:limit]]
+
+
+def _summary(att):
+    """One team's headline, for the top of a compare column."""
+    return {"id": att.get("id"), "label": att.get("label"),
+            "points": att.get("points"), "medal": att.get("medal"),
+            "met": att.get("met"), "wall_time": att.get("wall_time"),
+            "zeroed": att.get("zeroed")}
+
+
+def compare_attempts(a, b):
+    """PURE: two finished runs, merged row for row (M27).
+
+    The two teams ran the identical deterministic challenge, so the only
+    variable is their physiology — that is what makes this comparison
+    fair, and why nothing here recomputes anything. Every number came out
+    of the log; this only lines them up and says who took each row.
+
+    A row both teams scored the same is a TIE, not a win. A row carrying
+    no points (the integrity lines) goes to whichever team was honest.
+    """
+    rows_a = {r.get("key"): r for r in a.get("rows") or ()}
+    rows_b = {r.get("key"): r for r in b.get("rows") or ()}
+    pts_a = {r.get("key"): r for r in a.get("score_rows") or ()}
+    pts_b = {r.get("key"): r for r in b.get("score_rows") or ()}
+    # The report card's own order — the class reads the same rows in the
+    # same sequence they just watched.
+    keys = [r.get("key") for r in a.get("rows") or ()]
+    keys += [k for k in rows_b if k not in keys]
+
+    def cell(row, scored):
+        return {"value": row.get("value") if row else None,
+                "met": row.get("met") if row else None,
+                "points": scored.get("points") if scored else None,
+                "max": scored.get("max") if scored else None}
+
+    merged = []
+    for key in keys:
+        ra, rb = rows_a.get(key), rows_b.get(key)
+        sa, sb = pts_a.get(key), pts_b.get(key)
+        winner = None
+        if sa and sb and sa["points"] != sb["points"]:
+            winner = "a" if sa["points"] > sb["points"] else "b"
+        elif not (sa and sb) and ra and rb and ra.get("met") != rb.get("met"):
+            if ra.get("met") is not None and rb.get("met") is not None:
+                winner = "a" if ra["met"] else "b"
+        merged.append({"key": key,
+                       "label": (ra or rb or {}).get("label", key),
+                       "a": cell(ra, sa), "b": cell(rb, sb),
+                       "winner": winner})
+    total_a, total_b = a.get("points") or 0, b.get("points") or 0
+    return {"a": _summary(a), "b": _summary(b), "rows": merged,
+            "winner": None if total_a == total_b
+                      else ("a" if total_a > total_b else "b")}
 
 CHALLENGES = {
     "temp": {
@@ -828,7 +928,8 @@ def control():
                                 "t_end": t0 + entry["duration_s"],
                                 "report": None, "score": None,
                                 "attempt": None,
-                                "label": None}   # team name arrives M27
+                                # whose run this is (M27) — a TEAM name
+                                "label": clean_label(cmd.get("label"))}
             runner.attempt_error = None
             runner.preset = None   # the challenge card owns the story now
             runner.running = True
@@ -913,6 +1014,32 @@ CSV_FIELDS = {
               "adh_enabled", "kidney_enabled", "water_access",
               "sensor_enabled"],
 }
+
+
+@app.route("/compare")
+def compare():
+    """Two finished runs of one challenge, side by side (M27).
+
+    Read-only and computed server-side, like the report card itself: the
+    browser draws this, it never works it out.
+    """
+    loop = request.args.get("loop", "temp")
+    name = request.args.get("name")
+    if loop not in runners or name not in CHALLENGES.get(loop, {}):
+        return jsonify({"error": f"unknown challenge {name!r} for the "
+                                 f"{loop} loop"}), 400
+    by_id = {a.get("id"): a for a in ATTEMPTS}
+    picked = []
+    for side in ("a", "b"):
+        att = by_id.get(request.args.get(side, type=int))
+        if att is None:
+            return jsonify({"error": "pick two finished runs to "
+                                     "compare"}), 400
+        if att.get("loop") != loop or att.get("name") != name:
+            return jsonify({"error": "those two runs aren't both from "
+                                     "this challenge"}), 400
+        picked.append(att)
+    return jsonify(compare_attempts(*picked))
 
 
 @app.route("/export.csv")

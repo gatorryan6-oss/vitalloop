@@ -18,16 +18,17 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M26 — Phase 8 underway. Specs: phases 1–7 as before,
+- **Committed:** M27 — Phase 8 underway. Specs: phases 1–7 as before,
   plus `vital_loop_phase8_kickoff.md` (M26–M30). The lesson grammar now
-  runs disturb → break → name → challenge → SCORE.
+  runs disturb → break → name → challenge → score → RACE.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M27 — head-to-head: a team-label box beside each Start
-  button (stamped onto the attempt, which already carries a `label`
-  field written as null), two finished report cards side by side row for
-  row, and a per-challenge leaderboard reading `data/attempts.json`.
-  Nothing new gets computed — every number is already a data product.
-  Then M28 diagnosis, M29 crisis, M30 the full pass.
+- **Next up:** M28 — the diagnosis game: a `CASES` table per loop,
+  server-side REDACTION while a case is live (no `*_enabled` flags in
+  `/state`, breaker card and disease banner hidden, diagram boxes drawn
+  "unknown" rather than grayed, CSV refused with a plain-English
+  reason), an answer form in curriculum vocabulary, and a reveal that
+  releases the full history. Assume a student opens devtools.
+  Then M29 crisis, M30 the full pass.
   Deferred to Phase 9: per-student sessions, SIADH + ADH-override knob,
   cross-loop coupling (mellitus polyuria), student worksheets.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
@@ -41,6 +42,61 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-16 — M27: Head-to-head
+- Shipped: M27 contract in `tests/test_invariants.py` (label tidying and
+  capping, compare purity + SYMMETRY, ties have no winner, row order
+  preserved, leaderboard ordering/cap/scoping, tolerance of M26-era
+  attempts). `clean_label` + a team box beside every Start button (the
+  label rides the challenge stamp onto the attempt and shows on the
+  progress clock and the verdict line while the run is live),
+  `challenge_runs` / `leaderboard` in `/state`, `compare_attempts` +
+  a read-only `GET /compare?loop&name&a&b`. UI: leaderboard table
+  (rank, team, points, medal, verdict, when) and a head-to-head picker
+  with two selects that repopulate ONLY when the set of runs changes —
+  a 4 Hz poll must never yank the teacher's choice mid-sentence. 80
+  invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The attempt grows `score_rows` + `zeroed`** (appended, so M26
+     records still load). The side-by-side has to show WHERE a team won,
+     which needs per-row points; the alternative was recomputing them
+     from the stored rows at compare time. Rejected: kickoff SS5 says a
+     future phase may swap the scorer for an honors section, and a
+     recomputed breakdown would then silently disagree with the total
+     the class was shown that day. What a run was worth THAT DAY is now
+     part of the record. The compare tolerates their absence, pinned as
+     a test, because run #1 in the real log predates them.
+  2. **The comparison is computed server-side**, like the report card
+     before it — `/compare` returns merged rows and winners, and the JS
+     only draws. Keeps it testable in pytest, and honours the standing
+     rule that nothing is computed only inside the JS.
+  3. Row-winner rules: a row both teams scored the same is a TIE, not a
+     win; a row with no points (the integrity lines) goes to whichever
+     team was honest; the match goes to the higher total. Symmetry is
+     pinned as a test — swap the teams and every winner must flip.
+  4. Verified through the production routes: two teams ran the identical
+     aid station, "Team 3" (250 mL every 15 min) scoring 100/GOLD and
+     "Period 2 Red" (1 L at +1 h and +3 h) 66/bronze/not met, and the
+     compare named the rows that decided it — time in band 60 vs 35.8
+     and the high end 20 vs 10.3, with the overhydration row a genuine
+     20-20 tie. All four click-the-wrong-thing refusals answer with a
+     plain-English 400.
+  5. VERIFIED LIVE in the browser on real wall-clock: typed the messy
+     "  Period 2   Red  " into the team box, locked the door, rested 40
+     min and worked the last 20 at 16x. The label came back tidied to
+     "Period 2 Red", rode the live progress clock ("Period 2 Red — 0:42
+     of 1:00 sim-hours") and the verdict line, and landed in the log as
+     attempt #2 — 35.80 °C, NOT MET, 51/100, no medal. Leaderboard drew
+     both runs (M26's unlabelled 83 first, shown as "(no team)"), the
+     pickers defaulted to the two most recent AND survived 6 polls
+     without losing the teacher's choice, and Compare drew the
+     side-by-side naming where it was won. Console clean.
+     Note the M26-era run has no `score_rows`, so in THAT pairing the
+     points columns are blank on its side and the economy row falls back
+     to a tie — the documented tolerance path, and it disappears as soon
+     as both runs are M27-era (as the aid-station pipeline above shows).
 
 ## 2026-08-16 — M26: Points, medals, and the attempts log (Phase 8 starts)
 - Shipped: Phase 8 contract in `tests/test_invariants.py` (scorer purity

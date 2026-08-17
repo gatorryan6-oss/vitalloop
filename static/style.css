@@ -391,6 +391,111 @@ main {
   font-weight: 600;
 }
 
+/* --- head to head (M27): the team box, the leaderboard, and two
+   report cards side by side --- */
+
+.challenge-label {
+  align-self: center;
+  width: 8.5rem;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.challenge-label:focus {
+  outline: 2px solid var(--series-core);
+  outline-offset: 1px;
+}
+.challenge-board { padding: 0.5rem 0 0.2rem; }
+.board-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 0.25rem;
+}
+.board-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.96rem;
+  font-variant-numeric: tabular-nums;
+}
+.board-table td {
+  padding: 0.22rem 0.5rem 0.22rem 0;
+  border-top: 1px solid var(--grid);
+}
+.board-rank { width: 2rem; color: var(--muted); font-weight: 700; }
+.board-team { font-weight: 600; }
+.board-points { white-space: nowrap; }
+.board-medal { width: 5.5rem; }
+.board-when { color: var(--muted); text-align: right; white-space: nowrap; }
+
+.challenge-h2h { padding: 0.5rem 0 0.2rem; }
+.h2h-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
+.h2h-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.h2h-pick select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.93rem;
+}
+.h2h-verdict {
+  margin: 0.55rem 0 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  background: var(--grid);
+  font-weight: 700;
+  font-size: 1.02rem;
+}
+.h2h-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.h2h-table th, .h2h-table td {
+  padding: 0.3rem 0.55rem;
+  border-top: 1px solid var(--grid);
+  text-align: left;
+  vertical-align: top;
+}
+.h2h-team { width: 34%; }
+.h2h-name { font-size: 1.05rem; font-weight: 700; }
+.h2h-total {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.h2h-label { color: var(--ink-2); }
+.h2h-cell .h2h-value { padding-right: 0.4rem; }
+.h2h-cell .row-points { color: var(--muted); }
+.h2h-win {
+  background: #eef7ee;
+  box-shadow: inset 3px 0 0 #0ca30c;
+}
+.h2h-win .row-points { color: #1c6e1c; font-weight: 700; }
+
 /* --- patient status on the glucose readout (M13) --- */
 
 #r1Value.hypo { color: #d03b3b; }

@@ -65,7 +65,7 @@ async function poll() {
   applyServerState(j);
   updateBanner(loop, j.preset);
   updateChallenge(loop, j.challenge);
-  updateChallengeBest(loop, j.bests, j.attempts_error);
+  updateGameLayer(loop, j);
   updateReadouts(j.now);
   if (loop === "temp" && window.updateDiagram) {
     window.updateDiagram(j.now);
@@ -122,13 +122,16 @@ function updateBanner(loop, preset) {
 const CHALLENGE_IDS = {
   temp: { progress: "tempChallengeProgress",
           report: "tempChallengeReport",
-          best: "tempChallengeBest", error: "tempAttemptsError" },
+          best: "tempChallengeBest", error: "tempAttemptsError",
+          board: "tempChallengeBoard", h2h: "tempChallengeH2H" },
   glucose: { progress: "glucoseChallengeProgress",
              report: "glucoseChallengeReport",
-             best: "glucoseChallengeBest", error: "glucoseAttemptsError" },
+             best: "glucoseChallengeBest", error: "glucoseAttemptsError",
+             board: "glucoseChallengeBoard", h2h: "glucoseChallengeH2H" },
   water: { progress: "waterChallengeProgress",
            report: "waterChallengeReport",
-           best: "waterChallengeBest", error: "waterAttemptsError" },
+           best: "waterChallengeBest", error: "waterAttemptsError",
+           board: "waterChallengeBoard", h2h: "waterChallengeH2H" },
 };
 
 /* Points and medals (M26). Every number here was computed server-side by
@@ -172,6 +175,7 @@ function updateChallenge(loop, c) {
     progress.querySelector(".challenge-bar span").style.width =
       (100 * elapsed / total).toFixed(1) + "%";
     progress.querySelector(".challenge-clock").textContent =
+      (c.label ? `${c.label} — ` : "") +
       `${fmtSimHours(elapsed)} of ${fmtSimHours(total)} sim-hours — ` +
       c.goal;
     return;
@@ -183,9 +187,10 @@ function updateChallenge(loop, c) {
   const verdict = document.createElement("div");
   verdict.className = "challenge-verdict "
     + (c.report.met ? "verdict-met" : "verdict-missed");
+  const whose = c.label ? `${c.title} — ${c.label}` : c.title;
   verdict.textContent = c.report.met
-    ? `${c.title}: GOAL MET`
-    : `${c.title}: NOT MET — read the rows, then the charts`;
+    ? `${whose}: GOAL MET`
+    : `${whose}: NOT MET — read the rows, then the charts`;
   report.appendChild(verdict);
   // The score rides ON TOP of the verdict, never instead of it (M26).
   const worth = {};
@@ -234,13 +239,18 @@ function updateChallenge(loop, c) {
   }
 }
 
-/* --- best so far + a loud line if a score didn't save (M26) --- */
+/* --- best so far, the leaderboard, and the head-to-head picker
+   (M26/M27). Team names go in with textContent, never innerHTML: the
+   teacher types them and the projector shows them back verbatim. --- */
 
-function updateChallengeBest(loop, bests, error) {
+const TEAMLESS = "(no team)";
+
+function updateGameLayer(loop, j) {
   const ids = CHALLENGE_IDS[loop];
   if (!ids) return;
   const div = document.getElementById(ids.best);
-  const best = bests ? bests[div.dataset.challenge] : null;
+  const cid = div.dataset.challenge;
+  const best = j.bests ? j.bests[cid] : null;
   if (!best) {
     div.hidden = true;
   } else {
@@ -258,8 +268,180 @@ function updateChallengeBest(loop, bests, error) {
       `${best.runs} run${best.runs === 1 ? "" : "s"} so far`));
   }
   const warn = document.getElementById(ids.error);
-  warn.hidden = !error;
-  if (error) warn.textContent = error;
+  warn.hidden = !j.attempts_error;
+  if (j.attempts_error) warn.textContent = j.attempts_error;
+  const board = j.leaderboard ? j.leaderboard[cid] : null;
+  drawLeaderboard(loop, board || []);
+  fillH2HPickers(loop, board || []);
+}
+
+function drawLeaderboard(loop, entries) {
+  const div = document.getElementById(CHALLENGE_IDS[loop].board);
+  div.hidden = entries.length === 0;
+  if (!entries.length) return;
+  div.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "board-title";
+  head.textContent = "Leaderboard";
+  div.appendChild(head);
+  const table = document.createElement("table");
+  table.className = "board-table";
+  entries.forEach((e, i) => {
+    const tr = document.createElement("tr");
+    const cells = [
+      [`${i + 1}`, "board-rank"],
+      [e.label || TEAMLESS, "board-team"],
+      [`${e.points} / 100`, "board-points"],
+      [null, "board-medal"],                      // filled with a chip
+      [e.met ? "goal met" : "not met", e.met ? "row-met" : "row-missed"],
+      [fmtWhen(e.wall_time), "board-when"],
+    ];
+    for (const [text, cls] of cells) {
+      const td = document.createElement("td");
+      td.className = cls;
+      if (text === null) td.appendChild(medalChip(e.medal));
+      else td.textContent = text;
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  });
+  div.appendChild(table);
+}
+
+/* Repopulate the two pickers ONLY when the set of runs changes — a poll
+   lands four times a second and must never yank the teacher's choice. */
+
+function fillH2HPickers(loop, entries) {
+  const wrap = document.getElementById(CHALLENGE_IDS[loop].h2h);
+  wrap.hidden = entries.length < 2;
+  if (entries.length < 2) return;
+  const signature = entries.map(e => e.id).join(",");
+  if (wrap.dataset.signature === signature) return;
+  wrap.dataset.signature = signature;
+  const selA = wrap.querySelector(".h2h-a");
+  const selB = wrap.querySelector(".h2h-b");
+  const keep = { a: selA.value, b: selB.value };
+  for (const sel of [selA, selB]) {
+    sel.innerHTML = "";
+    for (const e of entries) {
+      const opt = document.createElement("option");
+      opt.value = e.id;
+      opt.textContent = `${e.label || TEAMLESS} — ${e.points}`;
+      sel.appendChild(opt);
+    }
+  }
+  // Default to the two most recent runs, oldest on the left, so the
+  // projector reads in the order the class played them.
+  const recent = entries.slice().sort(
+    (x, y) => (y.wall_time || "").localeCompare(x.wall_time || ""));
+  const ids = entries.map(e => String(e.id));
+  selA.value = ids.includes(keep.a) ? keep.a : String(recent[1].id);
+  selB.value = ids.includes(keep.b) ? keep.b : String(recent[0].id);
+}
+
+/* The comparison is computed SERVER-SIDE from the log (M27) — this only
+   draws what /compare hands back. */
+
+async function runCompare(loop) {
+  const wrap = document.getElementById(CHALLENGE_IDS[loop].h2h);
+  const out = wrap.querySelector(".h2h-out");
+  const a = wrap.querySelector(".h2h-a").value;
+  const b = wrap.querySelector(".h2h-b").value;
+  const name = wrap.dataset.challenge;
+  let j;
+  try {
+    const r = await fetch(
+      `/compare?loop=${loop}&name=${name}&a=${a}&b=${b}`);
+    j = await r.json();
+    if (j.error) throw new Error(j.error);
+  } catch (e) {
+    out.innerHTML = "";
+    const msg = document.createElement("div");
+    msg.className = "attempts-error";
+    msg.textContent = e.message || "the comparison could not be loaded";
+    out.appendChild(msg);
+    return;
+  }
+  drawCompare(out, j);
+}
+
+function teamHead(side) {
+  const cell = document.createElement("th");
+  cell.className = "h2h-team";
+  const name = document.createElement("div");
+  name.className = "h2h-name";
+  name.textContent = side.label || TEAMLESS;
+  cell.appendChild(name);
+  const score = document.createElement("div");
+  score.className = "h2h-total";
+  if (side.zeroed) {
+    score.textContent = "NO SCORE";
+  } else {
+    score.textContent = `${side.points} / 100 `;
+    score.appendChild(medalChip(side.medal));
+  }
+  cell.appendChild(score);
+  const verdict = document.createElement("div");
+  verdict.className = side.met ? "row-met" : "row-missed";
+  verdict.textContent = side.met ? "goal met" : "not met";
+  cell.appendChild(verdict);
+  return cell;
+}
+
+function h2hCell(cell, won) {
+  const td = document.createElement("td");
+  td.className = "h2h-cell" + (won ? " h2h-win" : "");
+  if (cell.value === null) {
+    td.textContent = "—";
+    return td;
+  }
+  const mark = document.createElement("span");
+  mark.className = cell.met === null ? "row-info"
+    : cell.met ? "row-met" : "row-missed";
+  mark.textContent = cell.met === null ? "·" : cell.met ? "✓" : "✗";
+  td.appendChild(mark);
+  const val = document.createElement("span");
+  val.className = "h2h-value";
+  val.textContent = ` ${cell.value}`;
+  td.appendChild(val);
+  if (cell.points !== null && cell.points !== undefined) {
+    const pts = document.createElement("span");
+    pts.className = "row-points";
+    pts.textContent = `${cell.points} / ${cell.max}`;
+    td.appendChild(pts);
+  }
+  return td;
+}
+
+function drawCompare(out, j) {
+  out.innerHTML = "";
+  const verdict = document.createElement("div");
+  verdict.className = "h2h-verdict";
+  const winner = j.winner ? j[j.winner] : null;
+  verdict.textContent = winner
+    ? `${winner.label || TEAMLESS} takes it, ` +
+      `${j.a.points} to ${j.b.points} — row by row, here's where.`
+    : `A dead heat at ${j.a.points} — identical runs of an identical ` +
+      `challenge.`;
+  out.appendChild(verdict);
+  const table = document.createElement("table");
+  table.className = "h2h-table";
+  const head = document.createElement("tr");
+  head.appendChild(document.createElement("th"));
+  head.appendChild(teamHead(j.a));
+  head.appendChild(teamHead(j.b));
+  table.appendChild(head);
+  for (const row of j.rows) {
+    const tr = document.createElement("tr");
+    const label = document.createElement("td");
+    label.className = "h2h-label";
+    label.textContent = row.label;
+    tr.appendChild(label);
+    tr.appendChild(h2hCell(row.a, row.winner === "a"));
+    tr.appendChild(h2hCell(row.b, row.winner === "b"));
+    table.appendChild(tr);
+  }
+  out.appendChild(table);
 }
 
 function updateReadouts(now) {
@@ -467,8 +649,19 @@ document.querySelectorAll(".preset").forEach(b =>
 /* --- challenges (M24) --- */
 
 document.querySelectorAll(".challenge-start").forEach(b =>
-  b.addEventListener("click", () =>
-    control({ action: "challenge", value: b.dataset.challenge })));
+  b.addEventListener("click", () => {
+    // Whose run this is (M27). The server tidies and caps it; an empty
+    // box just means nobody claimed the run.
+    const box = document.querySelector(
+      `.challenge-label[data-challenge="${b.dataset.challenge}"]`);
+    control({ action: "challenge", value: b.dataset.challenge,
+              label: box ? box.value : null });
+  }));
+
+/* --- head to head (M27) --- */
+
+document.querySelectorAll(".h2h-go").forEach(b =>
+  b.addEventListener("click", () => runCompare(activeLoop)));
 
 /* --- water disturbances (M21) --- */
 
