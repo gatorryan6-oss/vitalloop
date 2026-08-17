@@ -124,20 +124,14 @@ function updateBanner(loop, preset) {
 /* --- challenge card (M24): the server's stamp and report are the only
    sources; this renders them --- */
 
-const CHALLENGE_IDS = {
-  temp: { progress: "tempChallengeProgress",
-          report: "tempChallengeReport",
-          best: "tempChallengeBest", error: "tempAttemptsError",
-          board: "tempChallengeBoard", h2h: "tempChallengeH2H" },
-  glucose: { progress: "glucoseChallengeProgress",
-             report: "glucoseChallengeReport",
-             best: "glucoseChallengeBest", error: "glucoseAttemptsError",
-             board: "glucoseChallengeBoard", h2h: "glucoseChallengeH2H" },
-  water: { progress: "waterChallengeProgress",
-           report: "waterChallengeReport",
-           best: "waterChallengeBest", error: "waterAttemptsError",
-           board: "waterChallengeBoard", h2h: "waterChallengeH2H" },
-};
+/* A loop can have more than one challenge (M29 gave each one a crisis
+   variant), so cards are found by ELEMENT and identified by their own
+   data-challenge — there is no per-loop id map to keep in step with the
+   table any more. */
+
+function challengeCards(loop) {
+  return document.querySelectorAll(`#${PAGE_IDS[loop]} .challenge-card`);
+}
 
 /* Points and medals (M26). Every number here was computed server-side by
    score_report() from the same rows the report card shows — the JS adds
@@ -162,10 +156,18 @@ function fmtSimHours(s) {
 }
 
 function updateChallenge(loop, c) {
-  const ids = CHALLENGE_IDS[loop];
-  if (!ids) return;              // this loop has no challenge card (yet)
-  const progress = document.getElementById(ids.progress);
-  const report = document.getElementById(ids.report);
+  for (const card of challengeCards(loop)) {
+    // Only the card whose challenge is actually running shows anything;
+    // the others sit quiet with their story and their leaderboard.
+    drawChallenge(card, loop, c && c.name === card.dataset.challenge
+      ? c : null);
+  }
+}
+
+function drawChallenge(card, loop, c) {
+  const progress = card.querySelector(".challenge-progress");
+  const report = card.querySelector(".challenge-report");
+  drawFeed(card.querySelector(".challenge-feed"), c);
   if (!c) {
     progress.hidden = true;
     report.hidden = true;
@@ -197,6 +199,15 @@ function updateChallenge(loop, c) {
     ? `${whose}: GOAL MET`
     : `${whose}: NOT MET — read the rows, then the charts`;
   report.appendChild(verdict);
+  // A run the crisis ended early says so first, and says when (M29).
+  if (c.stopped) {
+    const halt = document.createElement("div");
+    halt.className = "challenge-stopped";
+    halt.textContent =
+      `Stopped at ${fmtSimHours(c.stopped.t - c.t_start)} — ` +
+      `${c.stopped.line}.`;
+    report.appendChild(halt);
+  }
   // The score rides ON TOP of the verdict, never instead of it (M26).
   const worth = {};
   if (c.score) {
@@ -219,6 +230,42 @@ function updateChallenge(loop, c) {
     report.appendChild(reportRow(row, worth[row.key]));
   }
   report.appendChild(savedLine(c.attempt));
+}
+
+/* The crisis feed (M29): what has already hit this run, and when. The
+   server sends only what has LANDED — the rest of the schedule never
+   leaves the building — so this can draw everything it is given and the
+   ambush stays an ambush. It stays on screen after the buzzer, because
+   reading the report means remembering what the run had to survive. */
+
+function drawFeed(feed, c) {
+  if (!feed) return;
+  const events = (c && c.events) || [];
+  feed.hidden = events.length === 0;
+  if (!events.length) {
+    feed.dataset.count = "0";
+    return;
+  }
+  if (feed.dataset.count === String(events.length)) return;  // 4 Hz poll
+  feed.dataset.count = String(events.length);
+  feed.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "feed-title";
+  head.textContent = "What has happened to you";
+  feed.appendChild(head);
+  events.forEach((e, i) => {
+    const row = document.createElement("div");
+    row.className = "feed-row" + (i === events.length - 1 ? " feed-new" : "");
+    const when = document.createElement("span");
+    when.className = "feed-when";
+    when.textContent = "+" + fmtSimHours(e.at);
+    row.appendChild(when);
+    const line = document.createElement("span");
+    line.className = "feed-line";
+    line.textContent = e.line;
+    row.appendChild(line);
+    feed.appendChild(row);
+  });
 }
 
 /* One line of a report card: the ✓/✗/· mark, the label and value the
@@ -354,10 +401,12 @@ function drawCaseVerdict(out, c) {
 const TEAMLESS = "(no team)";
 
 function updateGameLayer(loop, j) {
-  const ids = CHALLENGE_IDS[loop];
-  if (!ids) return;
-  const div = document.getElementById(ids.best);
-  const cid = div.dataset.challenge;
+  for (const card of challengeCards(loop)) drawGameLayer(card, j);
+}
+
+function drawGameLayer(card, j) {
+  const cid = card.dataset.challenge;
+  const div = card.querySelector(".challenge-best");
   const best = j.bests ? j.bests[cid] : null;
   if (!best) {
     div.hidden = true;
@@ -375,16 +424,16 @@ function updateGameLayer(loop, j) {
       `${tail}${fmtWhen(best.wall_time)} · ` +
       `${best.runs} run${best.runs === 1 ? "" : "s"} so far`));
   }
-  const warn = document.getElementById(ids.error);
+  const warn = card.querySelector(".attempts-error");
   warn.hidden = !j.attempts_error;
   if (j.attempts_error) warn.textContent = j.attempts_error;
   const board = j.leaderboard ? j.leaderboard[cid] : null;
-  drawLeaderboard(loop, board || []);
-  fillH2HPickers(loop, board || []);
+  drawLeaderboard(card, board || []);
+  fillH2HPickers(card, board || []);
 }
 
-function drawLeaderboard(loop, entries) {
-  const div = document.getElementById(CHALLENGE_IDS[loop].board);
+function drawLeaderboard(card, entries) {
+  const div = card.querySelector(".challenge-board");
   div.hidden = entries.length === 0;
   if (!entries.length) return;
   div.innerHTML = "";
@@ -419,8 +468,8 @@ function drawLeaderboard(loop, entries) {
 /* Repopulate the two pickers ONLY when the set of runs changes — a poll
    lands four times a second and must never yank the teacher's choice. */
 
-function fillH2HPickers(loop, entries) {
-  const wrap = document.getElementById(CHALLENGE_IDS[loop].h2h);
+function fillH2HPickers(card, entries) {
+  const wrap = card.querySelector(".challenge-h2h");
   wrap.hidden = entries.length < 2;
   if (entries.length < 2) return;
   const signature = entries.map(e => e.id).join(",");
@@ -450,12 +499,12 @@ function fillH2HPickers(loop, entries) {
 /* The comparison is computed SERVER-SIDE from the log (M27) — this only
    draws what /compare hands back. */
 
-async function runCompare(loop) {
-  const wrap = document.getElementById(CHALLENGE_IDS[loop].h2h);
+async function runCompare(loop, card) {
+  const wrap = card.querySelector(".challenge-h2h");
   const out = wrap.querySelector(".h2h-out");
   const a = wrap.querySelector(".h2h-a").value;
   const b = wrap.querySelector(".h2h-b").value;
-  const name = wrap.dataset.challenge;
+  const name = card.dataset.challenge;
   let j;
   try {
     const r = await fetch(
@@ -771,17 +820,18 @@ document.querySelectorAll(".preset").forEach(b =>
 document.querySelectorAll(".challenge-start").forEach(b =>
   b.addEventListener("click", () => {
     // Whose run this is (M27). The server tidies and caps it; an empty
-    // box just means nobody claimed the run.
-    const box = document.querySelector(
-      `.challenge-label[data-challenge="${b.dataset.challenge}"]`);
-    control({ action: "challenge", value: b.dataset.challenge,
-              label: box ? box.value : null });
+    // box just means nobody claimed the run. The card knows which
+    // challenge it is — a loop can have several (M29).
+    const card = b.closest(".challenge-card");
+    control({ action: "challenge", value: card.dataset.challenge,
+              label: card.querySelector(".challenge-label").value });
   }));
 
 /* --- head to head (M27) --- */
 
 document.querySelectorAll(".h2h-go").forEach(b =>
-  b.addEventListener("click", () => runCompare(activeLoop)));
+  b.addEventListener("click", () =>
+    runCompare(activeLoop, b.closest(".challenge-card"))));
 
 /* --- the diagnosis game (M28). The picker sends "next" or a NUMBER;
    there is no case name anywhere in this file, or in the page. --- */

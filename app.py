@@ -73,7 +73,98 @@ class Runner:
             else:
                 self._tick_debt -= n
             if n:
-                self.sim.step(n)
+                self._step(n)
+
+    # ---------------- crisis mode (M29) ----------------
+    #
+    # The wall clock decides HOW MANY ticks to run; the three methods
+    # below decide how those ticks are cut up. That distinction is the
+    # whole milestone: an ambush stamped at +45 min must land at +45 min
+    # whether the browser polled four times a second or once a minute,
+    # because the run a teacher rehearses at home has to be the run the
+    # class gets.
+
+    def _step(self, n):
+        """Advance n ticks, stopping ON THE EXACT TICK of every scheduled
+        event. Call with self.lock HELD.
+
+        A challenge with no schedule and no hard stops falls straight
+        through to one sim.step(n) — M24-M28 behave exactly as before.
+        """
+        while n > 0:
+            event = self._pending_event()
+            t = self.sim.state()["t"]
+            if event is not None and event["t"] <= t:
+                self._fire_event(event)
+                continue
+            # max(1, ...) is the anti-wedge: every sim-time in this app is
+            # a whole second, so the gap to an event is never fractional —
+            # but a chunk of 0 here would spin forever, and "hard to wedge
+            # mid-class" outranks trusting that a later phase keeps the
+            # tick a whole number. A fractional gap just fires one tick
+            # late instead.
+            chunk = n if event is None else min(n, max(1, int(event["t"] - t)))
+            self._step_watched(chunk)
+            n -= chunk
+
+    def _pending_event(self):
+        """The next ambush still owed, or None.
+
+        Nothing is owed once the window has closed — a hard stop ends the
+        ambushes with it, because a run that finished in the ER is over.
+        """
+        c = self.challenge
+        if c is None or c["stopped"] or c["next_event"] >= len(c["schedule"]):
+            return None
+        return c["schedule"][c["next_event"]]
+
+    def _fire_event(self, event):
+        """One ambush, applied through the SAME public API the buttons
+        call — no private engine access and no new engine code (Phase 8
+        kickoff SS0), which is why a second breakfast behaves exactly like
+        a teacher pressing "eat"."""
+        method, args = event["do"]
+        getattr(self.sim, method)(*args)
+        self.challenge["feed"].append({"t": event["t"], "at": event["at"],
+                                       "line": event["line"]})
+        self.challenge["next_event"] += 1
+
+    def _live_stops(self):
+        """The hard-stop lines being watched right now, if any."""
+        c = self.challenge
+        if c is None or c["stopped"] or c["report"] is not None:
+            return None
+        return STOPS.get(CHALLENGES[c["loop"]][c["name"]]["metrics"])
+
+    def _step_watched(self, n):
+        """Exactly n ticks, tested against the hard-stop lines on EVERY
+        one of them.
+
+        Not once per chunk: the tick a line was crossed on must not depend
+        on how the polls happened to fall. Crossing one CLOSES THE WINDOW
+        at that tick — and the simulation carries straight on, because a
+        fail state here is a report card, never a game-over screen.
+        """
+        stops = self._live_stops()
+        if not stops:
+            self.sim.step(n)
+            return
+        c = self.challenge
+        left = n
+        while left > 0:
+            self.sim.step(1)
+            left -= 1
+            r = self.sim.state()
+            if r["t"] > c["t_end"]:
+                break                      # past the buzzer; nothing to watch
+            hit = next((s for s in stops if s["test"](r)), None)
+            if hit is not None:
+                c["stopped"] = {"key": hit["key"], "line": hit["line"],
+                                "t": r["t"]}
+                c["t_end"] = r["t"]        # the window ended where it ended
+                break
+        if left:
+            self.sim.step(left)
 
     def _finish_challenge(self, records, state):
         """The challenge block for /state — and, the one time the window
@@ -99,7 +190,7 @@ class Runner:
             c["score"] = score_report(entry, c["report"])
             c["attempt"], self.attempt_error = log_attempt(
                 build_attempt(c["loop"], c["name"], c["report"], c["score"],
-                              label=c.get("label")))
+                              label=c.get("label"), events=c["feed"]))
         return {
             "name": c["name"],
             "title": entry["title"],
@@ -111,6 +202,10 @@ class Runner:
             "report": c["report"],
             "score": c.get("score"),
             "attempt": c.get("attempt"),
+            # What has ALREADY hit them (M29) — never the schedule. An
+            # ambush a student can read in devtools is a timetable.
+            "events": c["feed"],
+            "stopped": c["stopped"],
         }
 
     def _case_block(self):
@@ -434,10 +529,191 @@ def _eval_aid_station(records):
             "rows": rows}
 
 
+# ================= Crisis mode (M29) =====================================
+#
+# A challenge that ambushes you on a schedule. Two pieces of machinery,
+# both app-level like everything else in Phase 8:
+#
+#   EVENTS — (sim-time offset, action, plain-English line) on a challenge
+#     entry. The Runner fires them through the same public API the buttons
+#     call, ON THE EXACT TICK, so the run a teacher rehearses is the run
+#     the class gets. The class sees a live feed of what has landed; the
+#     schedule of what HASN'T is never shipped.
+#
+#   STOPS — hard lines that close the window early. The patient going to
+#     the ER ends the run being graded; it does not end the simulation and
+#     it never splashes a game over (kickoff SS2 — fail states report).
+#
+# One table per metrics name, so the stepper that WATCHES a line and the
+# report card that QUOTES it can never drift apart. The predicates are
+# pure functions of one history record, tested as such.
+STOPS = {
+    "blast_freezer": [
+        {"key": "collapse",
+         "line": "the core fell to 34.0 °C — moderate hypothermia, and "
+                 "whoever opened that door found somebody confused and "
+                 "sitting down",
+         "test": lambda r: r["core_temp"] <= 34.0},
+    ],
+    "crisis_shift": [
+        {"key": "er_hypo",
+         "line": "glucose fell to 40 mg/dL — severe hypoglycemia, and "
+                 "the shift ended in the ER",
+         "test": lambda r: r["glucose"] <= 40.0},
+        {"key": "er_hyper",
+         "line": "glucose reached 400 mg/dL — the patient was admitted "
+                 "before the shift was over",
+         "test": lambda r: r["glucose"] >= 400.0},
+    ],
+    "race_day": [
+        {"key": "hyponatremia",
+         "line": "osmolarity fell to 265 mOsm/L — water intoxication, "
+                 "the aid station's classic kill",
+         "test": lambda r: r["osmolarity"] <= 265.0},
+        {"key": "collapse",
+         "line": "osmolarity reached 320 mOsm/L — your runner collapsed "
+                 "dehydrated at the roadside",
+         "test": lambda r: r["osmolarity"] >= 320.0},
+    ],
+}
+
+
+def _sim_clock(seconds):
+    """h:mm of sim-time, the way the challenge clock on the card reads."""
+    seconds = int(seconds)
+    return f"{seconds // 3600}:{seconds % 3600 // 60:02d}"
+
+
+def _stop_row(records, metrics):
+    """Did this window end at a hard-stop line, and where?
+
+    The report card's version of what the stepper was watching — same
+    table, so the row can never name a line the runner doesn't enforce.
+    A stopped run is scored like an integrity failure (see SCORING): a
+    window truncated at twenty minutes would otherwise report a
+    flattering percentage, and crashing early must not out-score playing
+    the hour out.
+    """
+    # The window's first record sits one tick after the challenge start.
+    start = records[0]["t"] - 1.0 if records else 0.0
+    for r in records:
+        for stop in STOPS[metrics]:
+            if stop["test"](r):
+                return {"key": "stopped", "label": "the run went the "
+                        "distance", "n": None, "met": False,
+                        "value": f"no — {stop['line']} "
+                                 f"at {_sim_clock(r['t'] - start)}"}
+    return {"key": "stopped", "label": "the run went the distance",
+            "value": "yes — nobody was taken out of this one", "met": True,
+            "n": None}
+
+
+def _eval_blast_freezer(records):
+    """The cold store again — but this time the room is getting worse
+    while the heat budget stays the same size."""
+    n = max(1, len(records))
+    end = records[-1]["core_temp"] if records else 0.0
+    lo = min((r["core_temp"] for r in records), default=0.0)
+    duty = 100.0 * sum(1 for r in records if r["exercise"]) / n
+    # The ambush is unfixable ON PURPOSE: the compressor takes the store
+    # below anything the slider can set, and reaching for the slider at
+    # all shows up here. Rising env temp is the tell, not its value —
+    # the room the class was given is not the room cold_store gave them.
+    warmed = any(b["env_temp"] > a["env_temp"]
+                 for a, b in zip(records, records[1:]))
+    stayed_failed = all(not r["shiver_enabled"] and not r["vaso_enabled"]
+                        for r in records)
+    rows = [
+        {"key": "end_core", "label": "core at the hour's end",
+         "value": f"{end:.2f} °C (target: at least 36.0)",
+         "met": end >= 36.0, "n": end},
+        {"key": "lowest", "label": "lowest core",
+         "value": f"{lo:.2f} °C (target: never below 35.0)",
+         "met": lo >= 35.0, "n": lo},
+        {"key": "duty", "label": "exercise used",
+         "value": f"{duty:.0f}% of the hour (exhaustion cap: 50%)",
+         "met": duty <= 50.0, "n": duty},
+        {"key": "door", "label": "the room was never warmed by hand",
+         "value": "yes" if not warmed
+                  else "no — somebody reached for the thermostat",
+         "met": not warmed, "n": None},
+        {"key": "parts", "label": "shivering and vessel control stayed "
+                                  "failed",
+         "value": "yes" if stayed_failed
+                  else "no — a broken part came back mid-rescue",
+         "met": stayed_failed, "n": None},
+        _stop_row(records, "blast_freezer"),
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
+def _eval_crisis_shift(records):
+    """Three hours as the pancreas, with the day happening TO you."""
+    n = max(1, len(records))
+    in_range = sum(1 for r in records if 70.0 <= r["glucose"] <= 180.0)
+    pct = 100.0 * in_range / n
+    lo = min((r["glucose"] for r in records), default=0.0)
+    hi = max((r["glucose"] for r in records), default=0.0)
+    beta_stayed_off = all(not r["beta_enabled"] for r in records)
+    rows = [
+        {"key": "in_range", "label": "time in 70-180 mg/dL",
+         "value": f"{pct:.0f}% (target: at least 70%)", "met": pct >= 70.0,
+         "n": pct},
+        {"key": "lowest", "label": "lowest glucose",
+         "value": f"{lo:.0f} mg/dL (target: never below 60)",
+         "met": lo >= 60.0, "n": lo},
+        {"key": "highest", "label": "highest glucose",
+         "value": f"{hi:.0f} mg/dL", "met": None, "n": hi},
+        {"key": "beta_off", "label": "beta cells stayed off",
+         "value": "yes" if beta_stayed_off
+                  else "no — the pancreas came back on mid-shift",
+         "met": beta_stayed_off, "n": None},
+        _stop_row(records, "crisis_shift"),
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
+def _eval_race_day(records):
+    """Two hours as someone else's osmoreceptor, on a day where other
+    people keep handing your runner things."""
+    n = max(1, len(records))
+    inside = sum(1 for r in records if 280.0 <= r["osmolarity"] <= 300.0)
+    pct = 100.0 * inside / n
+    lo = min((r["osmolarity"] for r in records), default=0.0)
+    hi = max((r["osmolarity"] for r in records), default=0.0)
+    sensor_dead = all(not r["sensor_enabled"] for r in records)
+    urine_l = sum(r["urine_rate"] for r in records) / 60.0 / 1000.0
+    rows = [
+        {"key": "in_band", "label": "time inside 280-300 mOsm/L",
+         "value": f"{pct:.0f}% (target: at least 80%)", "met": pct >= 80.0,
+         "n": pct},
+        {"key": "lowest", "label": "lowest osmolarity",
+         "value": f"{lo:.1f} mOsm/L (target: never below 272)",
+         "met": lo >= 272.0, "n": lo},
+        {"key": "highest", "label": "highest osmolarity",
+         "value": f"{hi:.1f} mOsm/L (target: never above 310)",
+         "met": hi <= 310.0, "n": hi},
+        {"key": "urine", "label": "urine passed",
+         "value": f"{urine_l:.1f} L", "met": None, "n": urine_l},
+        {"key": "sensor", "label": "the osmoreceptors stayed dead",
+         "value": "yes" if sensor_dead else "no — the sensor came back",
+         "met": sensor_dead, "n": None},
+        _stop_row(records, "race_day"),
+    ]
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
 EVALUATORS = {
     "t1_shift": _eval_t1_shift,
     "cold_store": _eval_cold_store,
     "aid_station": _eval_aid_station,
+    # M29 — the crisis variants, one per loop
+    "blast_freezer": _eval_blast_freezer,
+    "crisis_shift": _eval_crisis_shift,
+    "race_day": _eval_race_day,
 }
 
 
@@ -503,6 +779,54 @@ SCORING = {
                                 "race"},
         "sensor": {"integrity": "the osmoreceptors came back — the class "
                                 "stopped being the sensor"},
+    },
+    # ---- the crisis variants (M29) ----
+    #
+    # Every one carries a `stopped` line, and it ZEROES rather than docks.
+    # Not as a punishment: a hard stop cuts the window short, and a
+    # percentage over a truncated window flatters — a run that crashed at
+    # twenty minutes would otherwise beat one that played the hour out.
+    # Bands here are again from the M29 sweep (numbers in BUILDLOG).
+    "blast_freezer": {
+        "end_core": {"points": 55, "zero_at": 35.0, "full_at": 36.4},
+        "lowest": {"points": 30, "zero_at": 34.2, "full_at": 35.6},
+        # Economy still pays — but the band is set where the sweep says
+        # survival actually costs, so a team that lives on less than the
+        # full allowance is the one that gets the marks for it.
+        "duty": {"points": 15, "zero_at": 50.0, "full_at": 32.0,
+                 "hard": "exercise ran past exhaustion — this body "
+                         "couldn't have kept moving that long"},
+        "door": {"integrity": "the thermostat was turned up — that's not "
+                              "the freezer you were locked in"},
+        "parts": {"integrity": "a broken part came back on — that's not "
+                               "the rescue"},
+        "stopped": {"integrity": "the hour ended in an ambulance — there "
+                                 "is no score for a rescue that needed "
+                                 "rescuing"},
+    },
+    "crisis_shift": {
+        "in_range": {"points": 50, "zero_at": 40.0, "full_at": 95.0},
+        "lowest": {"points": 35, "zero_at": 50.0, "full_at": 75.0},
+        "highest": {"points": 15, "zero_at": 330.0, "full_at": 200.0},
+        "beta_off": {"integrity": "the pancreas came back on — the shift "
+                                  "doesn't count"},
+        "stopped": {"integrity": "the run ended early — there is no score "
+                                 "for a shift that finished in the ER"},
+    },
+    "race_day": {
+        "in_band": {"points": 55, "zero_at": 50.0, "full_at": 100.0},
+        # Banded around what the AMBUSHES themselves impose: two liters
+        # this class never poured take the best possible run down to
+        # 280, and the salt load with no sweating behind it takes it up
+        # to 297. Grading past those would dock the class for somebody
+        # else's decisions.
+        "lowest": {"points": 20, "zero_at": 272.0, "full_at": 280.0},
+        "highest": {"points": 25, "zero_at": 302.0, "full_at": 296.0},
+        "sensor": {"integrity": "the osmoreceptors came back — the class "
+                                "stopped being the sensor"},
+        "stopped": {"integrity": "the run ended early — there is no score "
+                                 "for a race that finished in the medical "
+                                 "tent"},
     },
 }
 
@@ -590,7 +914,8 @@ def clean_label(raw):
     return " ".join(raw.split())[:MAX_LABEL_CHARS] or None
 
 
-def build_attempt(loop, name, report, score, label=None, mode="challenge"):
+def build_attempt(loop, name, report, score, label=None, mode="challenge",
+                  events=None):
     """One finished run as a log record (Phase 8 kickoff SS5 fields).
 
     Wall-clock time is app-level and that's fine: a leaderboard needs a
@@ -613,6 +938,10 @@ def build_attempt(loop, name, report, score, label=None, mode="challenge"):
         # worth THAT DAY stays true.
         "score_rows": score["rows"],
         "zeroed": score["zeroed"],
+        # -- appended at M29: what the run was AMBUSHED with, and when. A
+        # crisis attempt is only readable later if the log says which
+        # events the team faced (kickoff SS5).
+        "events": list(events or ()),
     }
 
 
@@ -730,6 +1059,7 @@ CHALLENGES = {
     "temp": {
         "cold_store": {
             "title": "Cold-store lock-in",
+            "start_label": "Lock the door",
             "story": "The door shut behind you: -10 °C for one sim-hour. "
                      "This body is past shivering and its vessel "
                      "response has failed (severe hypothermia really "
@@ -752,10 +1082,51 @@ CHALLENGES = {
             # CHEAP rescue — spending the whole allowance is silver.
             "medals": {"gold": 84, "silver": 76, "bronze": 60},
         },
+        "blast_freezer": {
+            "title": "The blast freezer",
+            "start_label": "Lock the door",
+            "crisis": True,
+            "story": "The same locked store, the same body — shivering "
+                     "gone and the vessel response with it, movement the "
+                     "only heat you have, exhaustion still capping it at "
+                     "half the hour. One difference: this time you are "
+                     "in the part of the warehouse they use for hard "
+                     "freezing, and the compressor runs to its own "
+                     "schedule. The room is going to get worse. Spend "
+                     "accordingly — and watch the feed.",
+            "goal": "Core at 36.0 °C or better when the door opens, "
+                    "never below 35.0, exercise at most 50% of the hour. "
+                    "Don't reach for the thermostat.",
+            "duration_s": 3600,
+            "speed": 4,
+            "setup": {**HEALTHY_TEMP, "env": -5.0,
+                      "effectors": {"sweat": True, "shiver": False,
+                                    "vaso": False}},
+            "start_actions": [],
+            "metrics": "blast_freezer",
+            "events": [
+                {"at": 12 * 60, "do": ("set_env_temp", (-12.0,)),
+                 "line": "The compressor cuts in. The store is on its "
+                         "way down to −12 °C, and there is nothing left "
+                         "in this body that can answer that."},
+                {"at": 32 * 60, "do": ("set_env_temp", (-20.0,)),
+                 "line": "It drops again — −20 °C, colder than any room "
+                         "you could set, and twenty-eight minutes still "
+                         "on the clock."},
+            ],
+            # M29 sweep: 50 % duty spread evenly 85, 48 % 85, the whole
+            # allowance banked into the last half 84 (on a lower trough),
+            # 45 % 82, 42 % 78, 35 % 69, 30 % 56 — and the SAME 50 %
+            # spent in the FIRST half scores 30 and misses. Resting the
+            # hour collapses at 0:51. Timing is the crisis lesson here,
+            # and it is worth more than fifty points.
+            "medals": {"gold": 84, "silver": 72, "bronze": 58},
+        },
     },
     "glucose": {
         "t1_shift": {
             "title": "The type 1 shift",
+            "start_label": "Start the shift",
             "story": "Your patient's beta cells are gone, breakfast "
                      "(60 g) just landed, and for the next five "
                      "sim-hours YOU are the control center. Boluses, "
@@ -776,10 +1147,54 @@ CHALLENGES = {
             # lands under bronze, whatever its average looked like.
             "medals": {"gold": 85, "silver": 72, "bronze": 60},
         },
+        "crisis_shift": {
+            "title": "The crisis shift",
+            "start_label": "Start the shift",
+            "crisis": True,
+            "story": "The same patient, the same missing beta cells, the "
+                     "same 60 g breakfast — and four hours in which you "
+                     "do not get to choose what happens next. Dose for "
+                     "the day you are given, not the one you planned, "
+                     "and remember the juice box is a tool too. Watch "
+                     "the feed.",
+            "goal": "At least 70% of the window in 70-180 mg/dL, never "
+                    "below 60. Beta cells stay off.",
+            "duration_s": 4 * 3600,
+            "speed": 16,
+            "setup": {**HEALTHY_GLUCOSE,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True}},
+            "start_actions": [("eat", (60, 1.0))],
+            "metrics": "crisis_shift",
+            "events": [
+                {"at": 55 * 60, "do": ("set_exercise", (True,)),
+                 "line": "Gym class, and nobody asked you. Working "
+                         "muscle pulls glucose out of the blood whether "
+                         "there is insulin on board or not — this drain "
+                         "does not need a hormone to work."},
+                {"at": 85 * 60, "do": ("set_exercise", (False,)),
+                 "line": "They sit back down, and that extra drain stops "
+                         "with them."},
+                {"at": 130 * 60, "do": ("eat", (40.0, 1.5)),
+                 "line": "A visitor brings donuts. Forty grams of fast "
+                         "carbohydrate, eaten before anyone can object — "
+                         "and this time there is no gym class coming to "
+                         "help you with it."},
+            ],
+            # M29 sweep: 4 U at breakfast + a juice box or two through
+            # the gym + 2 U for the donuts scores 86; feeding the gym but
+            # ignoring the donuts 83; covering the donuts but never
+            # feeding the gym 70 (on a low of 65); 4 U and nothing else
+            # 66; over-covering the donuts with 4 U 47; doing nothing 35
+            # at a peak of 334. Anything that starts the day with 8 U is
+            # in the ER before the gym is over.
+            "medals": {"gold": 84, "silver": 72, "bronze": 60},
+        },
     },
     "water": {
         "aid_station": {
             "title": "Aid station",
+            "start_label": "Take the table",
             "story": "Your runner's thirst has gone silent (hard "
                      "exercise really does mute it) and their ADH sits "
                      "frozen mid-range — the charts are the only "
@@ -802,6 +1217,52 @@ CHALLENGES = {
             # the rhythm that stays nearest 290. Every over-pour (the
             # 3 L chug 58, 250 mL every 10 min 37) misses a medal.
             "medals": {"gold": 95, "silver": 80, "bronze": 60},
+        },
+        "race_day": {
+            "title": "Race day goes wrong",
+            "start_label": "Take the table",
+            "crisis": True,
+            "story": "Same runner, same silent thirst, same frozen ADH — "
+                     "you are still the only osmoreceptor they have. Two "
+                     "differences today. They came to the line having "
+                     "drunk a liter in the car, so they start the race "
+                     "already watered. And other people keep handing "
+                     "them things, which you find out about the same "
+                     "moment they do. Three hours. Pouring on a rhythm "
+                     "will not survive this one — watch the feed.",
+            "goal": "At least 80% of the window inside 280-300 mOsm/L, "
+                    "never below 272 or above 310. The sensor stays dead.",
+            "duration_s": 3 * 3600,
+            "speed": 16,
+            "setup": {"exercise": True, "sensor": False,
+                      "effectors": {"adh": True, "kidney": True,
+                                    "access": True}},
+            # They arrive over-watered, so the run OPENS on a stretch
+            # where the right move is to pour nothing at all — and then
+            # sweat slowly turns that around under the class.
+            "start_actions": [("drink", (1000.0,))],
+            "metrics": "race_day",
+            "events": [
+                {"at": 45 * 60, "do": ("drink", (1000.0,)),
+                 "line": "A spectator hands your runner a full liter of "
+                         "plain water and they drink it on the spot, "
+                         "before anyone can say otherwise."},
+                {"at": 90 * 60, "do": ("set_exercise", (False,)),
+                 "line": "They pull up with a torn hamstring and walk "
+                         "into the medical tent. The sweating stops with "
+                         "them — and everything you had learned about "
+                         "their losses just stopped being true."},
+                {"at": 140 * 60, "do": ("eat_salt", (600.0,)),
+                 "line": "Somebody in the tent gives them electrolyte "
+                         "tablets. A whole solute load, swallowed at "
+                         "once, into a body that is no longer sweating."},
+            ],
+            # M29 sweep: reading the feed is worth thirty points here.
+            # Wait out the opening load, pour while they run, stop when
+            # they pull up: 93. Never pouring at all 54. Every blind
+            # rhythm loses — 250 mL/30 min 40, /20 min 36, /15 min 25 —
+            # and /10 min drowns the runner outright.
+            "medals": {"gold": 85, "silver": 70, "bronze": 55},
         },
     },
 }
@@ -1233,6 +1694,41 @@ def build_case_attempt(loop, case_id, grade, label=None):
     }
 
 
+def start_challenge(runner, loop, name, label=None):
+    """Arm one challenge on one runner: the setup, the opening actions,
+    the speed, and the stamped window.
+
+    The ONE definition of what starting a challenge means — /control, the
+    invariant tests and the M29 strategy sweep all take this path, so a
+    sweep that says a strategy scores 88 is describing the same machinery
+    the class will play.
+    """
+    entry = CHALLENGES[loop][name]
+    _apply_preset(runner.sim, entry["setup"])
+    for method, args in entry.get("start_actions", []):
+        getattr(runner.sim, method)(*args)
+    runner.speed = entry["speed"]
+    t0 = runner.sim.state()["t"]
+    runner.challenge = {
+        "loop": loop, "name": name,
+        "t_start": t0, "t_end": t0 + entry["duration_s"],
+        "report": None, "score": None, "attempt": None,
+        # whose run this is (M27) — a TEAM name
+        "label": clean_label(label),
+        # The ambush schedule (M29), stamped into ABSOLUTE sim-time here
+        # so the stepper never has to do arithmetic mid-run...
+        "schedule": [{"at": ev["at"], "t": t0 + ev["at"], "line": ev["line"],
+                      "do": ev["do"]} for ev in entry.get("events", ())],
+        "next_event": 0,
+        "feed": [],        # ...and what has actually landed, for the class
+        "stopped": None,   # the hard-stop line, if one gets crossed
+    }
+    runner.attempt_error = None
+    runner.preset = None   # the challenge card owns the story now
+    runner.case = None     # ...and a challenge is a different lesson
+    runner.running = True  # from a blind case
+
+
 def _apply_preset(sim, p):
     """Push a preset's full configuration through the engine's public
     API. Only keys present in the entry are touched."""
@@ -1398,26 +1894,10 @@ def control():
         elif action == "challenge":
             loop = request.args.get("loop", "temp")
             name = cmd.get("value")
-            entry = CHALLENGES.get(loop, {}).get(name)
-            if entry is None:
+            if CHALLENGES.get(loop, {}).get(name) is None:
                 return jsonify({"error": f"unknown challenge {name!r} "
                                          f"for the {loop} loop"}), 400
-            _apply_preset(runner.sim, entry["setup"])
-            for method, args in entry.get("start_actions", []):
-                getattr(runner.sim, method)(*args)
-            runner.speed = entry["speed"]
-            t0 = runner.sim.state()["t"]
-            runner.challenge = {"loop": loop, "name": name,
-                                "t_start": t0,
-                                "t_end": t0 + entry["duration_s"],
-                                "report": None, "score": None,
-                                "attempt": None,
-                                # whose run this is (M27) — a TEAM name
-                                "label": clean_label(cmd.get("label"))}
-            runner.attempt_error = None
-            runner.preset = None   # the challenge card owns the story now
-            runner.case = None     # ...and a challenge is a different
-            runner.running = True  # lesson from a blind case
+            start_challenge(runner, loop, name, cmd.get("label"))
         elif action == "diagnose":
             # Start a blind case (M28). "next" (or nothing) walks the
             # rotation; a number picks one outright. The wire carries an

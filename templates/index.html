@@ -54,6 +54,51 @@
    table itself never reaches this file — no setup, no brief, no answer,
    nothing for a student to read in view-source. The picker sends an
    INDEX, so there isn't even a case name in the DOM to look up. #}
+{# The challenge card (M24-M29). ONE macro over the CHALLENGES table, so a
+   loop's page shows every challenge it has and the story/goal/medal text
+   has a single source (kickoff SS5). What is NOT rendered: the `events`
+   schedule and the hard-stop lines. An ambush you can read in view-source
+   is a timetable — the feed below fills in as things actually land. #}
+{% macro challenge_card(loop, cid, ch) %}
+  <section class="chart-card challenge-card" data-challenge="{{ cid }}">
+    <h2>Challenge{% if ch.crisis %} &mdash; crisis{% endif %}</h2>
+    <div class="disturb-row">
+      <div class="challenge-text">
+        <strong>{{ ch.title }}.</strong>
+        {%- if ch.crisis %} <span class="crisis-chip">AMBUSH</span>{% endif %}
+        {{ ch.story }}
+        <em>Goal: {{ ch.goal }}</em>
+      </div>
+      <input class="challenge-label" type="text" maxlength="24"
+             placeholder="Team 3" aria-label="Team name for this run" />
+      <button class="challenge-start" type="button">{{ ch.start_label }}</button>
+    </div>
+    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
+      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.
+      {%- if ch.crisis %} Things will happen that you did not choose; the
+      feed names each one as it lands.{% endif %}</div>
+    <div class="challenge-best" hidden></div>
+    <div class="attempts-error" hidden></div>
+    <div class="challenge-board" hidden></div>
+    <div class="challenge-h2h" hidden>
+      <div class="h2h-pick">
+        <span class="h2h-title">Head to head</span>
+        <select class="h2h-a" aria-label="First run"></select>
+        <span>vs</span>
+        <select class="h2h-b" aria-label="Second run"></select>
+        <button class="h2h-go" type="button">Compare</button>
+      </div>
+      <div class="h2h-out"></div>
+    </div>
+    <div class="challenge-progress" hidden>
+      <div class="challenge-bar"><span></span></div>
+      <div class="challenge-clock"></div>
+    </div>
+    <div class="challenge-feed" hidden></div>
+    <div class="challenge-report" hidden></div>
+  </section>
+{% endmacro %}
+
 {% macro diagnose_card(loop) %}
   <section class="chart-card diagnose-card" id="{{ loop }}Diagnose">
     <h2>Diagnose &mdash; name the broken part</h2>
@@ -154,44 +199,9 @@
 
   {{ diagnose_card("temp") }}
 
-  <section class="chart-card">
-    <h2>Challenge</h2>
-    {% set ch = challenges["temp"]["cold_store"] %}
-    <div class="disturb-row">
-      <div class="challenge-text">
-        <strong>{{ ch.title }}.</strong> {{ ch.story }}
-        <em>Goal: {{ ch.goal }}</em>
-      </div>
-      <input class="challenge-label" data-challenge="cold_store"
-             type="text" maxlength="24" placeholder="Team 3"
-             aria-label="Team name for this run" />
-      <button class="challenge-start" data-challenge="cold_store"
-              type="button">Lock the door</button>
-    </div>
-    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
-      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
-    <div class="challenge-best" id="tempChallengeBest"
-         data-challenge="cold_store" hidden></div>
-    <div class="attempts-error" id="tempAttemptsError" hidden></div>
-    <div class="challenge-board" id="tempChallengeBoard"
-         data-challenge="cold_store" hidden></div>
-    <div class="challenge-h2h" id="tempChallengeH2H"
-         data-challenge="cold_store" hidden>
-      <div class="h2h-pick">
-        <span class="h2h-title">Head to head</span>
-        <select class="h2h-a" aria-label="First run"></select>
-        <span>vs</span>
-        <select class="h2h-b" aria-label="Second run"></select>
-        <button class="h2h-go" type="button">Compare</button>
-      </div>
-      <div class="h2h-out"></div>
-    </div>
-    <div class="challenge-progress" id="tempChallengeProgress" hidden>
-      <div class="challenge-bar"><span></span></div>
-      <div class="challenge-clock"></div>
-    </div>
-    <div class="challenge-report" id="tempChallengeReport" hidden></div>
-  </section>
+  {% for cid, ch in challenges["temp"].items() %}
+  {{ challenge_card("temp", cid, ch) }}
+  {% endfor %}
 
   <section class="chart-card">
     <h2>The feedback loop, live</h2>
@@ -317,44 +327,9 @@
 
   {{ diagnose_card("glucose") }}
 
-  <section class="chart-card">
-    <h2>Challenge</h2>
-    {% set ch = challenges["glucose"]["t1_shift"] %}
-    <div class="disturb-row">
-      <div class="challenge-text">
-        <strong>{{ ch.title }}.</strong> {{ ch.story }}
-        <em>Goal: {{ ch.goal }}</em>
-      </div>
-      <input class="challenge-label" data-challenge="t1_shift"
-             type="text" maxlength="24" placeholder="Team 3"
-             aria-label="Team name for this run" />
-      <button class="challenge-start" data-challenge="t1_shift"
-              type="button">Start the shift</button>
-    </div>
-    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
-      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
-    <div class="challenge-best" id="glucoseChallengeBest"
-         data-challenge="t1_shift" hidden></div>
-    <div class="attempts-error" id="glucoseAttemptsError" hidden></div>
-    <div class="challenge-board" id="glucoseChallengeBoard"
-         data-challenge="t1_shift" hidden></div>
-    <div class="challenge-h2h" id="glucoseChallengeH2H"
-         data-challenge="t1_shift" hidden>
-      <div class="h2h-pick">
-        <span class="h2h-title">Head to head</span>
-        <select class="h2h-a" aria-label="First run"></select>
-        <span>vs</span>
-        <select class="h2h-b" aria-label="Second run"></select>
-        <button class="h2h-go" type="button">Compare</button>
-      </div>
-      <div class="h2h-out"></div>
-    </div>
-    <div class="challenge-progress" id="glucoseChallengeProgress" hidden>
-      <div class="challenge-bar"><span></span></div>
-      <div class="challenge-clock"></div>
-    </div>
-    <div class="challenge-report" id="glucoseChallengeReport" hidden></div>
-  </section>
+  {% for cid, ch in challenges["glucose"].items() %}
+  {{ challenge_card("glucose", cid, ch) }}
+  {% endfor %}
 
   <section class="chart-card">
     <h2>The feedback loop, live</h2>
@@ -461,44 +436,9 @@
 
   {{ diagnose_card("water") }}
 
-  <section class="chart-card">
-    <h2>Challenge</h2>
-    {% set ch = challenges["water"]["aid_station"] %}
-    <div class="disturb-row">
-      <div class="challenge-text">
-        <strong>{{ ch.title }}.</strong> {{ ch.story }}
-        <em>Goal: {{ ch.goal }}</em>
-      </div>
-      <input class="challenge-label" data-challenge="aid_station"
-             type="text" maxlength="24" placeholder="Team 3"
-             aria-label="Team name for this run" />
-      <button class="challenge-start" data-challenge="aid_station"
-              type="button">Take the table</button>
-    </div>
-    <div class="challenge-medals">Out of 100 — gold {{ ch.medals.gold }},
-      silver {{ ch.medals.silver }}, bronze {{ ch.medals.bronze }}.</div>
-    <div class="challenge-best" id="waterChallengeBest"
-         data-challenge="aid_station" hidden></div>
-    <div class="attempts-error" id="waterAttemptsError" hidden></div>
-    <div class="challenge-board" id="waterChallengeBoard"
-         data-challenge="aid_station" hidden></div>
-    <div class="challenge-h2h" id="waterChallengeH2H"
-         data-challenge="aid_station" hidden>
-      <div class="h2h-pick">
-        <span class="h2h-title">Head to head</span>
-        <select class="h2h-a" aria-label="First run"></select>
-        <span>vs</span>
-        <select class="h2h-b" aria-label="Second run"></select>
-        <button class="h2h-go" type="button">Compare</button>
-      </div>
-      <div class="h2h-out"></div>
-    </div>
-    <div class="challenge-progress" id="waterChallengeProgress" hidden>
-      <div class="challenge-bar"><span></span></div>
-      <div class="challenge-clock"></div>
-    </div>
-    <div class="challenge-report" id="waterChallengeReport" hidden></div>
-  </section>
+  {% for cid, ch in challenges["water"].items() %}
+  {{ challenge_card("water", cid, ch) }}
+  {% endfor %}
 
   <section class="chart-card">
     <h2>The feedback loop, live</h2>

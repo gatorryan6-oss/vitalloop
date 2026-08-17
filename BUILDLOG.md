@@ -18,18 +18,17 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M28 — Phase 8 underway. Specs: phases 1–7 as before,
+- **Committed:** M29 — Phase 8 underway. Specs: phases 1–7 as before,
   plus `vital_loop_phase8_kickoff.md` (M26–M30). The lesson grammar now
-  runs disturb → break → name → challenge → score → race → DIAGNOSE.
-  Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M29 — crisis mode: `EVENTS` on a challenge entry, a list
-  of (sim-time offset, action, plain-English announcement) fired through
-  the same public API the buttons already call — a second breakfast at
-  +45 min, the room jumping 15 °C, a fever mid-shift. A live event feed
-  on the card, and hard-stop lines that close the window early with an
-  honest report. One crisis variant per loop. Then M30, the full pass.
-  Deferred to Phase 9: per-student sessions, SIADH + ADH-override knob,
-  cross-loop coupling (mellitus polyuria), student worksheets.
+  runs disturb → break → name → challenge → score → race → diagnose →
+  SURVIVE. Remote: https://github.com/gatorryan6-oss/vitalloop
+- **Next up:** M30 — the full pass and the phase close: all four modes
+  across all three loops on the projector, back to back; confirm the
+  sandbox is still gameless with no game running, that a page reload
+  mid-game loses nothing, and that relaunching preserves the log. Then
+  STOP for confirmation before Phase 9. Deferred to Phase 9: per-student
+  sessions, SIADH + ADH-override knob, cross-loop coupling (mellitus
+  polyuria), student worksheets.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -41,6 +40,178 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M29: Crisis mode
+- Shipped: M29 contract in `tests/test_invariants.py` (12 tests: one
+  crisis per loop, event shape + offsets inside the window + every
+  action a method that loop's engine really has, stops exist and are
+  scored, the stop table read the same way by the stepper and the report,
+  THE DETERMINISM PIN — the same crisis stepped one tick at a time and in
+  chunks of 991 must produce byte-identical history AND an identical
+  feed — an event landing at its stamped offset and changing something,
+  a no-events challenge stepping exactly as a plain `sim.step()` run, a
+  hard stop closing the window early and zeroing, ambushes stopping when
+  the run does, the feed carrying only what has landed, the feed in the
+  attempt record, and no ambush text in the page). `Runner._step` splits
+  the tick budget at every event boundary; `_step_watched` tests the
+  hard-stop lines on EVERY tick; `_pending_event` / `_fire_event` /
+  `_live_stops`; `start_challenge()` as the one definition of arming a
+  challenge (routes, tests and the sweep all take it); `STOPS` keyed by
+  metrics, `_stop_row`, three evaluators + three SCORING entries + three
+  challenges — **Blast freezer** (temp), **The crisis shift** (glucose),
+  **Race day goes wrong** (water); `events` + `stopped` in `/state`'s
+  challenge block and `events` appended to the attempt record. UI: the
+  challenge card is now a Jinja macro over the table (a loop has more
+  than one challenge), a live event feed, an AMBUSH chip, and a red
+  "Stopped at h:mm" line on a run the crisis ended. 109 invariants +
+  verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **An ambush lands on SIM-TIME, not on poll timing.** `advance()`
+     still decides how many ticks the wall clock has bought; the new
+     `_step` decides how those ticks are cut up, stopping exactly on
+     each scheduled event. Without that, an event stamped at +45 min
+     would land wherever the browser's poll happened to fall — up to
+     2000 ticks late after a hidden tab — and the run a teacher
+     rehearsed at home would not be the run the class got. Pinned by
+     stepping the same crisis 1 tick at a time and in chunks of 991 and
+     demanding byte-identical history and feed.
+  2. **Hard stops are tested on every tick, not once per chunk.** Same
+     reason: the tick a line was crossed on must not depend on poll
+     cadence. Only challenges that HAVE stops pay for it, and a
+     challenge with neither events nor stops falls straight through to
+     one `sim.step(n)` — pinned, so M24–M28 are untouched.
+  3. **A stop closes the WINDOW; it never stops the body.** `t_end` is
+     pulled back to the tick the line was crossed, the simulation runs
+     on, and the report card gains a row saying what happened and when.
+     No game-over screen (kickoff SS2 — fail states report).
+  4. **A hard stop ZEROES the run, reusing M26's integrity machinery.**
+     Not as punishment: a truncated window scores a FLATTERING
+     percentage. A run that crashed twenty minutes in was 100 % in range
+     up to then and would have beaten a run that played the whole hour
+     out. So the evaluator emits a `stopped` row and SCORING carries an
+     integrity rule for it — no new scoring code, and the leaderboard
+     shows "NO SCORE" with the reason in words.
+  5. **ONE `STOPS` table, read by both sides.** The stepper watches it
+     to close the window; the evaluator quotes it to write the row. A
+     second copy would eventually name a line nobody enforces. Pinned as
+     a test that no stop fires on a healthy resting record — a
+     mis-signed comparison would end every run at tick one.
+  6. **The schedule never leaves the building.** `/state` ships only the
+     events that have LANDED (sim-time, offset, words — never the
+     action), and no event line is rendered into the page. An ambush you
+     can read in devtools is a timetable. Same working assumption as
+     M28's redaction, pinned the same way.
+  7. **SWEEP FIRST, and it killed two whole designs before they shipped.**
+     - *The kickoff's own example was wrong.* SS4 suggests "a fever
+       arriving mid-shift" for the temperature crisis. Built it and
+       measured it: with shivering intact, **"drag the room to −10 at
+       t=0 and walk away" scored 99 — the top of the table**, because a
+       body with a working effector arm defends against anything the
+       slider can do, and pre-cooling before a known load is strictly
+       optimal. Rebuilt it as an anesthetized patient (all three
+       effectors suppressed, which is real physiology) with
+       hypermetabolic flares: **still set-and-forget at 91**, because a
+       400 W flare outruns the coldest room no matter what, so one
+       constant room temperature balances the whole schedule. SPEC
+       AMENDMENT, logged not silent, the way M24 amended the pump: the
+       temperature crisis is the BLAST FREEZER, because the only lever
+       this loop supports is a BUDGET (exercise, capped by exhaustion)
+       and an ambush that shrinks what the budget buys.
+     - *Glucose: the gym was unsurvivable.* 45 minutes of exercise killed
+       every play that dosed any insulin at all — all of them in the ER
+       around 1:50. `EXERCISE_UPTAKE` is 2.5 mg/dL·min and
+       insulin-independent: 150 mg/dL an hour, whatever the hormones are
+       doing. Cut to 30 minutes. Then the ORDER turned out to matter
+       more than the length: with the gym after the donuts the exercise
+       drain simply cancelled the donut load and ignoring the donuts was
+       fine. Gym first, donuts second — two ambushes that pull opposite
+       ways — and the window went 3 h → 4 h because a window that is all
+       spike and no recovery caps time-in-range at 65 % for everyone.
+     - *Water: two hours was too short to dehydrate anybody.* "Never
+       pour" scored 96 gold. Lengthened to 3 h, and the runner now
+       ARRIVES water-loaded (a `start_actions` liter), so the run opens
+       on a stretch where pouring is the wrong move and sweat slowly
+       turns that around underneath the class. That one change is what
+       made reading the feed worth thirty points instead of nothing.
+  8. **The final medal ladders**, all from the sweep, all through
+     `start_challenge` + `Runner._step` (the production path):
+     - *blast_freezer* (−5 °C, then −12 at +12 min, then −20 at +32;
+       shivering and vessel control failed; exercise capped at 50 %):
+       50 % duty spread evenly **85**, 48 % 85, the allowance banked into
+       the second half 84, 45 % 82, 42 % 78, 35 % 69, 30 % 56 — and the
+       SAME 50 % spent in the FIRST half scores **30 and misses**.
+       Resting the hour collapses at 0:51. Warming the room or restoring
+       a broken part zeroes it; so does 55 % duty. Medals 84 / 72 / 58.
+     - *crisis_shift* (type 1, 60 g breakfast, gym +55→+85, donuts +130,
+       4 h): 4 U + a juice box in the gym + 2 U for the donuts **86**;
+       feeding the gym but ignoring the donuts 83; covering the donuts
+       but never feeding the gym 68; 4 U and nothing else 66;
+       over-covering the donuts 37; doing nothing 35 at a peak of 334.
+       6 U or 8 U up front is in the ER before the gym ends. Medals
+       84 / 72 / 60.
+     - *race_day* (osmoreceptors dead, arrives with a liter on board,
+       spectator's liter +45, pulls up +90, salt tabs +140, 3 h): wait
+       out the load, pour while they run, stop when they pull up **93**;
+       never pouring 54; every blind rhythm loses — 250 mL/30 min 40,
+       /20 min 36, /15 min 25 — and /10 min drowns the runner outright
+       (hyponatremia stop). Medals 85 / 70 / 55.
+  9. **Two ambushes deliberately reach past what the UI allows**, which
+     is what makes them ambushes rather than suggestions: the freezer
+     drops the room to −20 °C when the slider's floor is −10, and the
+     class cannot undo it — reaching for the thermostat AT ALL trips the
+     new `door` integrity row (the row watches for env temp RISING, not
+     for a threshold, because the room they were given is not the room
+     cold_store gave them). Events go through the same public engine API
+     the buttons call; only the app-level policy caps are bypassed.
+ 10. **The challenge card is now a Jinja macro over `CHALLENGES`.** A
+     loop having two challenges broke the per-loop element ids
+     (`tempChallengeBest`…), so those became per-card classes and the JS
+     finds cards by `data-challenge`. The start-button wording moved
+     into the table as `start_label` — it was the last per-challenge
+     string still hardcoded in the page.
+ 10.5 One anti-wedge guard added while reading the stepper back:
+     `chunk = min(n, max(1, int(event["t"] - t)))`. Every sim-time in
+     this app is a whole second so the gap is never fractional — but a
+     chunk of 0 would spin the loop forever, and "hard to wedge
+     mid-class" outranks trusting that a later phase keeps the tick a
+     whole number. A fractional gap now fires one tick late instead.
+ 11. VERIFIED LIVE in the browser on real wall-clock, twice.
+     *The full run:* "Race day goes wrong" as "Period 4 Blue" at 16×.
+     The feed stayed EMPTY through the opening (nothing had happened
+     yet), then filled in as things landed — "+0:45 A spectator hands
+     your runner a full liter…", "+1:30 They pull up with a torn
+     hamstring…", "+2:20 Somebody in the tent gives them electrolyte
+     tablets…" (osmolarity 282.7 → 297.6 on that one, a 15 mOsm/L jolt
+     in a single tick) — while `document.body` contained no trace of the
+     un-fired ambush, checked mid-run. The exercise button flipped
+     itself to "off" when the pull-up landed. Held the pour through the
+     opening load, poured at +1:13, stopped at the pull-up, covered the
+     salt: **GOAL MET, 93 / 100 GOLD**, 100 % in band, saved as run #6,
+     feed still on screen beside the report. The sweep predicted 93 for
+     that strategy — the number the class gets and the number the sweep
+     got are the same number, which is the determinism promise paying
+     out. The logged attempt carries all three ambushes at +2700 /
+     +5400 / +8400, fired at sim 2737 / 5437 / 8437 against a t_start of
+     37: every one exact to the second, through a run driven entirely by
+     irregular browser polls.
+     *The hard stop:* "The crisis shift" as "Period 4 Red", 8 U up
+     front, and the gym at +0:55 finished it — the window closed at
+     1:15, the card went red with "Stopped at 1:15 — glucose fell to
+     40 mg/dL…", the score read "NO SCORE — …no score for a shift that
+     finished in the ER", and the leaderboard logged 0 / 100. Two
+     details worth keeping: the SIMULATION carried straight on (glucose
+     was 13 at sim 5817 while the graded window had ended at 5287 — the
+     body kept going, only the run being graded stopped), and the report
+     card shows "✓ time in 70-180 mg/dL: 93%" one line above the ER row.
+     That 93 % is exactly the flattering number decision 4 exists to
+     stop, sitting there in the classroom as the argument for it.
+     Console clean on both runs.
+     Note for future sessions: with the preview pane HIDDEN the page's
+     poll interval is throttled by the browser (M10's documented
+     behavior, not an app bug) — the sim still advances because each
+     `/state` request ticks it, but the DOM can lag a poll behind.
 
 ## 2026-08-17 — M28: The diagnosis game
 - Shipped: M28 contract in `tests/test_invariants.py` (17 tests: case

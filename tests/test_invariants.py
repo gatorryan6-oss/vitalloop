@@ -229,6 +229,30 @@ The disease-knob API contract (built at M17):
        /export.csv refuses while a case is blind - a spreadsheet of
        `sensor_enabled` is the answer key in a column.
 
+  (ss) M29 crisis: one crisis challenge per loop, each carrying an
+       `events` schedule of (sim-time offset, action, plain-English line).
+       Offsets climb and land inside the window, every action is a method
+       the loop's own engine already exposes (kickoff SS0 again: an ambush
+       goes through the SAME public API the buttons call), and every
+       crisis names hard-stop lines that SCORING zeroes,
+  (tt) AN AMBUSH LANDS ON SIM-TIME, NOT ON POLL TIMING. The same crisis
+       stepped one tick at a time and in chunks of 991 must produce
+       byte-identical history and an identical feed - that is what makes
+       the run a teacher rehearses the run the class gets. A challenge
+       with no events steps exactly as a plain sim.step() run, so M24-M28
+       are untouched,
+  (uu) A HARD STOP CLOSES THE WINDOW, IT NEVER STOPS THE BODY: t_end is
+       pulled back to the tick the line was crossed, the simulation runs
+       on, the report card carries a `stopped` row saying what happened
+       and when, and the score is zero with a reason in words. Zeroed
+       because a truncated window scores a FLATTERING percentage, and
+       crashing early must not out-score playing it out,
+  (vv) THE SCHEDULE IS NOT A TIMETABLE: /state carries only what has
+       already landed (sim-time, offset, words - never the action), no
+       event line is rendered into the page, ambushes stop firing when the
+       window closes, and the feed is APPENDED to the attempt record so a
+       later phase can ask what a team was hit with.
+
   The engines are untouched by this entire phase (kickoff SS0: "no engine
   file changes in this phase at all"); guards (h), (k), (n), (s) above are
   the proof, and they are not repeated here.
@@ -257,6 +281,22 @@ The diagnosis API contract (built at M28):
                                       # -> {"verdict","correct","points",
                                       #     "rows","truth","note","answer"}
     app.build_case_attempt(loop, case_id, grade, label=None)
+
+The crisis API contract (built at M29):
+
+    CHALLENGES[loop][cid]["events"]    # [{"at": offset_s,
+                                      #   "do": (method, args_tuple),
+                                      #   "line": "what just hit you"}]
+    app.STOPS[metrics]                # [{"key","line","test": record->bool}]
+    app.start_challenge(runner, loop, name, label=None)
+                                      # arms a challenge on a runner: the
+                                      # ONE definition of what starting one
+                                      # means (routes, tests and the sweep
+                                      # all take this path)
+    runner._step(n)                   # n ticks, split at every event and
+                                      # watched for stops; lock held
+    runner.challenge["feed"]          # what has landed: {"t","at","line"}
+    runner.challenge["stopped"]       # {"key","line","t"} or None
 
     import attempts
     attempts.load(path) / attempts.save(records, path)
@@ -1531,6 +1571,14 @@ CRAFTED_RECORD = {
                    "shiver_enabled": False, "vaso_enabled": False},
     "aid_station": {"osmolarity": 290.0, "exercise": True,
                     "sensor_enabled": False, "urine_rate": 3.0},
+    # M29's crisis variants. `t` matters here: a stop row reports the
+    # sim-time a line was crossed at.
+    "blast_freezer": {"t": 1.0, "core_temp": 37.0, "exercise": False,
+                      "env_temp": -5.0, "shiver_enabled": False,
+                      "vaso_enabled": False},
+    "crisis_shift": {"t": 1.0, "glucose": 100.0, "beta_enabled": False},
+    "race_day": {"t": 1.0, "osmolarity": 290.0, "exercise": True,
+                 "sensor_enabled": False, "urine_rate": 3.0},
 }
 
 
@@ -2328,6 +2376,322 @@ def test_the_game_modes_are_mutually_exclusive(diag_client):
     j = client.get("/state?loop=temp").get_json()
     assert "case" not in j and "sweat_enabled" in j["now"], (
         "reset ends the game and gives the sandbox back")
+
+
+# ================= M29: crisis mode ========================================
+# A challenge that ambushes you on a schedule. Three things make that fair
+# rather than arbitrary:
+#
+#   * events fire at stamped SIM-TIME offsets through the same public API
+#     the buttons already call, so the run a teacher rehearses at home is
+#     the run the class gets — no matter how the browser's polls fell,
+#   * nothing that has not yet happened reaches the page. The schedule is
+#     an ambush, and an ambush you can read in devtools is a timetable,
+#   * a hard stop CLOSES THE WINDOW and reports; it never splashes a game
+#     over across the projector (kickoff SS2).
+
+
+def _crisis():
+    """Import the crisis layer, or SKIP loudly (M29)."""
+    import app as vital_app
+    if not hasattr(vital_app, "STOPS"):
+        pytest.skip("STOPS doesn't exist yet - it arrives at M29")
+    return vital_app
+
+
+def _crises(vital_app):
+    """Every challenge that carries an ambush schedule."""
+    return [(loop, cid, entry)
+            for loop, entries in vital_app.CHALLENGES.items()
+            for cid, entry in entries.items() if entry.get("events")]
+
+
+def _armed(vital_app, loop, cid):
+    """A Runner of OUR OWN, armed with one challenge.
+
+    Never the shared projector runners: these tests drive whole sim-hours
+    and would leave a class's screen somewhere strange.
+    """
+    runner = vital_app.Runner(type(vital_app.runners[loop].sim)(), loop)
+    vital_app.start_challenge(runner, loop, cid)
+    return runner
+
+
+# ------------------------------------------------- (ss) the ambush table
+
+def test_every_loop_has_a_crisis():
+    """Kickoff M29: one crisis variant for each of the three loops."""
+    vital_app = _crisis()
+    loops = {loop for loop, _, _ in _crises(vital_app)}
+    assert loops == set(vital_app.runners), (
+        f"crisis challenges exist for {sorted(loops)} - M29 is one variant "
+        f"for each of {sorted(vital_app.runners)}")
+
+
+def test_crisis_event_shape():
+    """Every ambush is (sim-time offset, action, plain-English line)."""
+    vital_app = _crisis()
+    for loop, cid, entry in _crises(vital_app):
+        sim = vital_app.runners[loop].sim
+        last = -1.0
+        for ev in entry["events"]:
+            assert set(ev) == {"at", "do", "line"}, (
+                f"{loop}/{cid} event carries {sorted(ev)} - an event is a "
+                "sim-time offset, an action, and the words the class reads")
+            assert last < ev["at"] < entry["duration_s"], (
+                f"{loop}/{cid} fires at +{ev['at']}s: offsets must climb and "
+                f"land inside the {entry['duration_s']}s window (an event at "
+                "0 is a setup, and one at the buzzer never happens)")
+            last = ev["at"]
+            method, args = ev["do"]
+            assert callable(getattr(sim, method, None)), (
+                f"{loop}/{cid} fires {method!r}, which the {loop} engine "
+                "does not have - an ambush must go through the SAME public "
+                "API the buttons call (kickoff SS0: no engine changes)")
+            assert isinstance(args, tuple), f"{loop}/{cid} args must be a tuple"
+            assert ev["line"].strip(), (
+                f"{loop}/{cid} has an unnamed event - the class must be told "
+                "what just hit them")
+
+
+def test_every_crisis_ends_in_a_report_not_a_game_over():
+    """Each crisis names hard stops, and each stop is a scored integrity
+    line — because a window truncated at 20 minutes would score a
+    FLATTERING percentage, and crashing early must never out-score
+    playing it out."""
+    vital_app = _crisis()
+    for loop, cid, entry in _crises(vital_app):
+        metrics = entry["metrics"]
+        stops = vital_app.STOPS.get(metrics)
+        assert stops, f"{loop}/{cid} has no hard-stop line"
+        for stop in stops:
+            assert set(stop) == {"key", "line", "test"}, (
+                f"{loop}/{cid} stop carries {sorted(stop)}")
+            assert stop["line"].strip() and callable(stop["test"])
+        rule = vital_app.SCORING[metrics].get("stopped")
+        assert rule and rule.get("integrity"), (
+            f"SCORING[{metrics!r}] must zero a run that ended early - "
+            "otherwise the shorter the window, the better the percentage")
+
+
+def test_a_stop_reads_the_same_line_in_the_runner_and_the_report():
+    """ONE definition of "the patient is in the ER": the table the stepper
+    watches is the table the report card quotes."""
+    vital_app = _crisis()
+    for loop, cid, entry in _crises(vital_app):
+        metrics = entry["metrics"]
+        clean = dict(vital_app.runners[loop].sim.state())
+        clean["t"] = 60.0
+        rows = {r["key"]: r
+                for r in vital_app.EVALUATORS[metrics]([clean])["rows"]}
+        assert rows["stopped"]["met"] is True, (
+            f"{loop}/{cid}: a run nobody stopped must report so")
+        for stop in vital_app.STOPS[metrics]:
+            assert stop["test"](clean) is False, (
+                f"{loop}/{cid}: stop {stop['key']!r} fires on a healthy "
+                "resting record - that would end every run at tick one")
+
+
+# ----------------------------------------------- (tt) firing on sim-time
+
+def test_events_fire_on_sim_time_not_on_poll_timing():
+    """THE M29 invariant. Two identical runs, stepped in wildly different
+    chunks — one tick at a time against chunks of 991 — must produce
+    byte-identical history AND an identical feed. A browser poll's timing
+    may never move an ambush."""
+    vital_app = _crisis()
+    for loop, cid, entry in _crises(vital_app):
+        span = entry["duration_s"]
+        fine = _armed(vital_app, loop, cid)
+        for _ in range(span):
+            fine._step(1)
+        coarse = _armed(vital_app, loop, cid)
+        left = span
+        while left > 0:
+            chunk = min(left, 991)
+            coarse._step(chunk)
+            left -= chunk
+        assert fine.sim.history() == coarse.sim.history(), (
+            f"{loop}/{cid}: the same crisis stepped in different chunks "
+            "produced different physiology - an ambush is landing on poll "
+            "timing instead of sim-time")
+        assert (fine.challenge["feed"] == coarse.challenge["feed"]
+                and len(fine.challenge["feed"]) == len(entry["events"])), (
+            f"{loop}/{cid}: the event feeds disagree")
+
+
+def test_an_event_lands_at_its_stamped_offset_and_does_something():
+    """The feed's clock is the schedule's clock, and the action really
+    reached the engine."""
+    vital_app = _crisis()
+    for loop, cid, entry in _crises(vital_app):
+        runner = _armed(vital_app, loop, cid)
+        t0 = runner.challenge["t_start"]
+        for ev in entry["events"]:
+            runner._step(int(t0 + ev["at"] - runner.sim.state()["t"]))
+            before = runner.sim.state()
+            runner._step(1)               # the tick the ambush lands on
+            fired = runner.challenge["feed"][-1]
+            assert fired["t"] == t0 + ev["at"] and fired["at"] == ev["at"], (
+                f"{loop}/{cid} fired {fired['t']} for an offset of "
+                f"+{ev['at']}s from {t0}")
+            assert fired["line"] == ev["line"]
+            after = runner.sim.state()
+            changed = [k for k in after
+                       if k != "t" and after[k] != before.get(k)]
+            assert changed, (
+                f"{loop}/{cid}: {ev['do'][0]} at +{ev['at']}s changed nothing "
+                "in the record - an ambush nobody can see is not an ambush")
+
+
+def test_a_challenge_with_no_events_steps_exactly_as_before():
+    """M24-M28's three challenges must be untouched by the new stepper
+    (standing rule 3: extend, never rebuild)."""
+    vital_app = _crisis()
+    for loop, entries in vital_app.CHALLENGES.items():
+        for cid, entry in entries.items():
+            if entry.get("events"):
+                continue
+            span = 900
+            runner = _armed(vital_app, loop, cid)
+            left = span
+            while left > 0:                       # ragged chunks on purpose
+                chunk = min(left, 137)
+                runner._step(chunk)
+                left -= chunk
+            ref = type(vital_app.runners[loop].sim)()
+            vital_app._apply_preset(ref, entry["setup"])
+            for method, args in entry.get("start_actions", []):
+                getattr(ref, method)(*args)
+            ref.step(span)
+            assert runner.sim.history() == ref.history(), (
+                f"{loop}/{cid} no longer matches a plain sim.step() run")
+
+
+# --------------------------------------------------- (uu) the hard stops
+
+def test_a_hard_stop_closes_the_window_early_and_zeroes_the_run():
+    """The classic: fifteen units into a type 1 patient. The window ends
+    where the patient did, the report says so, and the score is zero with
+    a reason in words."""
+    vital_app = _crisis()
+    loop, cid = "glucose", "crisis_shift"
+    entry = vital_app.CHALLENGES[loop][cid]
+    runner = _armed(vital_app, loop, cid)
+    runner.sim.inject(15.0)
+    runner.sim.inject(15.0)
+    runner._step(entry["duration_s"])
+    c = runner.challenge
+    assert c["stopped"], "a double overdose must cross a hard-stop line"
+    assert c["t_end"] == c["stopped"]["t"] < c["t_start"] + entry["duration_s"], (
+        "the window must end on the tick the line was crossed")
+    assert runner.sim.state()["t"] == c["t_start"] + entry["duration_s"], (
+        "the SIMULATION must carry on - a fail state is a report, never a "
+        "frozen screen (kickoff SS2)")
+    window = [r for r in runner.sim.history()
+              if c["t_start"] < r["t"] <= c["t_end"]]
+    report = vital_app.EVALUATORS[entry["metrics"]](window)
+    rows = {r["key"]: r for r in report["rows"]}
+    assert rows["stopped"]["met"] is False and report["met"] is False
+    score = vital_app.score_report(entry, report)
+    assert score["points"] == 0 and score["medal"] is None and score["zeroed"]
+
+
+def test_the_ambushes_stop_when_the_run_does():
+    """Nothing fires after the window has closed — including a window a
+    hard stop closed early."""
+    vital_app = _crisis()
+    loop, cid = "glucose", "crisis_shift"
+    entry = vital_app.CHALLENGES[loop][cid]
+    runner = _armed(vital_app, loop, cid)
+    runner.sim.inject(15.0)
+    runner.sim.inject(15.0)
+    runner._step(entry["duration_s"])
+    assert len(runner.challenge["feed"]) < len(entry["events"]), (
+        "this run ended in the ER before its last ambush - the feed must "
+        "not go on announcing events at a run that is over")
+
+
+# ------------------------------------------ (vv) the feed, as it reaches
+#                                                 the class and the log
+
+@pytest.fixture
+def crisis_client(monkeypatch):
+    """A test client whose scores never touch the teacher's real log."""
+    vital_app = _crisis()
+    logged = []
+
+    def fake_log(record):
+        logged.append(record)
+        return {**record, "id": len(logged)}, None
+
+    monkeypatch.setattr(vital_app, "log_attempt", fake_log)
+    yield vital_app, vital_app.app.test_client(), logged
+    for runner in vital_app.runners.values():
+        runner.sim.reset()
+        runner.challenge = None
+        runner.case = None
+        runner.preset = None
+
+
+def test_the_feed_never_announces_what_has_not_happened_yet(crisis_client):
+    """Read it the way a student with devtools open would."""
+    import json
+    vital_app, client, _ = crisis_client
+    loop, cid = "water", "race_day"
+    entry = vital_app.CHALLENGES[loop][cid]
+    client.post(f"/control?loop={loop}",
+                json={"action": "challenge", "value": cid})
+    runner = vital_app.runners[loop]
+    j = client.get(f"/state?loop={loop}").get_json()
+    assert j["challenge"]["events"] == [], "nothing has happened yet"
+    text = json.dumps(j)
+    for ev in entry["events"]:
+        assert ev["line"] not in text, (
+            "the whole ambush schedule is in the snapshot - that is a "
+            "timetable, not a crisis")
+    with runner.lock:
+        runner._step(int(entry["events"][0]["at"]) + 1)
+    j = client.get(f"/state?loop={loop}").get_json()
+    feed = j["challenge"]["events"]
+    assert [f["line"] for f in feed] == [entry["events"][0]["line"]], (
+        "the feed must carry exactly what has landed, in order")
+    assert all({"t", "at", "line"} == set(f) for f in feed), (
+        "a feed entry is a sim-time, an offset and the words - no action, "
+        "nothing to reverse-engineer the rest of the schedule from")
+
+
+def test_the_feed_is_part_of_the_attempt_record(crisis_client):
+    """Kickoff SS5: fields are APPENDED. A worksheets phase must be able
+    to ask what this team was ambushed with."""
+    vital_app, client, logged = crisis_client
+    loop, cid = "water", "race_day"
+    entry = vital_app.CHALLENGES[loop][cid]
+    client.post(f"/control?loop={loop}",
+                json={"action": "challenge", "value": cid, "label": "Team 3"})
+    runner = vital_app.runners[loop]
+    with runner.lock:
+        runner._step(entry["duration_s"])
+    j = client.get(f"/state?loop={loop}").get_json()
+    assert j["challenge"]["done"] is True and j["challenge"]["report"]
+    assert len(logged) == 1, "one finished run is one attempt"
+    lines = [e["line"] for e in logged[0]["events"]]
+    assert lines == [ev["line"] for ev in entry["events"]], (
+        f"the attempt logged {lines} - every ambush belongs in the record")
+
+
+def test_no_ambush_is_written_into_the_page():
+    """Same rule as a blind case: it isn't a surprise if it's in the
+    HTML."""
+    vital_app = _crisis()
+    html = vital_app.app.test_client().get("/").get_data(as_text=True)
+    for loop, cid, entry in _crises(vital_app):
+        for ev in entry["events"]:
+            assert ev["line"] not in html, (
+                f"{loop}/{cid} renders its ambush into the page")
+        for stop in vital_app.STOPS[entry["metrics"]]:
+            assert stop["line"] not in html, (
+                f"{loop}/{cid} renders a hard-stop line into the page")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
