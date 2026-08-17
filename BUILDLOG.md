@@ -18,16 +18,26 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M31 — Phase 9 underway. Spec:
-  `vital_loop_phase9_kickoff.md` (scope picked 2026-08-17: per-student
-  sessions + SIADH + student worksheets; **cross-loop coupling deferred
-  to Phase 10**). The four kickoff-interview questions went unanswered,
-  so the spec carries flagged ASSUMPTIONS, changeable before their
-  milestones: LAN + cookie sessions (no join screen), leaderboard-only
-  (no teacher dashboard), worksheets as printable app routes (no docx),
-  verbal class direction (no mode gating).
+- **Committed:** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
+  `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
+  device on the room's wifi gets its own three loops (M33) through the
+  double-click LAN launch (M34), the water loop carries its fourth
+  disease — SIADH, knob + preset + blind case 5 (M31/M32) — and the
+  class leaves with paper keyed to their own runs (M35). One shared
+  attempts log; the cookieless projector world is byte-for-byte the
+  M7–M30 world. NOTE: the phase was built on the kickoff's flagged
+  ASSUMPTIONS (cookie sessions / leaderboard-only / printable routes /
+  verbal direction) because the interview went unanswered — all four
+  held up, but they are one message away from revisiting.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M36 — the lab pass and the phase close.
+- **Next up:** STOPPED for confirmation before Phase 10. Candidates:
+  1. **Cross-loop coupling** (mellitus polyuria — glucose above
+     ~180 mg/dL spilling into urine and dragging water with it), now
+     deferred twice; the first time two loops would meet.
+  2. **Teacher dashboard** — a live who's-stuck view of the room's
+     sessions; `registry.count()` and per-session state already exist.
+  3. **Period codes / join screen** — grouping sessions by class
+     period, if the anonymous-cookie model chafes in real use.
 - **User checkpoint outstanding (M34):** a REAL phone on the room's
   wifi against `run.bat`'s printed address — everything short of that
   is verified (see M34 entry). The first launch may show the Windows
@@ -43,6 +53,35 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M36: The lab pass, and Phase 9 closes
+- Shipped: the M36 contract in `tests/test_invariants.py` (2 tests).
+  **The lab pass** — six devices driven through the production routes:
+  a freezer-plus-fever demo that reached nobody else's body; two teams
+  racing the identical cold_store with different plays (the team that
+  worked the back half out-scored the team that rested, both runs in
+  the one log); a blind SIADH case on one device whose blindfold
+  covered nobody else's eyes (its CSV 409 while a neighbour's read
+  200), surviving a mid-case reload and graded correct; a device
+  clicking every wrong thing and earning only worded 400s while five
+  others kept teaching; every device handing back a gameless sandbox
+  per-session; and the default runners untouched throughout. **The
+  storm** — eight devices hammering /state, /control and /export.csv
+  concurrently: every answer a 200 (or the deliberate wrong click's
+  400), never a 500, and every session's state intact after. 136
+  invariants + verify pass; footer, worksheet links and room count
+  confirmed live in the browser.
+- Deferred: Phase 10 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. The lab pass is deterministic route-driven interleaving plus ONE
+     genuinely-threaded storm with coarse assertions (status codes and
+     end-state, never timing) — concurrency in a pinned test earns its
+     keep only if it can't flake.
+  2. Two payload-shape bugs in the TEST were caught by the app
+     refusing them honestly (`points` not `score` in the attempt
+     record; exercise takes `value` not `on`) — the contract held, the
+     test conformed.
 
 ## 2026-08-17 — M35: Student worksheets — three printable routes
 - Shipped: `/worksheet/temp|glucose|water` — one Jinja template

@@ -3359,6 +3359,166 @@ def test_worksheets_carry_no_answers():
                         "worksheet")
 
 
+# ================= M36: the lab pass ======================================
+# Phase 9 closes the way Phase 8 did — the whole promise, checkable:
+# a room of devices, every mode, wrong clicks included, one shared
+# leaderboard, and nobody's body moved by anybody else's hand.
+
+@pytest.fixture
+def lab(fresh_registry, monkeypatch):
+    """A fresh room whose scores never touch the teacher's real log."""
+    vital_app = fresh_registry
+    logged = []
+
+    def fake_log(record):
+        logged.append(record)
+        return {**record, "id": len(logged)}, None
+
+    monkeypatch.setattr(vital_app, "log_attempt", fake_log)
+    yield vital_app, logged
+    for runner in vital_app.runners.values():
+        runner.sim.reset()
+        runner.case = None
+        runner.case_index = 0
+        runner.challenge = None
+        runner.preset = None
+
+
+def _device(vital_app, sid):
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_sid", sid)
+    return c
+
+
+def test_the_lab_pass_every_mode_across_a_room(lab):
+    """(jjj) Six devices, four modes, wrong clicks, one log — and the
+    projector untouched throughout."""
+    vital_app, logged = lab
+
+    # Device 1 demonstrates: freezer + fever, in ITS sandbox only.
+    d1 = _device(vital_app, "d1")
+    assert d1.post("/control?loop=temp", json={
+        "action": "scenario", "value": "freezer"}).status_code == 200
+    assert d1.post("/control?loop=temp", json={
+        "action": "preset", "value": "fever"}).status_code == 200
+    d2 = _device(vital_app, "d2")
+    j2 = d2.get("/state?loop=temp").get_json()
+    assert j2["preset"] is None and j2["now"]["env_temp"] == 22.0, (
+        "device 1's demo reached device 2's body")
+
+    # Devices 2 and 3 race the same challenge with different plays.
+    for sid, plays in (("d2", True), ("d3", False)):
+        c = _device(vital_app, sid)
+        assert c.post("/control?loop=temp", json={
+            "action": "challenge", "value": "cold_store",
+            "label": sid}).status_code == 200
+        runner = vital_app.registry.runners_for(sid)["temp"]
+        window = runner.challenge["t_end"] - runner.challenge["t_start"]
+        with runner.lock:
+            if plays:                      # rest, then work the back half
+                runner._step(int(window // 2))
+            else:                          # rest the whole hour
+                runner._step(int(window // 2))
+        if plays:
+            c.post("/control?loop=temp", json={"action": "exercise",
+                                               "value": True})
+        runner = vital_app.registry.runners_for(sid)["temp"]
+        with runner.lock:
+            runner._step(int(window - window // 2) + 60)
+        report = c.get("/state?loop=temp").get_json()["challenge"]
+        assert report.get("report"), f"{sid} finished with no report card"
+    scores = {a["label"]: a["points"] for a in logged
+              if a.get("name") == "cold_store"}
+    assert set(scores) == {"d2", "d3"}, (
+        "both teams' runs must land in the one shared log")
+    assert scores["d2"] > scores["d3"], (
+        "the team that worked the back half must out-score the team "
+        "that rested - or the room's scores mean nothing")
+
+    # Device 4 goes blind on water; device 5's spreadsheet stays open.
+    d4 = _device(vital_app, "d4")
+    assert d4.post("/control?loop=water", json={
+        "action": "diagnose", "value": 5}).status_code == 200
+    assert d4.get("/export.csv?loop=water").status_code == 409
+    d5 = _device(vital_app, "d5")
+    assert d5.get("/export.csv?loop=water").status_code == 200, (
+        "device 4's blindfold covered device 5's eyes")
+    # A RELOAD mid-case (new client, same cookie) is still mid-case,
+    # still blind.
+    d4_reloaded = _device(vital_app, "d4")
+    j4 = d4_reloaded.get("/state?loop=water").get_json()
+    assert j4["case"]["answered"] is False
+    assert not any(k.endswith("_enabled") for k in j4["now"])
+    answered = d4_reloaded.post("/control?loop=water", json={
+        "action": "answer", "role": "control", "part": "pituitary"})
+    assert answered.status_code == 200
+    assert d4_reloaded.get("/state?loop=water").get_json(
+        )["case"]["grade"]["verdict"] == "correct"
+
+    # Device 6 clicks every wrong thing; the room keeps teaching.
+    d6 = _device(vital_app, "d6")
+    for bad in ({"action": "speed", "value": 7},
+                {"action": "effector", "name": "gills", "on": False},
+                {"action": "preset", "value": "consumption"},
+                {"action": "diagnose", "value": 99},
+                {}, {"action": None}):
+        r = d6.post("/control?loop=temp", json=bad)
+        assert r.status_code == 400 and r.get_json()["error"].strip()
+    for sid in ("d1", "d2", "d3", "d4", "d5"):
+        assert _device(vital_app, sid).get(
+            "/state?loop=temp").status_code == 200
+
+    # Every device hands its sandbox back, per-session.
+    for sid in ("d1", "d2", "d3", "d4", "d5", "d6"):
+        c = _device(vital_app, sid)
+        for loop in vital_app.runners:
+            c.post(f"/control?loop={loop}", json={"action": "reset"})
+            j = c.get(f"/state?loop={loop}").get_json()
+            assert "challenge" not in j and "case" not in j
+            assert j["preset"] is None
+            assert any(k.endswith("_enabled") for k in j["now"])
+
+    # And the projector never felt a thing.
+    for loop, runner in vital_app.runners.items():
+        assert runner.preset is None and runner.challenge is None, (
+            f"the default {loop} runner was touched by the room")
+
+
+def test_a_room_polling_at_once_never_errors(fresh_registry):
+    """(jjj) Eight devices hammering the routes concurrently: every
+    answer is a 200 (or a worded 400 for the deliberate wrong click),
+    never a 500, and every session still teaches afterwards."""
+    import threading as _threading
+    vital_app = fresh_registry
+    failures = []
+
+    def storm(sid):
+        c = _device(vital_app, sid)
+        for i in range(15):
+            r1 = c.get("/state?loop=temp")
+            r2 = c.post("/control?loop=glucose",
+                        json={"action": "speed", "value": 16})
+            r3 = c.get("/export.csv?loop=water")
+            r4 = c.post("/control?loop=temp",
+                        json={"action": "speed", "value": 7})   # wrong
+            for r, ok in ((r1, {200}), (r2, {200}), (r3, {200}),
+                          (r4, {400})):
+                if r.status_code not in ok:
+                    failures.append((sid, i, r.status_code))
+
+    threads = [_threading.Thread(target=storm, args=(f"storm-{n}",))
+               for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not failures, f"the storm broke something: {failures[:5]}"
+    for n in range(8):
+        j = _device(vital_app, f"storm-{n}").get(
+            "/state?loop=glucose").get_json()
+        assert j["speed"] == 16, "a session lost its state in the storm"
+
+
 def test_siadh_preset_is_a_complete_diagnosis():
     """(ddd) M32: SIADH is a row in the Phase 5 preset table — a full
     configuration on a healthy chassis, named in a banner, and CLEARED
