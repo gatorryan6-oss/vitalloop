@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vital Loop worksheet — {{ ws.title }}</title>
+<style>
+  /* Self-contained on purpose: a worksheet prints from the browser and
+     must look right with no app chrome and no other stylesheet. */
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1c1b18;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.2rem 1.5rem;
+    line-height: 1.45;
+  }
+  header { border-bottom: 3px double #1c1b18; padding-bottom: 0.4rem;
+           margin-bottom: 0.9rem; }
+  h1 { font-size: 1.35rem; margin: 0; }
+  .subtitle { font-style: italic; }
+  .idblock { display: flex; gap: 1.6rem; flex-wrap: wrap;
+             margin: 0.7rem 0 0; font-size: 0.95rem; }
+  h2 { font-size: 1.05rem; border-bottom: 1px solid #1c1b18;
+       padding-bottom: 0.15rem; margin: 1.2rem 0 0.5rem; }
+  .before { background: #f2efe8; padding: 0.5rem 0.7rem;
+            border-left: 4px solid #1c1b18; font-size: 0.95rem; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #555; padding: 0.35rem 0.5rem;
+           vertical-align: top; text-align: left; font-size: 0.95rem; }
+  th.term { width: 11.5rem; font-variant: small-caps;
+            font-size: 1.02rem; }
+  .writein { min-height: 2.1rem; }
+  ol.read { padding-left: 1.3rem; }
+  ol.read li { margin-bottom: 0.85rem; }
+  code { font-family: Consolas, monospace; font-size: 0.9em;
+         background: #f2efe8; padding: 0 0.25em; }
+  .lines { border-bottom: 1px solid #777; display: block;
+           height: 1.5rem; margin-top: 0.3rem; }
+  .print-hint { text-align: center; color: #666; font-size: 0.85rem;
+                margin: 1.2rem 0 0; }
+  @media print {
+    body { padding: 0; max-width: none; }
+    .print-hint { display: none; }
+    h2 { break-after: avoid; }
+    table, ol.read li { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vital Loop — {{ ws.title }}</h1>
+  <div class="subtitle">a worksheet about {{ ws.variable }}</div>
+  <div class="idblock">
+    <span>Name: ______________________</span>
+    <span>Team: ______________</span>
+    <span>Period: ______</span>
+    <span>Date: __________</span>
+  </div>
+</header>
+
+<p class="before">{{ ws.before }}</p>
+
+<h2>1 &mdash; Label the loop</h2>
+<p>Every homeostatic loop has the same seven pieces. Fill in what each
+one IS in this loop, in your own words.</p>
+<table>
+  {% for term, prompt in terms %}
+  <tr>
+    <th class="term">{{ term }}</th>
+    <td><div>{{ prompt }}</div><div class="writein"></div></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>2 &mdash; Read your own run</h2>
+<p>These numbers come off YOUR charts &mdash; or the CSV export, where
+the column names are exactly the <code>code words</code> below. Two
+teams' answers will differ, because two teams' runs differ.</p>
+<ol class="read">
+  {% for q in ws.read %}
+  <li>{{ q | replace_fields(ws.fields) }}</li>
+  {% endfor %}
+</ol>
+
+<h2>3 &mdash; Debrief: the challenge or the case</h2>
+<ol class="read">
+  <li>Which challenge or blind case did you play, and as which team?
+      <span class="lines"></span></li>
+  <li>Your result &mdash; score, medal, MET / NOT&nbsp;MET, or
+      right / half&nbsp;right / wrong:
+      <span class="lines"></span></li>
+  <li>The report-card row (or chart trace) that decided it:
+      <span class="lines"></span></li>
+  <li>What one thing would you do differently next run &mdash; and
+      which part of the loop does that decision lean on?
+      <span class="lines"></span>
+      <span class="lines"></span></li>
+</ol>
+
+<p class="print-hint">Print this page from your browser (Ctrl+P) —
+it fits on one sheet.</p>
+
+</body>
+</html>

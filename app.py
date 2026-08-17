@@ -13,6 +13,7 @@ smoothly instead of freezing the server chewing through an hour of ticks.
 import csv
 import datetime
 import io
+import re
 import threading
 import time
 
@@ -365,6 +366,122 @@ def state():
     out = runner.snapshot(since)
     out["sessions"] = registry.count()   # the room, arriving (M34)
     return jsonify(out)
+
+
+# Student worksheets (M35). Printable pages, NOT documents in the repo:
+# they render from this one table, so they can never drift from the
+# app's vocabulary, and the invariants suite pins every field name they
+# cite to the frozen record schemas. The worksheet asks; it never
+# answers — the student's own run (charts, CSV, report card) is the
+# answer key, which is the entire point.
+#
+# The seven curriculum terms appear on every worksheet EXACTLY
+# (kickoff §1: curriculum vocabulary used exactly).
+WORKSHEET_TERMS = [
+    ("stimulus", "What changed, and in which direction?"),
+    ("receptor", "Which sensor noticed, and where in the body is it?"),
+    ("control center", "What compares the reading to the set point, "
+                       "and what signal does it send?"),
+    ("effector", "Name every effector this loop can use, and what "
+                 "each one does."),
+    ("response", "Which way does the controlled variable move when "
+                 "the effectors act?"),
+    ("set point", "The number this loop defends (with units):"),
+    ("negative feedback", "Why is this loop called NEGATIVE feedback? "
+                          "What happens to the responses as the "
+                          "controlled variable returns to the set "
+                          "point?"),
+]
+
+WORKSHEETS = {
+    "temp": {
+        "title": "The thermoregulation loop",
+        "variable": "core body temperature (core_temp, °C)",
+        "before": "Run the freezer demo — or your Cold-store lock-in "
+                  "run — and keep your charts (or the CSV export) in "
+                  "front of you.",
+        "fields": ["t", "core_temp", "env_temp", "error",
+                   "sweat", "shiver", "vaso"],
+        "read": [
+            "Your starting core_temp (the t = 0 row): ______ °C",
+            "env_temp once the disturbance began: ______ °C",
+            "The most extreme core_temp your run reached: ______ °C",
+            "On the first tick where shiver rose above 0, what did "
+            "error read? ______",
+            "While the body defended itself, which way was vaso "
+            "pinned — toward +1 (vessels open, dumping heat) or −1 "
+            "(clamped, keeping it)? ______",
+            "What did sweat read for the whole cold stretch — and "
+            "why does the loop leave that effector alone here? ______",
+        ],
+    },
+    "glucose": {
+        "title": "The blood-glucose loop",
+        "variable": "blood glucose (glucose, mg/dL)",
+        "before": "Eat a 60 g meal in the sandbox — or use your Type 1 "
+                  "shift run — and keep your charts (or the CSV "
+                  "export) in front of you.",
+        "fields": ["t", "glucose", "gut_carbs", "insulin", "glucagon",
+                   "uptake"],
+        "read": [
+            "Fasting glucose before the meal: ______ mg/dL",
+            "Peak glucose after the meal: ______ mg/dL, at "
+            "t = ______",
+            "What did insulin do as glucose climbed? ______",
+            "What did glucagon do over the same stretch — and why "
+            "does the loop silence it? ______",
+            "While gut_carbs drained toward zero, what happened to "
+            "uptake — where was the sugar going? ______",
+            "About how long did the body take to bring glucose back "
+            "under 140 mg/dL? ______",
+        ],
+    },
+    "water": {
+        "title": "The water/ADH loop",
+        "variable": "plasma osmolarity (osmolarity, mOsm/L)",
+        "before": "Eat the salty snack and wait — or use your Aid "
+                  "station run — and keep your charts (or the CSV "
+                  "export) in front of you.",
+        "fields": ["osmolarity", "adh", "thirst", "urine_rate",
+                   "urine_osm"],
+        "read": [
+            "Resting osmolarity before the disturbance: ______ "
+            "mOsm/L",
+            "The most extreme osmolarity your run reached: ______",
+            "adh at that moment: ______ — and urine_rate: ______ "
+            "mL/min",
+            "urine_osm while the body was CONSERVING water: ______ — "
+            "and while it was FLOODING the excess: ______",
+            "Which woke first, adh or thirst — and why does the loop "
+            "reach for the cheaper response before the behavior? "
+            "______",
+            "Did the body ever drink with nobody at the keyboard? "
+            "What on the chart tells you? ______",
+        ],
+    },
+}
+
+
+@app.template_filter("replace_fields")
+def _mark_fields(text, fields):
+    """Wrap a worksheet question's cited column names in <code>, so the
+    words a student greps their CSV for look like what they'll find."""
+    from markupsafe import Markup, escape
+    out = str(escape(text))
+    for f in sorted(set(fields), key=len, reverse=True):
+        out = re.sub(rf"\b{re.escape(f)}\b", f"<code>{f}</code>", out)
+    return Markup(out)
+
+
+@app.route("/worksheet/<loop>")
+def worksheet(loop):
+    entry = WORKSHEETS.get(loop)
+    if entry is None:
+        return jsonify({"error": f"no worksheet for {loop!r} — the "
+                                 "loops are temp, glucose and "
+                                 "water"}), 400
+    return render_template("worksheet.html", loop=loop, ws=entry,
+                           terms=WORKSHEET_TERMS)
 
 
 ENV_TEMP_MIN, ENV_TEMP_MAX = -10.0, 45.0   # the slider's range, enforced

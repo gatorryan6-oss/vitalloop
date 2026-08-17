@@ -3272,6 +3272,93 @@ def test_state_carries_the_room_count(fresh_registry):
         "a seated device must show up in the room count")
 
 
+# ================= M35: student worksheets ================================
+# Printable pages rendered from one server table — never documents in
+# the repo — so they cannot drift from the app. The pins keep them
+# honest three ways: the curriculum vocabulary appears EXACTLY, every
+# field they cite exists in the frozen record schemas, and the pages
+# ask questions without ever answering them.
+
+WORKSHEET_VOCAB = ["stimulus", "receptor", "control center", "effector",
+                   "response", "set point", "negative feedback"]
+
+
+def _m35():
+    """The app once worksheets exist, or SKIP (M35)."""
+    import app as vital_app
+    if not hasattr(vital_app, "WORKSHEETS"):
+        pytest.skip("worksheets don't exist yet - M35")
+    return vital_app
+
+
+def test_every_loop_has_a_printable_worksheet():
+    """(iii) Three loops, three worksheets, and nonsense is refused in
+    words."""
+    vital_app = _m35()
+    client = vital_app.app.test_client()
+    assert set(vital_app.WORKSHEETS) == set(vital_app.runners)
+    for loop in vital_app.runners:
+        r = client.get(f"/worksheet/{loop}")
+        assert r.status_code == 200 and b"Vital Loop" in r.data
+    refused = client.get("/worksheet/spleen")
+    assert refused.status_code == 400
+    assert refused.get_json()["error"].strip()
+
+
+def test_worksheet_vocabulary_is_exact():
+    """(iii) Kickoff §1: curriculum vocabulary, used exactly — all seven
+    terms, on every loop's worksheet."""
+    vital_app = _m35()
+    client = vital_app.app.test_client()
+    for loop in vital_app.WORKSHEETS:
+        page = client.get(f"/worksheet/{loop}").data.decode("utf-8").lower()
+        missing = [t for t in WORKSHEET_VOCAB if t not in page]
+        assert not missing, (
+            f"the {loop} worksheet is missing the curriculum terms "
+            f"{missing} - the vocabulary is the lesson's spine")
+
+
+def test_worksheets_cite_only_frozen_fields():
+    """(iii) Every code-word a worksheet sends a student to grep their
+    CSV for must exist in that loop's frozen record — a typo here is a
+    student staring at a spreadsheet that lacks the column."""
+    vital_app = _m35()
+    client = vital_app.app.test_client()
+    for loop, ws in vital_app.WORKSHEETS.items():
+        record = vital_app.runners[loop].sim.state()
+        ghosts = set(ws["fields"]) - set(record)
+        assert not ghosts, (
+            f"the {loop} worksheet cites {sorted(ghosts)}, which the "
+            "engine never records")
+        page = client.get(f"/worksheet/{loop}").data.decode("utf-8")
+        for f in ws["fields"]:
+            assert f"<code>{f}</code>" in page, (
+                f"the {loop} worksheet lists {f!r} but never actually "
+                "shows it - a field cited nowhere teaches nothing")
+
+
+def test_worksheets_carry_no_answers():
+    """(iii) The worksheet asks; the student's own run answers. No case
+    text, no disease banner, no teaching note may leak onto paper."""
+    vital_app = _m35()
+    client = vital_app.app.test_client()
+    for loop in vital_app.WORKSHEETS:
+        page = client.get(f"/worksheet/{loop}").data.decode("utf-8")
+        for cloop, entries in vital_app.CASES.items():
+            for cid, case in entries.items():
+                assert case["brief"] not in page, (
+                    f"{cloop}/{cid}'s brief is on the {loop} worksheet")
+                assert case["note"] not in page, (
+                    f"{cloop}/{cid}'s teaching note is on the {loop} "
+                    "worksheet - that's the reveal, printed in advance")
+        for ploop, presets in vital_app.PRESETS.items():
+            for name, preset in presets.items():
+                if preset["banner"]:
+                    assert preset["banner"] not in page, (
+                        f"the {ploop}/{name} banner is on the {loop} "
+                        "worksheet")
+
+
 def test_siadh_preset_is_a_complete_diagnosis():
     """(ddd) M32: SIADH is a row in the Phase 5 preset table — a full
     configuration on a healthy chassis, named in a banner, and CLEARED

@@ -27,10 +27,7 @@ Entry format:
   (no teacher dashboard), worksheets as printable app routes (no docx),
   verbal class direction (no mode gating).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M35 — printable student worksheets (three routes). The
-  worksheet format is a flagged ASSUMPTION in the Phase 9 kickoff —
-  printable app routes, not docx — changeable before it builds. Then
-  M36, the lab pass.
+- **Next up:** M36 — the lab pass and the phase close.
 - **User checkpoint outstanding (M34):** a REAL phone on the room's
   wifi against `run.bat`'s printed address — everything short of that
   is verified (see M34 entry). The first launch may show the Windows
@@ -46,6 +43,39 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M35: Student worksheets — three printable routes
+- Shipped: `/worksheet/temp|glucose|water` — one Jinja template
+  (`worksheet.html`, self-contained with its own print CSS: one sheet,
+  no app chrome) over one server table (`WORKSHEETS` +
+  `WORKSHEET_TERMS`). Each sheet: name/team/period header, "label the
+  loop" (the SEVEN curriculum terms exactly, each with a prompt and a
+  write-in), "read your own run" (blanks answered off the student's
+  own charts/CSV, cited column names rendered in `<code>` by a
+  `replace_fields` filter), and a challenge/diagnosis debrief keyed to
+  the report card. Worksheet links in the page footer. Four pins:
+  three routes + plain-English 400 for nonsense; vocabulary exact on
+  every sheet; **every cited field exists in the frozen records AND
+  actually appears on the page**; no case brief, no teaching note, no
+  disease banner leaks onto paper. 134 invariants + verify pass; the
+  water sheet read live in the browser and reads like a handout.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The cited-fields pin caught three real authoring gaps on its
+     first run**: `sweat`, `gut_carbs`/`uptake` and `thirst` were in
+     the tables but asked about nowhere. Two became questions worth
+     having (sweat flat at zero in the cold = the cheap-first
+     ordering; gut_carbs draining into uptake = where the sugar
+     went); water's unused `t` was dropped instead of forcing a
+     question. The pin is doing exactly what the M28 allowlist does:
+     making drift impossible, not just unlikely.
+  2. Worksheets create NO data products and read none live — they are
+     deliberately session-free static renders, so a printed stack
+     works whether or not the room's sessions still exist.
+  3. The debrief asks the student to name the report-card row that
+     decided their score — the SAME rows M26 made per-row on screen —
+     so the paper trail and the screen agree by construction.
 
 ## 2026-08-17 — M34: Open the doors — the LAN launch
 - Shipped: `run.bat` sets `VITAL_LOOP_HOST=0.0.0.0` before `python
