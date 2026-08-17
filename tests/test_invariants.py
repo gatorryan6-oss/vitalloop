@@ -199,6 +199,36 @@ The disease-knob API contract (built at M17):
        M26 records still load) - and an attempt logged without them must
        still compare rather than crash.
 
+  (mm) M28 diagnosis: every CASES entry carries what the card, the reveal
+       and the grader need, its `answer` names a role and a part that are
+       both in that loop's ANSWER_OPTIONS, and its setup is built only
+       from the preset/breaker vocabulary the app already applies,
+  (nn) REDACTION IS AN ALLOWLIST, NOT A BLOCKLIST. While a case is live
+       and unanswered the snapshot ships only VISIBLE_DURING_CASE[loop]:
+       no `*_enabled` flag, no water_access, no fever_offset, no
+       insulin_sensitivity, no preset. A blocklist fails OPEN - a field
+       added by a later phase would leak the answer silently - so the
+       gate is a list of what the charts and the diagram need, every name
+       on it really exists in that engine's record, and anything else is
+       withheld until somebody lists it on purpose,
+  (oo) grade_answer(case, answer) is PURE: role AND part right is
+       correct, role right with the wrong part is partial credit, a wrong
+       role is wrong. Role "none" normalizes its own part, so a form that
+       leaves a stale part selected can never mark a right answer wrong,
+  (pp) THE REVEAL RELEASES EVERYTHING, and the released history is
+       IDENTICAL to the same case run un-blinded (kickoff SS5: "verify
+       that, don't assume it"). Redaction is a delivery gate, never data
+       loss - the engine recorded every field all along,
+  (qq) a diagnosis attempt carries mode "diagnosis" plus the submitted
+       answer and whether it was right (appended fields, kickoff SS5),
+       and never appears on a challenge leaderboard,
+  (rr) THE ANSWER NEVER REACHES THE PAGE: no case identifier is rendered
+       into the HTML at all (the picker sends an INDEX, so there is
+       nothing to map), /state's case block carries the truth and the
+       teaching note only after the class has committed, and
+       /export.csv refuses while a case is blind - a spreadsheet of
+       `sensor_enabled` is the answer key in a column.
+
   The engines are untouched by this entire phase (kickoff SS0: "no engine
   file changes in this phase at all"); guards (h), (k), (n), (s) above are
   the proof, and they are not repeated here.
@@ -213,6 +243,20 @@ The game-layer API contract (built at M26):
     app.clean_label(raw)              # -> a short team name, or None
     app.leaderboard(loop, name)       # -> compact lines, best first (M27)
     app.compare_attempts(a, b)        # -> merged rows + winners (M27)
+
+The diagnosis API contract (built at M28):
+
+    app.CASES[loop][case_id]          # {brief, setup, start_actions,
+                                      #  speed, warmup_s, answer, note}
+    app.ANSWER_OPTIONS[loop]          # {"roles": [...], "parts": [...]},
+                                      # each entry {"key","label"} - the
+                                      # form's vocabulary, safe to render
+    app.VISIBLE_DURING_CASE[loop]     # the redaction ALLOWLIST
+    app.redact_record(loop, record)   # -> the record minus the answer key
+    app.grade_answer(case, answer, options=None)
+                                      # -> {"verdict","correct","points",
+                                      #     "rows","truth","note","answer"}
+    app.build_case_attempt(loop, case_id, grade, label=None)
 
     import attempts
     attempts.load(path) / attempts.save(records, path)
@@ -1894,6 +1938,396 @@ def test_attempts_data_dir_is_gitignored():
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
     assert "data/" in ignored, (
         "data/ must be gitignored - a file of team scores is never committed")
+
+
+# ================= M28: the diagnosis game =================================
+# The one genuinely new verb in Phase 8. Every phase so far taught MANAGING
+# a loop; this one tests READING one, which is the skill the exam actually
+# asks for. That makes the redaction gate the whole milestone: a case is
+# only a game if the answer isn't in the page, and the working assumption
+# is that a student opens devtools, because one will.
+
+
+def _diag():
+    """Import the diagnosis layer, or SKIP loudly (M28)."""
+    import app as vital_app
+    if not hasattr(vital_app, "CASES"):
+        pytest.skip("CASES doesn't exist yet - it arrives at M28")
+    return vital_app
+
+
+# Fields that NAME the answer rather than describe the physiology. The
+# `*_enabled` flags are caught by their suffix; these three are the ones
+# that aren't.
+ANSWER_KEY_FIELDS = {"water_access", "fever_offset", "insulin_sensitivity"}
+
+# What the strip charts, the readouts, the tooltip and the diagram read on
+# each page. Redaction must leave ALL of this in place: it withholds the
+# answer, never the evidence.
+CHART_KEYS = {
+    "temp": {"t", "core_temp", "env_temp", "exercise", "error",
+             "sweat", "shiver", "vaso"},
+    "glucose": {"t", "glucose", "gut_carbs", "exercise", "error", "insulin",
+                "glucagon", "uptake", "liver_flux", "injected_insulin",
+                "total_insulin", "iob_units", "basal_rate"},
+    "water": {"t", "osmolarity", "water_liters", "gut_water", "exercise",
+              "error", "adh", "thirst", "urine_rate", "urine_osm"},
+}
+
+
+@pytest.fixture
+def diag_client(monkeypatch):
+    """A test client whose scores never touch the teacher's real log.
+
+    `attempts.append(record, path=DEFAULT_PATH)` binds the path at def
+    time, so patching the module attribute would do nothing — patch the
+    app's own logger instead, and keep what it was handed so the tests can
+    inspect the attempt without a disk anywhere near them.
+    """
+    vital_app = _diag()
+    logged = []
+
+    def fake_log(record):
+        logged.append(record)
+        return {**record, "id": len(logged)}, None
+
+    monkeypatch.setattr(vital_app, "log_attempt", fake_log)
+    yield vital_app, vital_app.app.test_client(), logged
+    # These drive the REAL shared runners (the projector model has exactly
+    # one per loop). Put them back the way they were found.
+    for runner in vital_app.runners.values():
+        runner.sim.reset()
+        runner.case = None
+        runner.case_index = 0
+        runner.challenge = None
+        runner.preset = None
+
+
+# ------------------------------------------------------ (mm) the cases
+
+def test_case_table_shape():
+    """Every entry carries what the card, the grader and the reveal need."""
+    vital_app = _diag()
+    required = {"brief", "setup", "speed", "warmup_s", "answer", "note"}
+    assert vital_app.CASES, "the cases table is empty"
+    for loop, entries in vital_app.CASES.items():
+        assert loop in vital_app.runners, f"unknown loop {loop!r}"
+        options = vital_app.ANSWER_OPTIONS[loop]
+        roles = {o["key"] for o in options["roles"]}
+        parts = {o["key"] for o in options["parts"]}
+        assert entries, f"the {loop} loop has no cases"
+        for cid, case in entries.items():
+            missing = required - set(case)
+            assert not missing, f"{loop}/{cid} lacks {sorted(missing)}"
+            assert case["answer"]["role"] in roles, (
+                f"{loop}/{cid} answers {case['answer']['role']!r}, which "
+                "isn't one of the roles the form offers - an answer nobody "
+                "can select is a case nobody can win")
+            assert case["answer"]["part"] in parts, (
+                f"{loop}/{cid} answers part {case['answer']['part']!r}, "
+                "which isn't in that loop's parts list")
+            assert case["warmup_s"] >= 0 and case["speed"] in (1, 4, 16)
+            assert case["note"].strip(), (
+                f"{loop}/{cid} has no teaching note - the reveal is the "
+                "lesson, not the verdict")
+
+
+def test_every_loop_can_answer_nothing_is_broken():
+    """A loop where "intact" is never right teaches the wrong reflex."""
+    vital_app = _diag()
+    for loop, entries in vital_app.CASES.items():
+        roles = {o["key"] for o in vital_app.ANSWER_OPTIONS[loop]["roles"]}
+        assert roles == {"receptor", "control", "effector", "none"}, (
+            f"{loop} offers {sorted(roles)} - the four answers are the "
+            "curriculum vocabulary and they are the same on every loop")
+        assert any(c["answer"]["role"] == "none" for c in entries.values()), (
+            f"{loop} has no intact case: if 'nothing is broken' is never "
+            "the answer here, the class rules it out for free and stops "
+            "reading the charts")
+
+
+def test_case_order_does_not_give_the_pattern_away():
+    """Same four answers everywhere, deliberately in different orders."""
+    vital_app = _diag()
+    seen = {}
+    for loop, entries in vital_app.CASES.items():
+        order = tuple(c["answer"]["role"] for c in entries.values())
+        assert order not in seen, (
+            f"{loop} asks its roles in the same order as {seen[order]} - a "
+            "class that plays a few cases would learn the position instead "
+            "of the physiology")
+        seen[order] = loop
+
+
+# --------------------------------------------------- (nn) the redaction
+
+def test_redaction_allowlist_covers_the_charts_and_nothing_else():
+    vital_app = _diag()
+    for loop, keep in vital_app.VISIBLE_DURING_CASE.items():
+        record = vital_app.runners[loop].sim.state()
+        unknown = keep - set(record)
+        assert not unknown, (
+            f"VISIBLE_DURING_CASE[{loop!r}] lists {sorted(unknown)}, which "
+            "the engine never records - a typo here silently blanks a chart")
+        withheld = CHART_KEYS[loop] - keep
+        assert not withheld, (
+            f"the {loop} page draws {sorted(withheld)} and redaction would "
+            "withhold it - the gate hides the ANSWER, never the evidence")
+        leaks = {k for k in keep if k.endswith("_enabled")} | (
+            keep & ANSWER_KEY_FIELDS)
+        assert not leaks, (
+            f"VISIBLE_DURING_CASE[{loop!r}] would ship {sorted(leaks)}, "
+            "which names the broken part outright")
+
+
+def test_redaction_fails_closed_on_a_field_nobody_listed():
+    """An allowlist, not a blocklist: tomorrow's field is withheld until
+    somebody lists it on purpose."""
+    vital_app = _diag()
+    for loop in vital_app.VISIBLE_DURING_CASE:
+        record = dict(vital_app.runners[loop].sim.state())
+        record["phase_9_field"] = "which part is broken"
+        out = vital_app.redact_record(loop, record)
+        assert "phase_9_field" not in out, (
+            f"the {loop} gate passed a field it had never heard of - a "
+            "blocklist fails OPEN and this must not be one")
+        assert all(out[k] == record[k] for k in out), (
+            "redaction changed a value it kept - it may only drop keys")
+
+
+def test_a_live_case_ships_no_answer_anywhere(diag_client):
+    """(nn)(rr) Drive every case through the production routes and read
+    the payload the way a student with devtools open would."""
+    vital_app, client, _ = diag_client
+    for loop, entries in vital_app.CASES.items():
+        for n in range(1, len(entries) + 1):
+            started = client.post(f"/control?loop={loop}",
+                                  json={"action": "diagnose", "value": n})
+            assert started.status_code == 200, started.get_json()
+            polled = client.get(f"/state?loop={loop}").get_json()
+            for j in (started.get_json(), polled):
+                for record in [j["now"], *j["points"]]:
+                    banned = sorted(k for k in record
+                                    if k.endswith("_enabled")
+                                    or k in ANSWER_KEY_FIELDS)
+                    assert not banned, (
+                        f"{loop} case {n} ships {banned} while the case is "
+                        "blind - that IS the answer key")
+                assert j["preset"] is None, (
+                    "the disease banner names the diagnosis in words")
+                case = j["case"]
+                assert case["answered"] is False
+                assert case["n"] == n and case["of"] == len(entries)
+                for key in ("answer", "truth", "note", "setup", "id"):
+                    assert key not in case, (
+                        f"the case block ships {key!r} before the class has "
+                        "committed to an answer")
+            refused = client.get(f"/export.csv?loop={loop}")
+            assert refused.status_code != 200, (
+                "a CSV of the enabled flags is the answer key in a column")
+            assert "case" in refused.get_json()["error"].lower(), (
+                "the refusal must say WHY, in plain English")
+
+
+def test_the_reveal_releases_a_history_identical_to_an_unblinded_run(
+        diag_client):
+    """(pp) Redaction is a delivery gate, never data loss (kickoff SS5:
+    "verify that, don't assume it")."""
+    from engine.sim import Simulation
+    vital_app, client, _ = diag_client
+    loop, n = "temp", 1
+    cid = list(vital_app.CASES[loop])[n - 1]
+    case = vital_app.CASES[loop][cid]
+
+    client.post(f"/control?loop={loop}",
+                json={"action": "diagnose", "value": n})
+    blind = client.get(f"/state?loop={loop}").get_json()
+    assert "sensor_enabled" not in blind["now"]
+    truth = case["answer"]
+    answered = client.post(f"/control?loop={loop}",
+                           json={"action": "answer", "role": truth["role"],
+                                 "part": truth["part"]})
+    assert answered.status_code == 200, answered.get_json()
+    shown = client.get(f"/state?loop={loop}").get_json()
+    assert "sensor_enabled" in shown["now"], (
+        "the reveal must release the flags it was holding")
+    assert shown["case"]["answered"] is True
+    assert shown["case"]["grade"]["note"] == case["note"], (
+        "the reveal is where the teaching note finally arrives")
+
+    ref = Simulation()
+    vital_app._apply_preset(ref, case["setup"])
+    for method, args in case.get("start_actions", []):
+        getattr(ref, method)(*args)
+    ref.step(case["warmup_s"])
+    want = ref.history()
+    got = vital_app.runners[loop].sim.history()[:len(want)]
+    assert got == want, (
+        "the released history differs from the same case run un-blinded - "
+        "the engine must have recorded every field all along")
+
+
+# ---------------------------------------------------- (oo) the grading
+
+def test_grade_answer_is_pure_and_gives_partial_credit():
+    import json
+    vital_app = _diag()
+    case = {"answer": {"role": "effector", "part": "sweat"},
+            "note": "the sweat glands never fired"}
+    before = json.dumps(case, sort_keys=True)
+    right = vital_app.grade_answer(case, {"role": "effector", "part": "sweat"})
+    near = vital_app.grade_answer(case, {"role": "effector", "part": "shiver"})
+    wrong = vital_app.grade_answer(case, {"role": "receptor",
+                                          "part": "sensor"})
+    assert json.dumps(case, sort_keys=True) == before, (
+        "grade_answer() mutated the case it was handed")
+    assert right == vital_app.grade_answer(case, {"role": "effector",
+                                                  "part": "sweat"}), (
+        "the grader is not a pure function")
+    assert (right["verdict"], right["correct"]) == ("correct", True)
+    assert (near["verdict"], near["correct"]) == ("partial", False)
+    assert (wrong["verdict"], wrong["correct"]) == ("wrong", False)
+    assert right["points"] > near["points"] > wrong["points"] == 0, (
+        "naming the right part of the loop and the wrong component is worth "
+        "more than missing both")
+    assert all(g["note"] == case["note"] for g in (right, near, wrong)), (
+        "the teaching note is the point of the reveal - it shows either way")
+
+
+def test_none_normalizes_its_part_so_a_stale_select_cannot_hurt():
+    vital_app = _diag()
+    intact = {"answer": {"role": "none", "part": "none"}, "note": "-"}
+    assert vital_app.grade_answer(
+        intact, {"role": "none", "part": "sweat"})["correct"] is True, (
+        "answering 'nothing is broken' with a part left selected in the "
+        "second box is still the right answer")
+    broken = {"answer": {"role": "effector", "part": "sweat"}, "note": "-"}
+    missed = vital_app.grade_answer(broken, {"role": "none", "part": "sweat"})
+    assert missed["correct"] is False and missed["verdict"] == "wrong", (
+        "...and it must not accidentally match on the part alone")
+
+
+def test_grade_rows_read_like_every_other_report_card():
+    vital_app = _diag()
+    case = {"answer": {"role": "effector", "part": "sweat"}, "note": "x"}
+    grade = vital_app.grade_answer(case, {"role": "receptor",
+                                          "part": "sensor"})
+    assert all({"key", "label", "value", "met"} <= set(r)
+               for r in grade["rows"]), (
+        "a diagnosis report is drawn by the same renderer as every other "
+        "report card, so its rows must have the same shape")
+    assert [r["met"] for r in grade["rows"][:2]] == [False, False]
+
+
+# --------------------------------------------- (qq) the diagnosis attempt
+
+def test_diagnosis_attempt_is_a_logged_data_product(diag_client):
+    vital_app, client, logged = diag_client
+    loop = "water"
+    cid = list(vital_app.CASES[loop])[0]
+    truth = vital_app.CASES[loop][cid]["answer"]
+    client.post(f"/control?loop={loop}",
+                json={"action": "diagnose", "value": 1,
+                      "label": "  Period 2   Red  "})
+    client.post(f"/control?loop={loop}",
+                json={"action": "answer", "role": truth["role"],
+                      "part": truth["part"]})
+    assert len(logged) == 1, "one answered case is one attempt"
+    att = logged[0]
+    missing = ATTEMPT_FIELDS - set(att)
+    assert not missing, f"a diagnosis attempt lacks {sorted(missing)}"
+    assert att["mode"] == "diagnosis"
+    assert att["loop"] == loop and att["name"] == cid
+    assert att["label"] == "Period 2 Red", "the team label is tidied here too"
+    assert att["met"] is True and att["correct"] is True
+    assert att["answer"] == {"role": truth["role"], "part": truth["part"]}, (
+        "the submitted answer is part of the record (kickoff SS5) - a "
+        "worksheets phase reads this file, not a screenshot")
+
+
+def test_a_diagnosis_never_lands_on_a_challenge_leaderboard(monkeypatch):
+    vital_app = _diag()
+    intruder = {"id": 1, "wall_time": "2026-08-17T09:00:00", "loop": "water",
+                "mode": "diagnosis", "name": "aid_station", "label": "Team 3",
+                "points": 100, "medal": None, "met": True, "rows": []}
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [intruder])
+    assert vital_app.leaderboard("water", "aid_station") == [], (
+        "a perfect diagnosis is not a 100-point aid station run")
+
+
+# ------------------------------------------------ (rr) nothing in the page
+
+def test_no_case_identifier_reaches_the_page():
+    vital_app = _diag()
+    html = vital_app.app.test_client().get("/").get_data(as_text=True)
+    for loop, entries in vital_app.CASES.items():
+        for cid, case in entries.items():
+            assert cid not in html, (
+                f"case id {cid!r} is rendered into the page - the picker "
+                "sends an INDEX so that there is nothing in the DOM to map "
+                "back to a case")
+            assert case["note"] not in html and case["brief"] not in html, (
+                f"{loop}/{cid} leaks its text into the page before it runs")
+
+
+# --------------------------------------------- the case, driven like a class
+
+def test_next_case_rotates_in_a_fixed_order_and_wraps(diag_client):
+    """No randomness, ever (kickoff SS2) - a replayed case is rehearsal."""
+    vital_app, client, _ = diag_client
+    loop = "temp"
+    total = len(vital_app.CASES[loop])
+    seen = []
+    for _ in range(total + 1):
+        client.post(f"/control?loop={loop}", json={"action": "diagnose"})
+        seen.append(client.get(f"/state?loop={loop}").get_json()["case"]["n"])
+    assert seen == list(range(1, total + 1)) + [1]
+    assert client.post(f"/control?loop={loop}",
+                       json={"action": "diagnose", "value": total + 1}
+                       ).status_code == 400
+
+
+def test_a_nonsense_answer_is_refused_not_graded(diag_client):
+    vital_app, client, logged = diag_client
+    client.post("/control?loop=temp", json={"action": "diagnose", "value": 1})
+    bad = client.post("/control?loop=temp",
+                      json={"action": "answer", "role": "the vibes",
+                            "part": "sweat"})
+    assert bad.status_code == 400
+    assert not logged, "a refused answer must not be logged as an attempt"
+    assert client.get("/state?loop=temp").get_json()["case"]["answered"] \
+        is False, "the case is still live and still blind"
+    good = {"action": "answer", **vital_app.CASES["temp"]["case1"]["answer"]}
+    assert client.post("/control?loop=temp", json=good).status_code == 200
+    twice = client.post("/control?loop=temp", json=good)
+    assert twice.status_code == 400 and "answered" in \
+        twice.get_json()["error"], "one commitment per case, said plainly"
+
+
+def test_answering_with_no_case_running_is_refused(diag_client):
+    _, client, _ = diag_client
+    r = client.post("/control?loop=temp",
+                    json={"action": "answer", "role": "receptor",
+                          "part": "sensor"})
+    assert r.status_code == 400 and "case" in r.get_json()["error"].lower()
+
+
+def test_the_game_modes_are_mutually_exclusive(diag_client):
+    """A challenge and a blind case are different lessons; one clears the
+    other, and clearing a case un-redacts the snapshot."""
+    vital_app, client, _ = diag_client
+    client.post("/control?loop=temp", json={"action": "diagnose", "value": 1})
+    client.post("/control?loop=temp",
+                json={"action": "challenge", "value": "cold_store"})
+    j = client.get("/state?loop=temp").get_json()
+    assert "case" not in j and "sweat_enabled" in j["now"]
+    client.post("/control?loop=temp", json={"action": "diagnose", "value": 1})
+    j = client.get("/state?loop=temp").get_json()
+    assert "challenge" not in j, "starting a case must clear a challenge"
+    client.post("/control?loop=temp", json={"action": "reset"})
+    j = client.get("/state?loop=temp").get_json()
+    assert "case" not in j and "sweat_enabled" in j["now"], (
+        "reset ends the game and gives the sandbox back")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}

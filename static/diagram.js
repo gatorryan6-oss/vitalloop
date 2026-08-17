@@ -86,7 +86,21 @@
         node.textContent = line;
         return node;
       });
-      boxes[id] = { g, rect, lines: lineNodes };
+      // The "status withheld" badge (M28), hidden until a blind case
+      // turns it on. It sits in the corner and leaves the box's GLOW
+      // alone on purpose: how hard this part is working is the evidence,
+      // and only whether it is broken is being kept back.
+      // `visibility`, not `opacity`: an opacity-0 badge is invisible but
+      // still in the text and the accessibility tree, so every box read
+      // as "?" to a screen reader and to anything scraping the page.
+      const hint = el("g", { visibility: "hidden" }, g);
+      el("circle", { cx: x + w - 15, cy: y + 15, r: 9, fill: SURFACE,
+                     stroke: MUTED, "stroke-width": 1.5,
+                     "stroke-dasharray": "3 2" }, hint);
+      el("text", { x: x + w - 15, y: y + 20, "text-anchor": "middle",
+                   fill: MUTED, "font-size": 13, "font-weight": 700 },
+         hint).textContent = "?";
+      boxes[id] = { g, rect, lines: lineNodes, hint };
     }
 
     function setLine(id, index, text, emphasize) {
@@ -149,8 +163,20 @@
       }
     }
 
+    function setUnknown(id, on) {
+      boxes[id].hint.setAttribute("visibility", on ? "visible" : "hidden");
+    }
+
     return { box, arrow, pathArrow, caption, setGlow, setArrow, setBroken,
-             setLine };
+             setLine, setUnknown };
+  }
+
+  /* One box's status. While a blind case runs (M28) the app is not
+     saying which parts work, so a box that could be the answer wears a
+     "?" instead of graying out — because a grayed box IS the answer. */
+  function status(kit, id, broken, blind) {
+    kit.setBroken(id, blind ? false : broken);
+    kit.setUnknown(id, !!blind);
   }
 
   /* ================= temperature diagram (M4) ================= */
@@ -181,7 +207,7 @@
   T.caption(487, 315,
     "negative feedback — the response counteracts the stimulus");
 
-  window.updateDiagram = function (r) {
+  window.updateDiagram = function (r, blind) {
     const trueErr = r.core_temp - 37.0;
     const sensed = r.error;
     const dirTrue = trueErr >= 0 ? HOT : COLD;
@@ -208,17 +234,24 @@
     T.setArrow("a-resp-vaso", Math.abs(r.vaso), C_VASO);
     T.setArrow("a-feedback", respAct, dirSensed);
 
-    T.setBroken("recep", !r.sensor_enabled);
-    T.setBroken("eff-sweat", !r.sweat_enabled);
-    T.setBroken("eff-shiver", !r.shiver_enabled);
-    T.setBroken("eff-vaso", !r.vaso_enabled);
+    // The five boxes that are also the five answers on the temp loop.
+    status(T, "recep", !r.sensor_enabled, blind);
+    status(T, "control", false, blind);
+    status(T, "eff-sweat", !r.sweat_enabled, blind);
+    status(T, "eff-shiver", !r.shiver_enabled, blind);
+    status(T, "eff-vaso", !r.vaso_enabled, blind);
 
     // Fever (M19): the box shows the number the loop is DEFENDING right
     // now — under fever the label turns hot-red and reads 39.0, and the
     // class sees the machinery obeying a moved thermostat.
+    //
+    // Which makes it an answer key during a case, and worse, a LIE if it
+    // were left to fall back to 37.0 with fever_offset redacted. So it
+    // says outright that it isn't saying (M28).
     const defended = 37.0 + (r.fever_offset || 0);
-    T.setLine("control", 2, `set point ${defended.toFixed(1)} °C`,
-              !!r.fever_offset);
+    T.setLine("control", 2,
+              blind ? "set point — ?" : `set point ${defended.toFixed(1)} °C`,
+              !blind && !!r.fever_offset);
   };
 
   /* ================= glucose diagram (M9) ================= */
@@ -269,7 +302,7 @@
   G.caption(487, 365,
     "negative feedback — insulin and glucagon push in opposite directions");
 
-  window.updateGlucoseDiagram = function (r) {
+  window.updateGlucoseDiagram = function (r, blind) {
     const trueErr = r.glucose - 90.0;
     const sensed = r.error;
     const dirTrue = trueErr >= 0 ? HOT : COLD;
@@ -296,7 +329,15 @@
     // M11) — scaled by how well the tissues HEAR it (M19): under type 2
     // the beta box and its arrows blaze while the muscle box sits dim.
     // Each SOURCE box still glows with its own output only.
-    const heard = r.total_insulin * (r.insulin_sensitivity ?? 1);
+    //
+    // That reading needs insulin_sensitivity, and a blind case withholds
+    // it (M28). Falling back to 1 would paint a muscle box blazing away
+    // while the patient's glucose sits at 160 — a lie about the exact
+    // case the class is trying to read — so instead the box goes neutral
+    // and wears the "?" with the others. `uptake` is no substitute: the
+    // M28 sweep found type 2 uptake running slightly ABOVE healthy, mass
+    // action making up for what the insulin can't buy.
+    const heard = blind ? 0 : r.total_insulin * (r.insulin_sensitivity ?? 1);
     G.setGlow("muscle", heard, C_UPTAKE);
     G.setGlow("liver", liverAct, C_LIVER);
     const respAct = Math.max(heard, liverAct);
@@ -313,10 +354,14 @@
     G.setArrow("a-liver-resp", liverAct, C_LIVER);
     G.setArrow("a-feedback", respAct, dirSensed);
 
-    G.setBroken("recep", !r.sensor_enabled);
-    G.setBroken("beta", !r.beta_enabled);
-    G.setBroken("alpha", !r.alpha_enabled);
-    G.setBroken("liver", !r.liver_enabled);
+    // The five boxes that are also the five answers on the glucose loop.
+    // Muscle & fat has no breaker behind it — type 2 is a knob, not a
+    // switch — but it is an answer, so it wears the badge too.
+    status(G, "recep", !r.sensor_enabled, blind);
+    status(G, "beta", !r.beta_enabled, blind);
+    status(G, "alpha", !r.alpha_enabled, blind);
+    status(G, "liver", !r.liver_enabled, blind);
+    status(G, "muscle", false, blind);
   };
 
   /* ================= water diagram (M22) ================= */
@@ -351,7 +396,9 @@
   W.caption(400, 392,
     "negative feedback — the response counteracts the stimulus");
 
-  window.updateWaterDiagram = function (r) {
+  const URINE_MAX = 12.0;        // mL/min at full flood (engine ceiling)
+
+  window.updateWaterDiagram = function (r, blind) {
     const trueErr = r.osmolarity - 290.0;
     const sensed = r.error;
     const dirTrue = trueErr >= 0 ? HOT : COLD;    // concentrated runs hot
@@ -361,7 +408,16 @@
     // The kidney box glows with how loudly it OBEYS the hormone: dark
     // means flooding — "retain water" is the box's labeled action, and
     // a deaf kidney (nephrogenic DI) grays out instead.
-    const heard = r.kidney_enabled ? r.adh : 0;
+    //
+    // A blind case withholds kidney_enabled (M28), so there the box
+    // reads the OBSERVABLE instead: a kidney retaining water passes
+    // almost none, a flooding one passes 12 mL/min. Deaf kidneys and no
+    // ADH at all then look identical — which is honest, because in both
+    // the kidney is not holding water, and telling those two apart is
+    // the class's job, off the hormone trace.
+    const heard = blind
+      ? Math.max(0, 1 - r.urine_rate / URINE_MAX)
+      : (r.kidney_enabled ? r.adh : 0);
 
     W.setGlow("stim", stimAct, dirTrue);
     W.setGlow("recep", sensedAct, dirSensed);
@@ -379,9 +435,10 @@
     W.setArrow("a-thirst-resp", r.thirst, C_SHIVER);
     W.setArrow("a-feedback", respAct, dirSensed);
 
-    W.setBroken("recep", !r.sensor_enabled);
-    W.setBroken("control", !r.adh_enabled);
-    W.setBroken("kidney", !r.kidney_enabled);
-    W.setBroken("thirst", !r.water_access);
+    // The four boxes that are also the four answers on the water loop.
+    status(W, "recep", !r.sensor_enabled, blind);
+    status(W, "control", !r.adh_enabled, blind);
+    status(W, "kidney", !r.kidney_enabled, blind);
+    status(W, "thirst", !r.water_access, blind);
   };
 })();

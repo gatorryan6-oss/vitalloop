@@ -62,17 +62,22 @@ async function poll() {
   }
   if (firstKeep > 0) buf.pts = buf.pts.slice(firstKeep);
   if (loop !== activeLoop) return;   // tab switched while we fetched
+  // While a blind case is unanswered the server has already stripped the
+  // answer out of these records (M28). Everything downstream is told, so
+  // the screen can say "we're not telling you" instead of guessing.
+  const blind = !!(j.case && !j.case.answered);
   applyServerState(j);
   updateBanner(loop, j.preset);
   updateChallenge(loop, j.challenge);
+  updateCase(loop, j.case, blind);
   updateGameLayer(loop, j);
   updateReadouts(j.now);
   if (loop === "temp" && window.updateDiagram) {
-    window.updateDiagram(j.now);
+    window.updateDiagram(j.now, blind);
   } else if (loop === "glucose" && window.updateGlucoseDiagram) {
-    window.updateGlucoseDiagram(j.now);
+    window.updateGlucoseDiagram(j.now, blind);
   } else if (loop === "water" && window.updateWaterDiagram) {
-    window.updateWaterDiagram(j.now);
+    window.updateWaterDiagram(j.now, blind);
   }
   drawAll();
 }
@@ -211,32 +216,135 @@ function updateChallenge(loop, c) {
     report.appendChild(line);
   }
   for (const row of c.report.rows) {
-    const div = document.createElement("div");
-    div.className = "challenge-row";
-    const mark = document.createElement("span");
-    mark.className = row.met === null ? "row-info"
-      : row.met ? "row-met" : "row-missed";
-    mark.textContent = row.met === null ? "·" : row.met ? "✓" : "✗";
-    div.appendChild(mark);
-    const text = document.createElement("span");
-    text.className = "row-text";
-    text.textContent = ` ${row.label}: ${row.value}`;
-    div.appendChild(text);
-    const w = worth[row.key];    // where this row's points went
-    if (w) {
-      const pts = document.createElement("span");
-      pts.className = "row-points";
-      pts.textContent = `${w.points} / ${w.max}`;
-      div.appendChild(pts);
-    }
-    report.appendChild(div);
+    report.appendChild(reportRow(row, worth[row.key]));
   }
-  if (c.attempt) {
-    const saved = document.createElement("div");
-    saved.className = "challenge-saved";
-    saved.textContent = `Saved to the attempts log as run #${c.attempt.id}.`;
-    report.appendChild(saved);
+  report.appendChild(savedLine(c.attempt));
+}
+
+/* One line of a report card: the ✓/✗/· mark, the label and value the
+   server wrote, and — when the row earned points — where they went. A
+   diagnosis is graded in exactly this grammar, so it draws with exactly
+   this renderer (M28). */
+
+function reportRow(row, worth) {
+  const div = document.createElement("div");
+  div.className = "challenge-row";
+  const mark = document.createElement("span");
+  mark.className = row.met === null ? "row-info"
+    : row.met ? "row-met" : "row-missed";
+  mark.textContent = row.met === null ? "·" : row.met ? "✓" : "✗";
+  div.appendChild(mark);
+  const text = document.createElement("span");
+  text.className = "row-text";
+  text.textContent = ` ${row.label}: ${row.value}`;
+  div.appendChild(text);
+  if (worth) {
+    const pts = document.createElement("span");
+    pts.className = "row-points";
+    pts.textContent = `${worth.points} / ${worth.max}`;
+    div.appendChild(pts);
   }
+  return div;
+}
+
+function savedLine(attempt) {
+  const saved = document.createElement("div");
+  saved.className = "challenge-saved";
+  saved.hidden = !attempt;
+  if (attempt) {
+    saved.textContent = `Saved to the attempts log as run #${attempt.id}.`;
+  }
+  return saved;
+}
+
+/* --- the diagnosis card (M28): a blind case, an answer in curriculum
+   vocabulary, and the reveal. Nothing here knows what the answer is
+   until the server sends it, which is the entire point. --- */
+
+const CASE_IDS = { temp: "tempDiagnose", glucose: "glucoseDiagnose",
+                   water: "waterDiagnose" };
+// Where each loop's fast-forward ended, for the marker on the chart.
+const caseWarmup = { temp: null, glucose: null, water: null };
+
+const CASE_HEADLINES = {
+  correct: "RIGHT — that is exactly what failed",
+  partial: "HALF RIGHT — the right part of the loop, the wrong component",
+  wrong: "NOT THIS TIME — read the reveal, then look again",
+};
+const CASE_VERDICT_CLASS = {
+  correct: "verdict-met", partial: "verdict-partial",
+  wrong: "verdict-missed",
+};
+
+function updateCase(loop, c, blind) {
+  const card = document.getElementById(CASE_IDS[loop]);
+  if (!card) return;
+  caseWarmup[loop] = c && c.warmup_s ? c.warmup_s : null;
+  // Put away everything that would name the broken part. The server has
+  // already redacted the payload — this only keeps the screen honest
+  // about what it's holding back.
+  document.querySelectorAll(`#${PAGE_IDS[loop]} [data-blind-hide]`)
+    .forEach(el => { el.hidden = blind; });
+  const live = card.querySelector(".case-live");
+  const verdict = card.querySelector(".case-verdict");
+  card.querySelector(".case-start").textContent =
+    c ? "Start another case" : "Start a blind case";
+  if (!c) {
+    live.hidden = true;
+    verdict.hidden = true;
+    return;
+  }
+  live.hidden = false;
+  const brief = card.querySelector(".case-brief");
+  brief.innerHTML = "";
+  const which = document.createElement("strong");
+  which.textContent = `Case ${c.n} of ${c.of}` +
+    (c.label ? ` — ${c.label}` : "") + ": ";
+  brief.appendChild(which);
+  brief.appendChild(document.createTextNode(c.brief));
+  if (c.warmup_s) {
+    const skipped = document.createElement("div");
+    skipped.className = "case-warmup";
+    skipped.textContent =
+      `The first ${fmtSimHours(c.warmup_s)} of this story already ` +
+      `happened — it is drawn on the charts, left of the marked line.`;
+    brief.appendChild(skipped);
+  }
+  card.querySelector(".case-form").hidden = c.answered;
+  if (!c.answered) {
+    verdict.hidden = true;
+    return;
+  }
+  drawCaseVerdict(verdict, c);
+}
+
+function drawCaseVerdict(out, c) {
+  const g = c.grade;
+  out.hidden = false;
+  out.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "challenge-verdict " + CASE_VERDICT_CLASS[g.verdict];
+  head.textContent = (c.label ? `${c.label} — ` : "") +
+    CASE_HEADLINES[g.verdict];
+  out.appendChild(head);
+  const score = document.createElement("div");
+  score.className = "challenge-score";
+  const pts = document.createElement("strong");
+  pts.textContent = `${g.points} / 100`;
+  score.appendChild(pts);
+  score.appendChild(document.createTextNode(
+    ` — it was ${g.truth.line}.`));
+  out.appendChild(score);
+  for (const row of g.rows) {
+    if (row.key !== "note") out.appendChild(reportRow(row, null));
+  }
+  // The note is the lesson, not a row — it gets its own block, and it
+  // shows whether the class was right or wrong.
+  const note = document.createElement("div");
+  note.className = "case-note";
+  note.textContent = g.note;
+  out.appendChild(note);
+  out.appendChild(savedLine(c.attempt));
 }
 
 /* --- best so far, the leaderboard, and the head-to-head picker
@@ -467,18 +575,20 @@ function updateReadouts(now) {
       ? "Exercise / heat: ON" : "Exercise / heat: off";
     wex.setAttribute("aria-pressed", String(now.exercise));
     lastExercise = now.exercise;
-    wPartEnabled = {
-      adh: now.adh_enabled,
-      kidney: now.kidney_enabled,
-      access: now.water_access,
-      sensor: now.sensor_enabled,
-    };
-    document.querySelectorAll("#page-water .breaker").forEach(b => {
-      const on = wPartEnabled[b.dataset.part];
-      b.classList.toggle("broken", !on);
-      b.textContent = W_BREAKER_LABELS[b.dataset.part] +
-        (on ? "" : " — DISABLED");
-    });
+    if ("adh_enabled" in now) {   // absent while a case is blind (M28)
+      wPartEnabled = {
+        adh: now.adh_enabled,
+        kidney: now.kidney_enabled,
+        access: now.water_access,
+        sensor: now.sensor_enabled,
+      };
+      document.querySelectorAll("#page-water .breaker").forEach(b => {
+        const on = wPartEnabled[b.dataset.part];
+        b.classList.toggle("broken", !on);
+        b.textContent = W_BREAKER_LABELS[b.dataset.part] +
+          (on ? "" : " — DISABLED");
+      });
+    }
     return;
   }
 
@@ -518,18 +628,20 @@ function updateReadouts(now) {
     gex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
     gex.setAttribute("aria-pressed", String(now.exercise));
     lastExercise = now.exercise;
-    gPartEnabled = {
-      beta: now.beta_enabled,
-      alpha: now.alpha_enabled,
-      liver: now.liver_enabled,
-      sensor: now.sensor_enabled,
-    };
-    document.querySelectorAll("#page-glucose .breaker").forEach(b => {
-      const on = gPartEnabled[b.dataset.part];
-      b.classList.toggle("broken", !on);
-      b.textContent = G_BREAKER_LABELS[b.dataset.part] +
-        (on ? "" : " — DISABLED");
-    });
+    if ("beta_enabled" in now) {   // absent while a case is blind (M28)
+      gPartEnabled = {
+        beta: now.beta_enabled,
+        alpha: now.alpha_enabled,
+        liver: now.liver_enabled,
+        sensor: now.sensor_enabled,
+      };
+      document.querySelectorAll("#page-glucose .breaker").forEach(b => {
+        const on = gPartEnabled[b.dataset.part];
+        b.classList.toggle("broken", !on);
+        b.textContent = G_BREAKER_LABELS[b.dataset.part] +
+          (on ? "" : " — DISABLED");
+      });
+    }
     return;
   }
 
@@ -551,19 +663,22 @@ function updateReadouts(now) {
   ex.setAttribute("aria-pressed", String(now.exercise));
   lastExercise = now.exercise;
 
-  // Break-the-loop buttons mirror the engine's enabled flags.
-  partEnabled = {
-    sweat: now.sweat_enabled,
-    shiver: now.shiver_enabled,
-    vaso: now.vaso_enabled,
-    sensor: now.sensor_enabled,
-  };
-  document.querySelectorAll("#page-temp .breaker").forEach(b => {
-    const on = partEnabled[b.dataset.part];
-    b.classList.toggle("broken", !on);
-    b.textContent = BREAKER_LABELS[b.dataset.part] +
-      (on ? "" : " — DISABLED");
-  });
+  // Break-the-loop buttons mirror the engine's enabled flags — which a
+  // blind case withholds, so there is nothing to mirror (M28).
+  if ("sweat_enabled" in now) {
+    partEnabled = {
+      sweat: now.sweat_enabled,
+      shiver: now.shiver_enabled,
+      vaso: now.vaso_enabled,
+      sensor: now.sensor_enabled,
+    };
+    document.querySelectorAll("#page-temp .breaker").forEach(b => {
+      const on = partEnabled[b.dataset.part];
+      b.classList.toggle("broken", !on);
+      b.textContent = BREAKER_LABELS[b.dataset.part] +
+        (on ? "" : " — DISABLED");
+    });
+  }
 }
 
 /* ---------------- controls ---------------- */
@@ -575,8 +690,13 @@ async function control(body) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    applyServerState(await r.json());
-  } catch (e) { /* next poll re-syncs the buttons */ }
+    const j = await r.json();
+    // A refusal is an {error} payload, not a snapshot — feeding it to
+    // applyServerState() flipped the Pause button on every 400 until the
+    // next poll put it back. Refusals now leave the controls alone.
+    if (r.ok) applyServerState(j);
+    return j;
+  } catch (e) { return null; }     // next poll re-syncs the buttons
 }
 
 document.getElementById("pauseBtn").addEventListener("click", () =>
@@ -662,6 +782,25 @@ document.querySelectorAll(".challenge-start").forEach(b =>
 
 document.querySelectorAll(".h2h-go").forEach(b =>
   b.addEventListener("click", () => runCompare(activeLoop)));
+
+/* --- the diagnosis game (M28). The picker sends "next" or a NUMBER;
+   there is no case name anywhere in this file, or in the page. --- */
+
+document.querySelectorAll(".case-start").forEach(b =>
+  b.addEventListener("click", () => {
+    const card = b.closest(".diagnose-card");
+    control({ action: "diagnose",
+              value: card.querySelector(".case-pick").value,
+              label: card.querySelector(".case-label").value });
+  }));
+
+document.querySelectorAll(".case-answer").forEach(b =>
+  b.addEventListener("click", () => {
+    const card = b.closest(".diagnose-card");
+    control({ action: "answer",
+              role: card.querySelector(".case-role").value,
+              part: card.querySelector(".case-part").value });
+  }));
 
 /* --- water disturbances (M21) --- */
 
@@ -823,7 +962,11 @@ function makeChart(svgId, { yMin, yMax, yStep, series, refLines = [],
     }
 
     for (const s of series) {
-      const visible = records.filter(r => r.t >= t0);
+      // A series whose field isn't in the record simply doesn't draw:
+      // a blind case withholds some fields (M28), and half a polyline
+      // of NaN is worse than an empty panel.
+      const visible = records.filter(
+        r => r.t >= t0 && Number.isFinite(r[s.key]));
       const path = visible
         .map(r => `${x(r.t, t0, tEnd).toFixed(1)},${y(clampY(r[s.key])).toFixed(1)}`)
         .join(" ");
@@ -913,10 +1056,21 @@ function showTooltip(ev, r) {
 
 function hideTooltip() { tooltip.hidden = true; }
 
+/* Where a blind case's fast-forward ended (M28). The class joined a story
+   already in progress, and the chart says exactly where — the run to the
+   left of this line is every bit as real as the rest, it just happened
+   in one step instead of ten minutes of wall clock. */
+function caseMarker(loop) {
+  return caseWarmup[loop]
+    ? [{ t: caseWarmup[loop], label: "you joined here", color: COLOR_MUTED }]
+    : [];
+}
+
 const coreChart = makeChart("coreChart", {
   yMin: 33, yMax: 41, yStep: 2,
   series: [{ key: "core_temp", color: COLOR_CORE }],
   refLines: [{ y: 37, label: "set point 37.0" }],
+  markers: () => caseMarker("temp"),
 });
 const envChart = makeChart("envChart", {
   yMin: -15, yMax: 45, yStep: 15,
@@ -945,10 +1099,11 @@ const glucoseChart = makeChart("glucoseChart", {
     { y: 180, label: "hyperglycemia" },
     { y: 70, label: "hypoglycemia" },
   ],
-  markers: () => (buffers.glucose.doses || []).map(d => ({
-    t: d.t,
-    label: `${d.units % 1 ? d.units.toFixed(1) : d.units.toFixed(0)} U`,
-  })),
+  markers: () => caseMarker("glucose").concat(
+    (buffers.glucose.doses || []).map(d => ({
+      t: d.t,
+      label: `${d.units % 1 ? d.units.toFixed(1) : d.units.toFixed(0)} U`,
+    }))),
 });
 const hormoneChart = makeChart("hormoneChart", {
   loop: "glucose", yMin: 0, yMax: 1, yStep: 0.5,
@@ -985,12 +1140,13 @@ const osmChart = makeChart("osmChart", {
     { y: 305, label: "dehydration" },
     { y: 275, label: "overhydration" },
   ],
-  markers: () => (buffers.water.drinks || []).map(d => ({
-    t: d.t,
-    label: d.ml >= 1000 ? `${(d.ml / 1000).toFixed(1)} L`
-                        : `${d.ml.toFixed(0)} mL`,
-    color: d.auto ? COLOR_SWEAT : COLOR_CORE,
-  })),
+  markers: () => caseMarker("water").concat(
+    (buffers.water.drinks || []).map(d => ({
+      t: d.t,
+      label: d.ml >= 1000 ? `${(d.ml / 1000).toFixed(1)} L`
+                          : `${d.ml.toFixed(0)} mL`,
+      color: d.auto ? COLOR_SWEAT : COLOR_CORE,
+    }))),
 });
 const adhChart = makeChart("adhChart", {
   loop: "water", yMin: 0, yMax: 1, yStep: 0.5,

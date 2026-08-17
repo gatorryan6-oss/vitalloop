@@ -49,6 +49,60 @@
   </div>
 </header>
 
+{# The diagnosis card (M28). Three loops, one macro: the ONLY per-loop
+   thing here is the answer vocabulary and how many cases exist. The CASES
+   table itself never reaches this file — no setup, no brief, no answer,
+   nothing for a student to read in view-source. The picker sends an
+   INDEX, so there isn't even a case name in the DOM to look up. #}
+{% macro diagnose_card(loop) %}
+  <section class="chart-card diagnose-card" id="{{ loop }}Diagnose">
+    <h2>Diagnose &mdash; name the broken part</h2>
+    <div class="disturb-row">
+      <div class="challenge-text">
+        <strong>A blind case.</strong> Something in this loop has failed
+        &mdash; or nothing has, which is also an answer. While the case runs
+        the app stops telling you which parts work: no breaker panel, no
+        diagnosis banner, no spreadsheet, and nothing hidden in the page for
+        a clever student to find. Read the charts and the diagram, argue it
+        out, then commit.
+        <em>The disturbance controls stay live. Warm the room, pour a drink,
+          feed the patient &mdash; provoking the body and watching what it
+          does is how the diagnosis actually gets made.</em>
+      </div>
+      <select class="case-pick" aria-label="Which case to start">
+        <option value="next">Next case</option>
+        {% for i in range(1, case_counts[loop] + 1) %}
+        <option value="{{ i }}">Case {{ i }}</option>
+        {% endfor %}
+      </select>
+      <input class="challenge-label case-label" type="text" maxlength="24"
+             placeholder="Team 3" aria-label="Team name for this case">
+      <button class="case-start" type="button">Start a blind case</button>
+    </div>
+    <div class="case-live" hidden>
+      <div class="case-brief"></div>
+      <div class="case-form">
+        <label class="case-q">Which part of the loop failed?
+          <select class="case-role">
+            {% for r in answers[loop]["roles"] %}
+            <option value="{{ r['key'] }}">{{ r['label'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="case-q">Which component?
+          <select class="case-part">
+            {% for p in answers[loop]["parts"] %}
+            <option value="{{ p['key'] }}">{{ p['label'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="case-answer" type="button">Commit to the answer</button>
+      </div>
+    </div>
+    <div class="case-verdict" hidden></div>
+  </section>
+{% endmacro %}
+
 <main>
 <div id="page-temp">
   <section class="chart-card disturbances">
@@ -71,7 +125,7 @@
     </div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Diseases &mdash; name the broken loop</h2>
     <div class="disturb-row">
       <button class="preset" data-preset="fever" type="button">
@@ -86,7 +140,7 @@
     <div class="disease-banner" id="tempBanner" hidden></div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Break the loop</h2>
     <div class="disturb-row">
       <button class="breaker" data-part="sweat" type="button">Sweating</button>
@@ -97,6 +151,8 @@
         Export run (CSV)</a>
     </div>
   </section>
+
+  {{ diagnose_card("temp") }}
 
   <section class="chart-card">
     <h2>Challenge</h2>
@@ -230,7 +286,7 @@
     </div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Diseases &mdash; name the broken loop</h2>
     <div class="disturb-row">
       <button class="preset" data-preset="type1" type="button">
@@ -243,7 +299,7 @@
     <div class="disease-banner" id="glucoseBanner" hidden></div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Break the loop</h2>
     <div class="disturb-row">
       <button class="breaker" data-part="beta" type="button">
@@ -258,6 +314,8 @@
         Export run (CSV)</a>
     </div>
   </section>
+
+  {{ diagnose_card("glucose") }}
 
   <section class="chart-card">
     <h2>Challenge</h2>
@@ -372,7 +430,7 @@
     </div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Diseases &mdash; name the broken loop</h2>
     <div class="disturb-row">
       <button class="preset" data-preset="central_di" type="button">
@@ -385,7 +443,7 @@
     <div class="disease-banner" id="waterBanner" hidden></div>
   </section>
 
-  <section class="chart-card">
+  <section class="chart-card" data-blind-hide>
     <h2>Break the loop</h2>
     <div class="disturb-row">
       <button class="breaker" data-part="sensor" type="button">
@@ -400,6 +458,8 @@
         Export run (CSV)</a>
     </div>
   </section>
+
+  {{ diagnose_card("water") }}
 
   <section class="chart-card">
     <h2>Challenge</h2>

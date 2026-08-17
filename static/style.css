@@ -496,6 +496,89 @@ main {
 }
 .h2h-win .row-points { color: #1c6e1c; font-weight: 700; }
 
+/* --- the diagnosis card (M28): a blind case and its reveal --- */
+
+.diagnose-card { border-left: 5px solid var(--series-vaso); }
+.case-pick {
+  align-self: center;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.case-start {
+  font-weight: 600;
+  border-color: var(--series-vaso);
+  color: var(--series-vaso);
+}
+.case-start:hover {
+  background: var(--series-vaso);
+  color: var(--surface);
+}
+.case-live { padding: 0.5rem 0 0.2rem; }
+.case-brief {
+  padding: 0.55rem 0.9rem;
+  border-left: 5px solid var(--series-vaso);
+  background: var(--grid);
+  border-radius: 0 6px 6px 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+.case-warmup {
+  margin-top: 0.3rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.case-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0 0.2rem;
+}
+.case-q {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
+.case-q select {
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.case-answer {
+  font-weight: 600;
+  border-color: var(--series-vaso);
+  color: var(--series-vaso);
+}
+.case-answer:hover {
+  background: var(--series-vaso);
+  color: var(--surface);
+}
+.case-verdict { padding: 0.5rem 0 0.2rem; }
+/* Half right is its own thing: the class read the loop correctly and
+   then misread one trace, which is not the same kind of wrong. */
+.verdict-partial { background: #fdf3e0; color: #8a5a10; }
+.case-note {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 5px solid var(--ink-2);
+  background: var(--grid);
+  border-radius: 0 6px 6px 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
 /* --- patient status on the glucose readout (M13) --- */
 
 #r1Value.hypo { color: #d03b3b; }

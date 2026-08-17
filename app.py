@@ -46,6 +46,12 @@ class Runner:
         self.challenge = None    # active challenge stamp (M24):
                                  # {loop, name, t_start, t_end, report,
                                  #  score, attempt, label}
+        self.case = None         # active diagnosis case (M28):
+                                 # {loop, name, grade, attempt, label}.
+                                 # While its grade is None the snapshot
+                                 # is REDACTED — see redact_record().
+        self.case_index = 0      # the rotation counter (kickoff SS2: a
+                                 # fixed order, never a die roll)
         self.attempt_error = None   # a score that did NOT save (M26);
                                     # /state carries it to the screen
         self._last_wall = time.monotonic()
@@ -107,6 +113,37 @@ class Runner:
             "attempt": c.get("attempt"),
         }
 
+    def _case_block(self):
+        """The case block for /state — and it is what a student reads in
+        devtools, so it names nothing.
+
+        There is no case id in here: the picker sends an INDEX, so the
+        payload carries "case 2 of 4" and a neutral brief and that's all.
+        The truth and the teaching note arrive only once the class has
+        committed to an answer.
+        """
+        if self.case is None:
+            return None
+        entries = CASES[self.case["loop"]]
+        entry = entries[self.case["name"]]
+        grade = self.case["grade"]
+        block = {
+            "n": list(entries).index(self.case["name"]) + 1,
+            "of": len(entries),
+            "brief": entry["brief"],
+            "warmup_s": entry["warmup_s"],
+            "label": self.case.get("label"),
+            "answered": grade is not None,
+        }
+        if grade is not None:
+            block["grade"] = grade
+            block["attempt"] = self.case.get("attempt")
+        return block
+
+    def blind(self):
+        """True while a case is running and the class hasn't answered."""
+        return self.case is not None and self.case["grade"] is None
+
     def snapshot(self, since):
         """Current state + history records newer than sim-time `since`."""
         with self.lock:
@@ -118,15 +155,24 @@ class Runner:
             drinks = (self.sim.drinks()
                       if hasattr(self.sim, "drinks") else None)
             challenge = self._finish_challenge(records, state)
+            case = self._case_block()
+            blind = self.blind()
         points = [r for r in records if r["t"] > since]
         if len(points) > MAX_POINTS_PER_RESPONSE:
             stride = -(-len(points) // MAX_POINTS_PER_RESPONSE)  # ceil div
             # Keep the newest point exact so the readout matches the chart.
             points = points[::stride] + [points[-1]]
+        if blind:
+            # The gate (M28). Redact AFTER downsampling — only what
+            # actually leaves needs the treatment — and redact the
+            # preset too: the disease banner names the diagnosis in
+            # words, which is a more direct answer key than any flag.
+            state = redact_record(self.loop, state)
+            points = [redact_record(self.loop, r) for r in points]
         out = {
             "running": self.running,
             "speed": self.speed,
-            "preset": self.preset,
+            "preset": None if blind else self.preset,
             "now": state,
             "points": points,
         }
@@ -136,6 +182,8 @@ class Runner:
             out["drinks"] = drinks
         if challenge is not None:
             out["challenge"] = challenge
+        if case is not None:
+            out["case"] = case
         # The card's "best so far" line, and any complaint from the log —
         # a score that failed to save says so on screen (M26).
         out["bests"] = {cid: best_attempt(self.loop, cid)
@@ -163,7 +211,16 @@ def _runner():
 def index():
     # The challenge table rides into the page via the template, so the
     # card's story/goal text has ONE source (kickoff SS5).
-    return render_template("index.html", challenges=CHALLENGES)
+    #
+    # CASES deliberately does NOT: the page gets the answer VOCABULARY
+    # (the dropdown menus, identical for every case) and a count of how
+    # many cases each loop has, and nothing else. Passing the table here
+    # would put every setup and every answer in the HTML, one careless
+    # {{ case.answer }} away from ending the game (M28).
+    return render_template("index.html", challenges=CHALLENGES,
+                           answers=ANSWER_OPTIONS,
+                           case_counts={loop: len(entries)
+                                        for loop, entries in CASES.items()})
 
 
 @app.route("/state")
@@ -750,6 +807,432 @@ CHALLENGES = {
 }
 
 
+# ================= The diagnosis game (M28) ==============================
+#
+# Every phase so far taught MANAGING a loop. This one tests READING one:
+# the app breaks something, refuses to say what, and the class names it
+# from the charts and the diagram alone. Three things make that a game
+# rather than a quiz:
+#
+#   * the answer is in curriculum vocabulary — receptor / control center
+#     / effector, and WHICH one — so "it's broken" is not an answer and
+#     neither is "the temperature is too high",
+#   * "nothing is broken" is always on the menu, because a healthy loop
+#     working flat out against a big disturbance looks alarming. A class
+#     that can't tell those two apart hasn't learned the loop yet,
+#   * the disturbance controls stay live while a case runs. Warm the room
+#     and see whether it starts sweating: provocative testing is how the
+#     diagnosis is actually made, and it's the best thing in this mode.
+#
+# The breaker card, the disease banner and the CSV all go away while a
+# case is blind — see VISIBLE_DURING_CASE below. Assume a student opens
+# devtools, because one will.
+
+ANSWER_ROLES = [
+    {"key": "receptor", "label": "Receptor — the sensor"},
+    {"key": "control", "label": "Control center"},
+    {"key": "effector", "label": "Effector"},
+    {"key": "none", "label": "Nothing is broken — the loop is working"},
+]
+
+# The same four roles on every loop (that's the point — the class learns
+# the ROLES, not three unrelated lists), each with that loop's own parts
+# in diagram order. Safe to render into the page: it is the menu, not the
+# answer.
+ANSWER_OPTIONS = {
+    "temp": {"roles": ANSWER_ROLES, "parts": [
+        {"key": "none", "label": "Nothing is broken"},
+        {"key": "sensor", "label": "Thermoreceptors"},
+        {"key": "hypothalamus", "label": "Hypothalamus"},
+        {"key": "sweat", "label": "Sweat glands"},
+        {"key": "shiver", "label": "Skeletal muscles (shivering)"},
+        {"key": "vaso", "label": "Skin blood vessels"},
+    ]},
+    "glucose": {"roles": ANSWER_ROLES, "parts": [
+        {"key": "none", "label": "Nothing is broken"},
+        {"key": "sensor", "label": "The islets' glucose sensors"},
+        {"key": "beta", "label": "Beta cells (insulin)"},
+        {"key": "alpha", "label": "Alpha cells (glucagon)"},
+        {"key": "muscle", "label": "Muscle & fat (take up glucose)"},
+        {"key": "liver", "label": "Liver (releases glucose)"},
+    ]},
+    "water": {"roles": ANSWER_ROLES, "parts": [
+        {"key": "none", "label": "Nothing is broken"},
+        {"key": "sensor", "label": "Osmoreceptors"},
+        {"key": "pituitary", "label": "ADH release (hypothalamus → "
+                                      "pituitary)"},
+        {"key": "kidney", "label": "Kidneys (retain water)"},
+        {"key": "thirst", "label": "Thirst → drinking"},
+    ]},
+}
+
+
+# THE REDACTION GATE. An ALLOWLIST of what a blind case may ship, not a
+# blocklist of what it may not — a blocklist fails OPEN, and the field a
+# later phase adds would leak the answer with nobody noticing. Everything
+# here is evidence the class reads: the controlled variable, the
+# disturbance, the hormone and effector traces, the sensed error. What's
+# missing is every `*_enabled` flag (which names the broken part
+# outright), `water_access`, and the two disease knobs `fever_offset` and
+# `insulin_sensitivity` (which name the diagnosis).
+#
+# Note the pump fields are absent too. No case uses the pump, and the
+# rule "nothing ending in _enabled goes out during a case" is worth more
+# than a readout that would say "off" anyway.
+VISIBLE_DURING_CASE = {
+    "temp": {"t", "core_temp", "env_temp", "exercise", "error",
+             "sweat", "shiver", "vaso"},
+    "glucose": {"t", "glucose", "gut_carbs", "exercise", "error", "insulin",
+                "glucagon", "uptake", "liver_flux", "injected_insulin",
+                "total_insulin", "iob_units", "basal_rate"},
+    "water": {"t", "osmolarity", "water_liters", "gut_water", "exercise",
+              "error", "adh", "thirst", "urine_rate", "urine_osm"},
+}
+
+
+def redact_record(loop, record):
+    """One history record with the answer key withheld.
+
+    A DELIVERY gate, never data loss (kickoff SS5): the engine went on
+    recording every field the whole time, and the reveal hands the lot
+    over. This only decides what leaves the building.
+    """
+    keep = VISIBLE_DURING_CASE[loop]
+    return {k: v for k, v in record.items() if k in keep}
+
+
+# Each case: a setup drawn from the preset/breaker vocabulary the app
+# already applies, a NEUTRAL brief (the setting, never the machinery),
+# how much of the opening to fast-forward, the correct answer, and the
+# one-line teaching note that lands at the reveal.
+#
+# Two deliberate choices in this table:
+#
+#   1. Cases that share a loop often share a BRIEF, word for word. The
+#      same freezing room, the same breakfast, the same long walk — with
+#      opposite answers. A class that reads the story instead of the
+#      charts gets nothing, which is the entire skill being taught.
+#   2. The roles appear in a DIFFERENT order on each loop. Play a few and
+#      you learn the physiology; you can't learn that "case 3 is always
+#      the control center", because it isn't.
+#
+# Case ids never leave the server — the picker sends an index — so a
+# readable name here costs nothing.
+CASES = {
+    "temp": {
+        # 1 intact · 2 receptor · 3 control center · 4 effector
+        "case1": {
+            "brief": "The room is at −10 °C, and this body has been "
+                     "standing in it for a while.",
+            "setup": {**HEALTHY_TEMP, "env": -10.0},
+            "speed": 4,
+            "warmup_s": 1800,
+            "answer": {"role": "none", "part": "none"},
+            "note": "Nothing was broken. The skin vessels clamped down "
+                    "and shivering settled in at about half drive, and "
+                    "between them they held the core within two tenths "
+                    "of the set point — in a freezing room, steadily, "
+                    "for as long as you care to watch. A loop under "
+                    "stress is not a loop that has failed, and telling "
+                    "those two apart is the whole skill.",
+        },
+        "case2": {
+            "brief": "The room is at −10 °C, and this body has been "
+                     "standing in it for a while.",
+            "setup": {**HEALTHY_TEMP, "env": -10.0, "sensor": False},
+            "speed": 4,
+            "warmup_s": 1800,
+            "answer": {"role": "receptor", "part": "sensor"},
+            "note": "The thermoreceptors were reporting 'all is well'. "
+                    "Look at what DIDN'T happen: sweat, shivering and "
+                    "vessel tone all sat at zero while the core fell "
+                    "away, because the control center was never told "
+                    "there was a problem. A variable moving with a "
+                    "silent loop behind it is a sensing failure — "
+                    "compare it with the same freezing room met by a "
+                    "body shivering flat out.",
+        },
+        "case3": {
+            "brief": "An ordinary 22 °C room. Nothing unusual about the "
+                     "surroundings at all.",
+            "setup": {**HEALTHY_TEMP, "fever": 2.0, "env": 22.0},
+            "speed": 4,
+            "warmup_s": 600,
+            "answer": {"role": "control", "part": "hypothalamus"},
+            "note": "Nothing is damaged — the hypothalamus is defending "
+                    "39 °C instead of 37. Pyrogens moved the set point, "
+                    "they didn't break the machinery, which is why this "
+                    "body SHIVERS while it is already hot: by its own "
+                    "reckoning it isn't hot enough yet. Then it settles "
+                    "just under 39 and HOLDS there, and a broken loop "
+                    "holds nothing steady. That is a fever: the control "
+                    "center answering a different question, perfectly.",
+        },
+        "case4": {
+            "brief": "A 40 °C day, and this body has been exercising in "
+                     "it.",
+            "setup": {**HEALTHY_TEMP, "env": 40.0, "exercise": True,
+                      "effectors": {"sweat": False, "shiver": True,
+                                    "vaso": True}},
+            "speed": 4,
+            "warmup_s": 900,
+            "answer": {"role": "effector", "part": "sweat"},
+            "note": "The sweat glands never fired. Everything upstream "
+                    "worked perfectly — the core rose, the receptors "
+                    "read it, the control center called for cooling, the "
+                    "vessels dilated as far as they go — and the one "
+                    "response that could actually dump this much heat "
+                    "produced nothing at all. When a loop senses "
+                    "correctly and decides correctly and the variable "
+                    "still runs away, look at the effector.",
+        },
+    },
+    "glucose": {
+        # 1 control center · 2 intact · 3 effector · 4 receptor
+        "case1": {
+            "brief": "Breakfast — 60 g of carbohydrate — landed a couple "
+                     "of hours ago.",
+            "setup": {**HEALTHY_GLUCOSE,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True}},
+            "start_actions": [("eat", (60, 1.0))],
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "control", "part": "beta"},
+            "note": "No insulin was made at all, however high the "
+                    "glucose climbed — the beta cells are gone. The "
+                    "receptor was fine and the effectors were fine: "
+                    "muscle would have taken glucose up if anything had "
+                    "asked it to. This is type 1 diabetes, a CONTROL "
+                    "CENTER failure — the problem was seen and the "
+                    "message was never sent. And notice the liver, "
+                    "pouring glucose into a bloodstream that already has "
+                    "far too much: insulin is what normally restrains "
+                    "the alpha cells, so with none at all the glucagon "
+                    "runs high and nobody tells the liver to stop.",
+        },
+        "case2": {
+            "brief": "Breakfast — 60 g of carbohydrate — landed a couple "
+                     "of hours ago.",
+            "setup": {**HEALTHY_GLUCOSE},
+            "start_actions": [("eat", (60, 1.0))],
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "none", "part": "none"},
+            "note": "Nothing was broken. Glucose rose after the meal, "
+                    "insulin rose to meet it, uptake climbed, the liver "
+                    "was suppressed, and the whole excursion came back "
+                    "inside the band. A big swing is not a broken loop; "
+                    "it is a loop doing its job on a big disturbance. "
+                    "Keep this one in mind — it is the picture the other "
+                    "glucose cases are missing.",
+        },
+        "case3": {
+            "brief": "Breakfast — 60 g of carbohydrate — landed a couple "
+                     "of hours ago.",
+            "setup": {**HEALTHY_GLUCOSE, "sensitivity": 0.05},
+            "start_actions": [("eat", (60, 1.0))],
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "effector", "part": "muscle"},
+            "note": "Insulin was made — railed at maximum for hours, far "
+                    "more than the healthy body ever needed — and the "
+                    "glucose stayed high anyway. Both numbers high at "
+                    "once is the signature: the message was sent, "
+                    "loudly, and the target tissue could not hear it. "
+                    "Three hours in, this body is running about six "
+                    "times the insulin of the healthy case and buying "
+                    "barely any more uptake for it. That is type 2 "
+                    "diabetes, and the failure is at the EFFECTOR.",
+        },
+        "case4": {
+            "brief": "No breakfast today — this body has been fasting "
+                     "all morning.",
+            "setup": {**HEALTHY_GLUCOSE, "sensor": False},
+            "speed": 16,
+            # 1 h, not 4: the tell is flat hormones under a MOVING
+            # variable, and the steep part of the slide has to be inside
+            # the chart's 2-hour window when the class arrives.
+            "warmup_s": 3600,
+            "answer": {"role": "receptor", "part": "sensor"},
+            "note": "The islets' glucose sensors were stuck reading a "
+                    "perfect 90 mg/dL. Insulin and glucagon are frozen "
+                    "at exactly the values a body sitting on its set "
+                    "point would hold — reasonable numbers, completely "
+                    "unresponsive, while the real glucose slid away "
+                    "underneath them. Flat "
+                    "hormones under a moving variable is a sensing "
+                    "failure. In a patient this is hypoglycemia "
+                    "unawareness, and it is dangerous precisely because "
+                    "nothing looks dramatic.",
+        },
+    },
+    "water": {
+        # 1 effector · 2 control center · 3 receptor · 4 intact
+        "case1": {
+            "brief": "Resting indoors, with a water bottle within reach "
+                     "all morning.",
+            "setup": {**HEALTHY_WATER,
+                      "effectors": {"adh": True, "kidney": False,
+                                    "access": True}},
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "effector", "part": "kidney"},
+            "note": "ADH was released — the control center did "
+                    "everything right — and the kidneys poured water out "
+                    "anyway, litres of it, dilute. The hormone was in "
+                    "the blood and the target could not hear it: "
+                    "nephrogenic diabetes insipidus, the same deafness "
+                    "as type 2 diabetes wearing different clothes. This "
+                    "person stays alive because the OTHER effector still "
+                    "works — thirst keeps sending them back to the "
+                    "bottle.",
+        },
+        "case2": {
+            "brief": "Resting indoors, with a water bottle within reach "
+                     "all morning.",
+            "setup": {**HEALTHY_WATER,
+                      "effectors": {"adh": False, "kidney": True,
+                                    "access": True}},
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "control", "part": "pituitary"},
+            "note": "No ADH was released at all. The osmoreceptors "
+                    "sensed correctly and the kidneys were perfectly "
+                    "able to hold water — they were simply never asked. "
+                    "Central diabetes insipidus, a control-center "
+                    "failure. Telling it from deaf kidneys is exactly "
+                    "what measuring ADH is for in the clinic, and on "
+                    "these charts it is one trace: hormone at zero, or "
+                    "hormone high and ignored.",
+        },
+        "case3": {
+            "brief": "A long walk in the heat, sweating steadily, with "
+                     "a bottle in the bag.",
+            "setup": {**HEALTHY_WATER, "sensor": False, "exercise": True},
+            "speed": 16,
+            "warmup_s": 10800,
+            "answer": {"role": "receptor", "part": "sensor"},
+            "note": "The osmoreceptors were dead. ADH sat frozen at a "
+                    "middling value and thirst never spoke, while "
+                    "sweating drove osmolarity up and up. Nobody in this "
+                    "body knows anything is wrong: no thirst, no "
+                    "conservation, no alarm. Compare it with a body that "
+                    "is desperately thirsty and has nothing to drink — "
+                    "there the alarm works perfectly and the effector "
+                    "can't reach water. Here the alarm never sounded.",
+        },
+        "case4": {
+            "brief": "A long walk in the heat, sweating steadily, with "
+                     "a bottle in the bag.",
+            "setup": {**HEALTHY_WATER, "exercise": True},
+            "speed": 16,
+            "warmup_s": 10800,
+            "answer": {"role": "none", "part": "none"},
+            "note": "Nothing was broken. Sweating pushed osmolarity up, "
+                    "the osmoreceptors caught it, ADH rose, the kidneys "
+                    "conserved — and then the loop reached out through "
+                    "the OUTSIDE WORLD and drank, with nobody at the "
+                    "keyboard. Every green mark on that chart is this "
+                    "body deciding to have a glass of water. No other "
+                    "effector in this course does anything like it.",
+        },
+    },
+}
+
+
+# What a diagnosis is worth. Naming the right part of the loop and the
+# wrong component inside it is genuinely half the answer — the class that
+# says "an effector has failed" has read the loop correctly and then
+# misread one trace, and a gradebook should be able to see the difference.
+DIAGNOSIS_POINTS = {"correct": 100, "partial": 50, "wrong": 0}
+
+
+def _option_label(options, kind, key):
+    """The human wording for an answer key, or the key if we weren't
+    handed the vocabulary (the grader stays usable without it)."""
+    for opt in (options or {}).get(kind, ()):
+        if opt["key"] == key:
+            return opt["label"]
+    return key
+
+
+def grade_answer(case, answer, options=None):
+    """PURE: one submitted answer against one case's truth.
+
+    Three outcomes, because two of them are not the same kind of wrong:
+    right role AND right part is correct; the right part of the loop with
+    the wrong component inside it is PARTIAL; the wrong role is wrong.
+
+    Role "none" normalizes its own part, so a class that answers "nothing
+    is broken" with a component still selected in the second box is not
+    marked down for the state of a dropdown.
+    """
+    truth = case["answer"]
+    role = answer.get("role")
+    part = "none" if role == "none" else answer.get("part")
+    role_ok, part_ok = role == truth["role"], part == truth["part"]
+    correct = role_ok and part_ok
+    verdict = "correct" if correct else "partial" if role_ok else "wrong"
+
+    # The labels have em-dashes of their own ("Nothing is broken — the
+    # loop is working"), so the quotes do the delimiting here.
+    def said(kind, mine, theirs, ok):
+        mine = _option_label(options, kind, mine)
+        return (f'right: you said "{mine}"' if ok else
+                f'you said "{mine}" — it was '
+                f'"{_option_label(options, kind, theirs)}"')
+
+    role_label = _option_label(options, "roles", truth["role"])
+    part_label = _option_label(options, "parts", truth["part"])
+    return {
+        "verdict": verdict,
+        "correct": correct,
+        "points": DIAGNOSIS_POINTS[verdict],
+        "answer": {"role": role, "part": part},
+        # `line` is the one-sentence truth for the top of the reveal; an
+        # intact case would otherwise read "Nothing is broken — the loop
+        # is working, Nothing is broken".
+        "truth": {"role": role_label, "part": part_label,
+                  "line": role_label if truth["role"] == "none"
+                          else f"{role_label} — {part_label}"},
+        "note": case["note"],
+        "rows": [
+            {"key": "role", "label": "which part of the loop failed",
+             "value": said("roles", role, truth["role"], role_ok),
+             "met": role_ok, "n": None},
+            {"key": "part", "label": "which component",
+             "value": said("parts", part, truth["part"], part_ok),
+             "met": part_ok, "n": None},
+            {"key": "note", "label": "why", "value": case["note"],
+             "met": None, "n": None},
+        ],
+    }
+
+
+def build_case_attempt(loop, case_id, grade, label=None):
+    """One answered case as a log record — the same frozen fields as a
+    challenge attempt (kickoff SS5), plus the submitted answer and
+    whether it was right, APPENDED the way every field has grown here.
+
+    No medal: a diagnosis is right or it isn't, and medals are for play.
+    """
+    return {
+        "id": None,
+        "wall_time": datetime.datetime.now().isoformat(timespec="seconds"),
+        "loop": loop,
+        "mode": "diagnosis",
+        "name": case_id,
+        "label": label,
+        "points": grade["points"],
+        "medal": None,
+        "met": grade["correct"],
+        "rows": grade["rows"],       # the report card, verbatim
+        "answer": grade["answer"],
+        "correct": grade["correct"],
+    }
+
+
 def _apply_preset(sim, p):
     """Push a preset's full configuration through the engine's public
     API. Only keys present in the entry are touched."""
@@ -792,7 +1275,8 @@ def control():
             runner.running = True
             runner.preset = None
             runner.challenge = None
-            runner.attempt_error = None
+            runner.case = None       # reset ends the game and hands the
+            runner.attempt_error = None   # sandbox back, un-redacted
         elif action == "speed":
             value = cmd.get("value")
             if value not in (1, 4, 16):
@@ -932,7 +1416,82 @@ def control():
                                 "label": clean_label(cmd.get("label"))}
             runner.attempt_error = None
             runner.preset = None   # the challenge card owns the story now
+            runner.case = None     # ...and a challenge is a different
+            runner.running = True  # lesson from a blind case
+        elif action == "diagnose":
+            # Start a blind case (M28). "next" (or nothing) walks the
+            # rotation; a number picks one outright. The wire carries an
+            # INDEX, never an id — there is nothing here for a student to
+            # look up.
+            loop = request.args.get("loop", "temp")
+            entries = CASES.get(loop) or {}
+            if not entries:
+                return jsonify({"error": f"the {loop} loop has no "
+                                         f"diagnosis cases"}), 400
+            ids = list(entries)
+            value = cmd.get("value")
+            if value in (None, "", "next"):
+                index = runner.case_index
+            else:
+                try:
+                    index = int(value) - 1
+                except (TypeError, ValueError):
+                    return jsonify({"error": f"a case is picked by number, "
+                                             f"got {value!r}"}), 400
+            if not 0 <= index < len(ids):
+                return jsonify({"error": f"there are {len(ids)} cases on "
+                                         f"the {loop} loop, so there is no "
+                                         f"case {index + 1}"}), 400
+            runner.case_index = (index + 1) % len(ids)
+            name = ids[index]
+            entry = entries[name]
+            # A case is a self-contained puzzle, so unlike a preset or a
+            # challenge it DOES start a fresh run: the evidence on the
+            # charts has to be this case's own. Then the opening stretch
+            # is fast-forwarded, which is just sim.step() — deterministic,
+            # every tick recorded, and the class joins a story already in
+            # progress instead of watching an empty chart for ten minutes.
+            runner.sim.reset()
+            _apply_preset(runner.sim, entry["setup"])
+            for method, args in entry.get("start_actions", []):
+                getattr(runner.sim, method)(*args)
+            if entry["warmup_s"]:
+                runner.sim.step(int(entry["warmup_s"]))
+            runner.speed = entry["speed"]
+            runner.preset = None       # the banner would name the answer
+            runner.challenge = None
+            runner.attempt_error = None
+            runner.case = {"loop": loop, "name": name, "grade": None,
+                           "attempt": None,
+                           "label": clean_label(cmd.get("label"))}
             runner.running = True
+        elif action == "answer":
+            # The class commits, the app grades, and everything it was
+            # holding back is released (M28).
+            if runner.case is None:
+                return jsonify({"error": "no case is running — start one "
+                                         "first"}), 400
+            if runner.case["grade"] is not None:
+                return jsonify({"error": "this case has already been "
+                                         "answered — start the next "
+                                         "one"}), 400
+            loop = runner.case["loop"]
+            options = ANSWER_OPTIONS[loop]
+            submitted = {"role": cmd.get("role"), "part": cmd.get("part")}
+            for kind, field in (("roles", "role"), ("parts", "part")):
+                if submitted[field] not in {o["key"] for o in options[kind]}:
+                    return jsonify({"error": f"{submitted[field]!r} is not "
+                                             f"one of the {field} choices "
+                                             f"for the {loop} loop"}), 400
+            entry = CASES[loop][runner.case["name"]]
+            runner.case["grade"] = grade_answer(entry, submitted, options)
+            runner.case["attempt"], runner.attempt_error = log_attempt(
+                build_case_attempt(loop, runner.case["name"],
+                                   runner.case["grade"],
+                                   label=runner.case.get("label")))
+            # Deliberately NOT touching running/speed: answering is not a
+            # physiological event, and the body carries on doing whatever
+            # it was doing while the class reads the reveal.
         elif action == "scenario":
             # Dispatch by LOOP NAME (M21): three loops now share this
             # action, and hasattr-sniffing can't tell glucose from water.
@@ -1048,6 +1607,14 @@ def export_csv():
     runner = runners.get(loop)
     if runner is None:
         return jsonify({"error": "unknown loop"}), 400
+    if runner.blind():
+        # A spreadsheet of `sensor_enabled` is the answer key in a column
+        # (M28). 409, not 400: the request is fine, the moment isn't.
+        return jsonify({"error": (
+            f"a blind case is running on the {loop} loop, and this "
+            "spreadsheet would have a column naming the broken part. "
+            "Answer the case and the whole run downloads, complete — "
+            "every tick of it, including the part that was hidden.")}), 409
     runner.advance()
     with runner.lock:
         records = runner.sim.history()

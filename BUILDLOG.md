@@ -18,17 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M27 — Phase 8 underway. Specs: phases 1–7 as before,
+- **Committed:** M28 — Phase 8 underway. Specs: phases 1–7 as before,
   plus `vital_loop_phase8_kickoff.md` (M26–M30). The lesson grammar now
-  runs disturb → break → name → challenge → score → RACE.
+  runs disturb → break → name → challenge → score → race → DIAGNOSE.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M28 — the diagnosis game: a `CASES` table per loop,
-  server-side REDACTION while a case is live (no `*_enabled` flags in
-  `/state`, breaker card and disease banner hidden, diagram boxes drawn
-  "unknown" rather than grayed, CSV refused with a plain-English
-  reason), an answer form in curriculum vocabulary, and a reveal that
-  releases the full history. Assume a student opens devtools.
-  Then M29 crisis, M30 the full pass.
+- **Next up:** M29 — crisis mode: `EVENTS` on a challenge entry, a list
+  of (sim-time offset, action, plain-English announcement) fired through
+  the same public API the buttons already call — a second breakfast at
+  +45 min, the room jumping 15 °C, a fever mid-shift. A live event feed
+  on the card, and hard-stop lines that close the window early with an
+  honest report. One crisis variant per loop. Then M30, the full pass.
   Deferred to Phase 9: per-student sessions, SIADH + ADH-override knob,
   cross-loop coupling (mellitus polyuria), student worksheets.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
@@ -42,6 +41,136 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M28: The diagnosis game
+- Shipped: M28 contract in `tests/test_invariants.py` (17 tests: case
+  table shape, every loop can answer "nothing is broken", the role
+  ORDER differs per loop, the redaction allowlist, fail-closed on an
+  unlisted field, every case driven through the routes and read the way
+  devtools would, the reveal's history identical to an un-blinded run,
+  grader purity + partial credit + "none" normalization, the diagnosis
+  attempt's frozen fields, no case identifier in the page, rotation
+  wrap, refusals). `CASES` (4 per loop, 12 total), `ANSWER_OPTIONS`,
+  `VISIBLE_DURING_CASE` + `redact_record`, `grade_answer`,
+  `build_case_attempt`, `Runner.case` + `Runner.case_index` + `blind()`,
+  `/control diagnose|answer`, the `case` block in `/state`, a 409 from
+  `/export.csv` while blind. UI: a Diagnose card per loop (Jinja macro
+  ×3), the breaker + Diseases cards hidden while blind, "?" badges on
+  exactly the boxes that are also the answers, "set point — ?" on the
+  thermo control box, and a "you joined here" marker where the
+  fast-forward ended. 97 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The redaction gate is an ALLOWLIST, not a blocklist.** A
+     blocklist ("hide anything ending in `_enabled`") fails OPEN: the
+     field Phase 9 adds leaks the answer and nobody notices. An
+     allowlist of what the charts and the diagram actually need fails
+     CLOSED — a new field is withheld until somebody lists it on
+     purpose. Pinned three ways: every listed name must really exist in
+     that engine's record (a typo would silently blank a chart), no
+     listed name may end in `_enabled` or be one of `water_access` /
+     `fever_offset` / `insulin_sensitivity`, and an unknown field
+     injected into a record must not survive the gate.
+  2. **A case is picked by INDEX, so no case identifier is in the page
+     at all.** `render_template` gets the answer vocabulary and a COUNT,
+     never `CASES` — one careless `{{ case.answer }}` would end the
+     game. Pinned as a test over the rendered HTML: no case id, no
+     brief, no teaching note.
+  3. **A case starts a FRESH run and fast-forwards its opening**
+     (`sim.reset()` → setup → `start_actions` → `sim.step(warmup_s)`).
+     Unlike a preset or a challenge, a case resets: the evidence on the
+     charts has to be this case's own. The warm-up is just `step()` —
+     deterministic, every tick recorded — and the chart marks where it
+     ended, because the class joined a story already in progress and
+     should be told so. Type 2 needs ~3 sim-hours to show its signature;
+     at 16× that is 11 minutes of class time watching an empty chart.
+  4. **The same four answers on every loop, in a DIFFERENT ORDER on
+     each.** Cases within a loop often share a brief WORD FOR WORD (the
+     same freezing room, the same breakfast, the same long walk) with
+     opposite answers, so reading the story instead of the charts earns
+     nothing. And the role order is deliberately scrambled across loops
+     — pinned as a test — so a class that plays a few can't learn "case
+     3 is always the control center".
+  5. **"Nothing is broken" is always on the menu, and every loop has an
+     intact case** (pinned). A healthy loop working flat out against a
+     big disturbance looks alarming; telling that from failure is the
+     skill. Fever is the neighbouring case and its answer is CONTROL
+     CENTER — the machinery is perfect, the number it defends moved.
+  6. **Partial credit: right role, wrong component is 50, not 0.** A
+     class that says "an effector has failed" has read the loop
+     correctly and then misread one trace, and a gradebook should see
+     the difference. Correct 100 / partial 50 / wrong 0, no medal — a
+     diagnosis is right or it isn't, and medals are for play. Diagnosis
+     attempts never reach a challenge leaderboard (pinned).
+  7. **Two places where redaction would have made the DIAGRAM LIE, and
+     the fix was to make it say "I'm not telling you" instead.**
+     (a) The thermo control box prints the number the loop is defending;
+     with `fever_offset` withheld it would have fallen back to "set
+     point 37.0 °C" during a fever case — not a hidden answer but a
+     false one. It now reads `set point — ?`. (b) The glucose muscle box
+     glows with what the tissues HEAR (M19: `total_insulin ×
+     insulin_sensitivity`); with the knob withheld it would blaze away
+     while the patient sits at 160. It goes neutral and wears the "?".
+     **`uptake` is NOT a usable substitute** — the sweep found type 2
+     uptake running slightly ABOVE healthy (1.83 vs 1.63) because mass
+     action from the high glucose makes up what the insulin can't buy.
+     Guessed the other way before measuring. (c) The water kidney box
+     needs `kidney_enabled`, so while blind it reads the OBSERVABLE
+     instead (`1 − urine_rate/12`): deaf kidneys and no-ADH-at-all then
+     look identical, which is honest — in both the kidney isn't holding
+     water — and separating them off the hormone trace is the class's
+     job. M19/M22's rules are untouched outside a case.
+  8. **CASE SWEEP FIRST, and it caught four things.** All 12 cases run
+     through their warm-up and read for the evidence a class would have:
+     - *temp*: intact at −10 °C settles 36.81 with shiver 0.47 / vaso
+       −0.39 and holds; sensor-dead in the SAME room falls 37.00 → 35.53
+       in 30 min with all three effectors at exactly 0.00; fever climbs
+       through 37.87 with shiver 1.00 (chills while already hot) and
+       settles 38.91; sweat-dead on a hot run hits 38.91 with sweat 0.00
+       and vaso pinned +1.00.
+     - *glucose*, all three meal cases now sharing warm-up AND brief:
+       type 1 peaks 315 with insulin **0.00**, stuck at 203; healthy
+       peaks 143 with insulin rising to 1.00 and home to 87.9; type 2
+       peaks 280 with insulin **railed at 1.00** and still 159 at two
+       hours. The hormone trace IS the diagnosis. Sensor-dead: 90 → 68.7
+       with insulin 0.17 / glucagon 0.33 dead flat.
+     - *water*: deaf kidney and no-ADH are IDENTICAL on osmolarity and
+       urine (293.67, 12.00 mL/min at 38 mOsm/L) and differ only in ADH
+       (0.87 vs 0.00) — the clinical discrimination, made visible;
+       sensor-dead on a walk climbs to 310 with ADH frozen 0.50, thirst
+       0.00 and zero self-drinks; intact on the same walk holds ~293 and
+       drinks 7 times by itself.
+     Fixes the sweep forced: glucose sensor-dead warm-up 4 h → 1 h (the
+     steep part of the slide has to be inside the chart's 2-hour
+     window), type 2 warm-up 3 h → 2 h (so the peak is visible and it
+     matches the other two meal cases), and TWO teaching notes were
+     factually wrong — one claimed the type 1 glucagon "behaved
+     sensibly" (it runs HIGH, disinhibited, which is the better lesson
+     and now what the note says) and one told the class to watch type 2
+     uptake "sit low", which it does not.
+  9. `visibility`, not `opacity`, for the "?" badge: an opacity-0 badge
+     is invisible but still in the text and accessibility tree, so every
+     box read as "?" to a screen reader and to anything scraping the
+     page. Caught by reading the live page's text, not the pixels.
+  10. Fixed in passing: `control()` fed refusal payloads to
+     `applyServerState()`, so every 400 flipped the Pause button until
+     the next poll put it back. Refusals now leave the controls alone.
+     And `makeChart` skips non-finite values, so a series whose field is
+     withheld draws an empty panel instead of a polyline of NaN.
+  11. VERIFIED LIVE in the browser: the fever case blind — devtools
+     showing `core_temp 38.22` with `error −0.78`, `shiver 1`, `vaso −1`
+     and nothing naming fever, `set point — ?` on the diagram, badges on
+     exactly the 5 answer boxes, breaker + Diseases cards gone, CSV 409.
+     Answered control/hypothalamus → RIGHT, 100/100, note, saved as run
+     #3, cards back, `set point 39.0 °C` released. Then glucose case 3
+     blind (beta box at full glow shouting into a neutral "?" muscle
+     box), answered effector/liver → HALF RIGHT 50/100 in amber with
+     both components named, CSV back at 200 with all 20 columns
+     including `insulin_sensitivity`. A page RELOAD mid-case lost
+     nothing (brief, team label, form, hidden cards, badges, marker all
+     came back from server state — an M30 checkpoint item, early).
+     Console clean; the challenge leaderboards never saw a diagnosis.
 
 ## 2026-08-16 — M27: Head-to-head
 - Shipped: M27 contract in `tests/test_invariants.py` (label tidying and
