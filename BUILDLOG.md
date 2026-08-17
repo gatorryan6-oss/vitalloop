@@ -27,10 +27,14 @@ Entry format:
   (no teacher dashboard), worksheets as printable app routes (no docx),
   verbal class direction (no mode gating).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M34 — LAN launch (run.bat binds 0.0.0.0, join URL +
-  firewall note, live-session footer). Then M35 worksheets, M36 lab
-  pass. The M35 worksheet format is a flagged ASSUMPTION in the Phase 9
-  kickoff — confirm or change before it builds.
+- **Next up:** M35 — printable student worksheets (three routes). The
+  worksheet format is a flagged ASSUMPTION in the Phase 9 kickoff —
+  printable app routes, not docx — changeable before it builds. Then
+  M36, the lab pass.
+- **User checkpoint outstanding (M34):** a REAL phone on the room's
+  wifi against `run.bat`'s printed address — everything short of that
+  is verified (see M34 entry). The first launch may show the Windows
+  firewall dialog: allow Python on private networks.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -42,6 +46,39 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M34: Open the doors — the LAN launch
+- Shipped: `run.bat` sets `VITAL_LOOP_HOST=0.0.0.0` before `python
+  app.py`, so the double-click serves the room while a PLAIN `python
+  app.py` — and therefore verify.py and every earlier habit — stays
+  loopback-only (`_serve_host()`, pinned both ways). On a LAN launch
+  the app prints the teacher-facing story before serving: the join URL
+  built from the machine's real interface (`_lan_addresses()`, the
+  UDP-connect trick, no packets sent), the one-time firewall
+  instruction, and the school-wifi caveat (client isolation is the
+  network's doing, not the app's). `/state` grew `sessions` —
+  `registry.count()` — and the page grew a quiet footer: "N devices
+  playing", the room arriving in real time. 130 invariants + verify
+  pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **Opening the doors is an explicit act, not a default.** The env
+     var is the one switch, set only by run.bat; the pinned default is
+     loopback. Eight phases of tooling assume a private server, and
+     they keep that assumption unless the teacher double-clicks the
+     launcher.
+  2. The cookieless default session does not count toward the footer —
+     it's the projector/tooling seat, not a device.
+  3. VERIFIED LIVE as far as one machine can: app launched exactly as
+     run.bat does (env var + 0.0.0.0), startup printed "Write this on
+     the board: http://192.168.12.223:5083/" with the machine's REAL
+     wifi address, the page answered 200 with the identity marker over
+     that address (the server log shows the request arriving FROM
+     192.168.12.223, not loopback), and a cookie-carrying client over
+     the LAN interface was seated with its own fresh body (t = 0.0)
+     while the footer count read 2 (browser tab + LAN client). The
+     REAL-PHONE checkpoint is the user's — logged under Current state.
 
 ## 2026-08-17 — M33: Per-student sessions — the projector becomes a lab
 - Shipped: `sessions.py` — `SessionRegistry` (plain Python, no Flask,

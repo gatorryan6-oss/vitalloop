@@ -362,7 +362,9 @@ def state():
         return jsonify({"error": "unknown loop"}), 400
     runner.advance()
     since = request.args.get("since", -1.0, type=float)
-    return jsonify(runner.snapshot(since))
+    out = runner.snapshot(since)
+    out["sessions"] = registry.count()   # the room, arriving (M34)
+    return jsonify(out)
 
 
 ENV_TEMP_MIN, ENV_TEMP_MAX = -10.0, 45.0   # the slider's range, enforced
@@ -2205,6 +2207,50 @@ def export_csv():
             f"attachment; filename=vital_loop_{loop}_run.csv"})
 
 
+def _serve_host():
+    """Where to listen (M34). Localhost unless run.bat asks for the LAN —
+    a developer's `python app.py`, verify.py, and every earlier phase
+    stay loopback-only; opening the doors is a deliberate, visible act."""
+    import os
+    return os.environ.get("VITAL_LOOP_HOST", "127.0.0.1")
+
+
+def _lan_addresses():
+    """This machine's LAN IPv4 address(es), best effort. The UDP-connect
+    trick sends no packets — it just asks the OS which interface would
+    route out."""
+    import socket
+    found = []
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("10.255.255.255", 1))
+            found.append(probe.getsockname()[0])
+        finally:
+            probe.close()
+    except OSError:
+        pass
+    return [a for a in found if not a.startswith("127.")]
+
+
 if __name__ == "__main__":
     # run.bat lands here. Port is this project's own — see CLAUDE.md.
-    app.run(port=5083)
+    host = _serve_host()
+    if host != "127.0.0.1":
+        print()
+        print("=" * 62)
+        print("Vital Loop is open to the room (M34).")
+        for addr in _lan_addresses() or ["<this machine's wifi IP>"]:
+            print(f"  Write this on the board:  http://{addr}:5083/")
+        print()
+        print("Students: same wifi as this machine, then that address.")
+        print("Every device gets its OWN body; scores land on the one")
+        print("shared leaderboard.")
+        print()
+        print("If Windows asks about the firewall the FIRST time: allow")
+        print("Python on PRIVATE networks. School wifi sometimes blocks")
+        print("device-to-device traffic entirely — if phones can't reach")
+        print("the address, that's the network, not the app.")
+        print("=" * 62)
+        print()
+    app.run(host=host, port=5083)

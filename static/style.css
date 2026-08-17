@@ -662,3 +662,11 @@ main {
   z-index: 10;
   font-variant-numeric: tabular-nums;
 }
+
+/* The room, arriving (M34): a quiet one-line footer. */
+.room-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.6rem 0 1rem;
+}

@@ -65,6 +65,14 @@ async function poll() {
     return;
   }
   roomNotice(null);
+  if (j.sessions !== undefined) {  // the room, arriving (M34)
+    const el = document.getElementById("sessionCount");
+    if (el) {
+      el.textContent = j.sessions > 0
+        ? `${j.sessions} device${j.sessions === 1 ? "" : "s"} playing`
+        : "";
+    }
+  }
   if (j.now.t < buf.lastT) {     // sim was reset behind our back
     buf.pts = [];
     buf.lastT = -1;

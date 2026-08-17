@@ -3233,6 +3233,45 @@ def test_sessions_share_the_one_attempts_log(fresh_registry):
         "shared, or the head-to-head means nothing")
 
 
+# ================= M34: the doors =========================================
+
+def test_the_double_click_opens_the_doors_but_python_stays_home():
+    """(hhh) run.bat serves the room; a plain `python app.py` (and so
+    verify.py, and every earlier phase's habits) binds loopback only.
+    Opening the doors is a deliberate act, not a default."""
+    vital_app = _m33()
+    if not hasattr(vital_app, "_serve_host"):
+        pytest.skip("_serve_host doesn't exist yet - M34")
+    bat = (ROOT / "run.bat").read_text(encoding="utf-8")
+    assert "VITAL_LOOP_HOST=0.0.0.0" in bat, (
+        "run.bat no longer opens the app to the room (M34)")
+    import os
+    old = os.environ.pop("VITAL_LOOP_HOST", None)
+    try:
+        assert vital_app._serve_host() == "127.0.0.1", (
+            "without run.bat's say-so the app must stay loopback-only")
+        os.environ["VITAL_LOOP_HOST"] = "0.0.0.0"
+        assert vital_app._serve_host() == "0.0.0.0"
+    finally:
+        if old is None:
+            os.environ.pop("VITAL_LOOP_HOST", None)
+        else:
+            os.environ["VITAL_LOOP_HOST"] = old
+
+
+def test_state_carries_the_room_count(fresh_registry):
+    """(hhh) The teacher watches the room arrive: /state says how many
+    devices hold a session, and the cookieless default isn't one."""
+    vital_app = fresh_registry
+    cookieless = vital_app.app.test_client()
+    assert cookieless.get("/state?loop=temp").get_json()["sessions"] == 0
+    device = vital_app.app.test_client()
+    device.set_cookie("vl_sid", "first-arrival")
+    device.get("/state?loop=temp")
+    assert cookieless.get("/state?loop=temp").get_json()["sessions"] == 1, (
+        "a seated device must show up in the room count")
+
+
 def test_siadh_preset_is_a_complete_diagnosis():
     """(ddd) M32: SIADH is a row in the Phase 5 preset table — a full
     configuration on a healthy chassis, named in a banner, and CLEARED

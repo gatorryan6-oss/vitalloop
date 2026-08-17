@@ -24,8 +24,12 @@ if not exist "app.py" (
 )
 
 echo Starting Vital Loop... when you see it's running, open http://127.0.0.1:%PORT%/
+echo The join address for STUDENT DEVICES prints below once the app is up.
 start "" http://127.0.0.1:%PORT%/
 REM ---- EDIT THIS ONE LINE PER PROJECT ----
+REM M34: the double-click launch serves the whole room. Plain
+REM `python app.py` (and verify.py) stay localhost-only.
+set VITAL_LOOP_HOST=0.0.0.0
 python app.py
 REM -----------------------------------------
 
