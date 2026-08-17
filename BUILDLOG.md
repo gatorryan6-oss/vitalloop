@@ -27,8 +27,10 @@ Entry format:
   (no teacher dashboard), worksheets as printable app routes (no docx),
   verbal class direction (no mode gating).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M32 — SIADH preset row + banner + the fifth blind water
-  case. Then M33 sessions, M34 LAN, M35 worksheets, M36 lab pass.
+- **Next up:** M33 — per-session Runners (registry, eviction, cap).
+  Then M34 LAN, M35 worksheets, M36 lab pass. The M33/M34 session model
+  and M35 worksheet format are flagged ASSUMPTIONS in the Phase 9
+  kickoff — confirm or change them before those milestones build.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -40,6 +42,55 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M32: SIADH on the page — preset, banner, and case 5
+- Shipped: fourth disease row in the water Diseases card (Central DI /
+  Nephrogenic DI / **SIADH** / Healthy again) through the M18 preset
+  table — banner names the syndrome and the inappropriate-secretion
+  mechanism, `HEALTHY_WATER` grew `adh_override: None` so every water
+  preset clears the knob (diseases never stack), `_apply_preset` grew
+  the hook. **Case 5**, the fifth blind water case: same brief as cases
+  1 and 2 WORD FOR WORD, the morning's 1.5 L arriving as a
+  `start_actions` load, 2 h warm-up, answer control/pituitary. Two new
+  pins (preset-is-a-complete-diagnosis incl. Healthy clearing it;
+  SIADH-is-in-the-diagnosis-game with the control-center answer); every
+  M28 contract test picked case 5 up automatically by iterating
+  `CASES`, which is the payoff of building the diagnosis game as a
+  table. 122 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The case's intake is one `start_actions` load, not interleaved
+     drinking**, because the "you joined here" marker and the "first X
+     already happened" chip both assume warm-up time equals `warmup_s`
+     (app.js reads it directly). `start_actions` CAN advance time (step
+     is a sim method), and a case that does so would put the marker in
+     the wrong place — noted here so the next case author doesn't.
+  2. **Case-5 sweep before wiring** (SS2): join tableau osm 280.3
+     (dipped to 279.8, brushing the overhydration line at 37 min), ADH
+     1.00, urine 0.5 mL/min at 900 mOsm/L, thirst 0.00, zero
+     auto-drinks; the healthy control arm on the same 1.5 L recovered
+     to 288 by flooding 12 mL/min at 75 mOsm/L. Same answer as case 2
+     (control/pituitary) in the opposite direction — silent vs
+     won't-stop — which is deliberate: the role repeats, the reasoning
+     can't.
+  3. VERIFIED LIVE in the browser on the running server: SIADH click →
+     banner up, ADH pinned 1.00 at osm 290 (a healthy pituitary reads
+     0.5 there — the inappropriateness visible at rest), a 1 L drink at
+     16× slid osm 290 → 285.7 in 25 sim-min with urine locked at
+     0.5/900; Healthy → override null, banner gone, and the freed loop
+     dumped the excess itself (ADH 0, kidneys 12 mL/min at 37.5
+     mOsm/L) — no teleport. Case 5 blind as "Period 6 Gold": no
+     `_enabled`/knob fields in `/state`, CSV 409, all six blind-hide
+     cards hidden, join tableau matching the sweep to the decimal;
+     answered control/pituitary → RIGHT 100/100, note up, fields
+     released (override's true value 1.0 arriving only at the reveal),
+     CSV 200, cards back. Console clean (the 409 is the deliberate
+     blind-CSV probe; the 404 was this session's own wrong URL).
+     The "SIADH" string in the page is the Diseases-card BUTTON — menu
+     vocabulary, present for every case, same standing as the Fever
+     button during the fever case (M28 decision 2's line holds: the
+     menu is public, the answer is not).
 
 ## 2026-08-17 — M31: SIADH — contract + engine knob + demo (Phase 9 starts)
 - Shipped: Phase 9 kickoff (`vital_loop_phase9_kickoff.md`) and the M31

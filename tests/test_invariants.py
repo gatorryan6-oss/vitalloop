@@ -3090,6 +3090,43 @@ def test_siadh_is_deterministic():
         "Two identical SIADH runs diverged (kickoff SS2)")
 
 
+def test_siadh_preset_is_a_complete_diagnosis():
+    """(ddd) M32: SIADH is a row in the Phase 5 preset table — a full
+    configuration on a healthy chassis, named in a banner, and CLEARED
+    by Healthy like every disease before it. Diseases never stack
+    (M18 decision 1)."""
+    vital_app = _diag()
+    WaterSimulation = _siadh()
+    entry = vital_app.PRESETS["water"].get("siadh")
+    assert entry is not None, "the water loop has no SIADH preset"
+    assert entry["adh_override"] == 1.0
+    assert "inappropriate" in entry["banner"].lower(), (
+        "the banner must name the mechanism - secretion inappropriate "
+        "to the stimulus IS the disease")
+    sim = WaterSimulation()
+    vital_app._apply_preset(sim, entry)
+    sim.step(10)
+    assert sim.state()["adh_override"] == 1.0
+    vital_app._apply_preset(sim, vital_app.PRESETS["water"]["healthy"])
+    sim.step(10)
+    assert sim.state()["adh_override"] is None, (
+        "Healthy left the SIADH knob set - a preset is a COMPLETE "
+        "diagnosis and Healthy is the way back")
+
+
+def test_siadh_is_in_the_diagnosis_game():
+    """(ddd) M32: the disease the class can name is also a case they
+    can be handed blind."""
+    vital_app = _diag()
+    siadh_cases = [c for c in vital_app.CASES["water"].values()
+                   if c["setup"].get("adh_override")]
+    assert siadh_cases, "no blind water case uses the SIADH knob"
+    case = siadh_cases[0]
+    assert case["answer"] == {"role": "control", "part": "pituitary"}, (
+        "SIADH is a control-center failure - the machinery is intact "
+        "and the signal is wrong, fever's pattern in a new loop")
+
+
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
 
 

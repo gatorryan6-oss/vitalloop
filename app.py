@@ -356,7 +356,9 @@ HEALTHY_GLUCOSE = {"sensitivity": 1.0, "exercise": False, "sensor": True,
                    "effectors": {"beta": True, "alpha": True, "liver": True},
                    "pump": False, "basal": 0.0}
 HEALTHY_WATER = {"exercise": False, "sensor": True,
-                 "effectors": {"adh": True, "kidney": True, "access": True}}
+                 "effectors": {"adh": True, "kidney": True, "access": True},
+                 "adh_override": None}   # M31 knob: every water preset
+                                         # clears it — diseases never stack
 
 PRESETS = {
     "temp": {
@@ -425,6 +427,18 @@ PRESETS = {
             **{**HEALTHY_WATER,
                "effectors": {"adh": True, "kidney": False,
                              "access": True}}},
+        "siadh": {
+            "label": "SIADH",
+            "banner": "ADH pours out no matter what the receptors say — "
+                      "Syndrome of Inappropriate ADH secretion, the "
+                      "mirror image of insipidus (a control center "
+                      "defending nothing). The kidneys obey a hormone "
+                      "that shouldn't be there, so every ordinary glass "
+                      "now dilutes the blood — and thirst never warns, "
+                      "because a loop can't feel holding too much. "
+                      "First-line treatment: restrict water.",
+            "speed": 16,
+            **{**HEALTHY_WATER, "adh_override": 1.0}},
     },
 }
 
@@ -1598,6 +1612,31 @@ CASES = {
                     "body deciding to have a glass of water. No other "
                     "effector in this course does anything like it.",
         },
+        # M32: the SIADH case. Same brief as cases 1 and 2, word for
+        # word — reading the story earns nothing, reading the traces is
+        # everything. The morning's ordinary intake arrives as one
+        # start_actions load (the race_day precedent) because the
+        # "you joined here" marker assumes warm-up time is warmup_s.
+        "case5": {
+            "brief": "Resting indoors, with a water bottle within reach "
+                     "all morning.",
+            "setup": {**HEALTHY_WATER, "adh_override": 1.0},
+            "start_actions": [("drink", [1500])],
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "control", "part": "pituitary"},
+            "note": "Read the mismatch: osmolarity LOW — this body "
+                    "brushed the overhydration line — while ADH sat at "
+                    "MAXIMUM and the urine stayed scant and "
+                    "concentrated. Secretion inappropriate to the "
+                    "stimulus: SIADH, the mirror image of case 2. There "
+                    "the control center went silent when it should have "
+                    "spoken; here it will not stop talking when it "
+                    "should. And notice what never fired: thirst — a "
+                    "loop has no alarm for holding too much. The "
+                    "treatment falls out of the charts: stop the "
+                    "glasses, and the slide stops.",
+        },
     },
 }
 
@@ -1759,6 +1798,8 @@ def _apply_preset(sim, p):
         sim.set_pump_enabled(p["pump"])
     if "basal" in p:
         sim.set_basal_rate(p["basal"])
+    if "adh_override" in p:
+        sim.set_adh_override(p["adh_override"])
 
 
 @app.route("/control", methods=["POST"])
