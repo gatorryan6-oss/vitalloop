@@ -70,9 +70,10 @@ STARTUP_TIMEOUT_SECONDS = 20
 SERVED_SOURCES = [                             # what the running app loads or
     "app.py",                                  # serves — the ONLY files whose
     "attempts.py",                             # edits can make a live server
-    "engine/**/*.py",                          # stale. NOT tests/ or verify.py
-    "templates/**/*",                          # (they cannot change what a
-    "static/**/*",                             # page answers).
+    "sessions.py",                             # stale. NOT tests/ or verify.py
+    "engine/**/*.py",                          # (they cannot change what a
+    "templates/**/*",                          # page answers).
+    "static/**/*",
 ]
 # ------------------------------------------------------------
 

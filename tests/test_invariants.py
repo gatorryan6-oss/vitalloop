@@ -3090,6 +3090,149 @@ def test_siadh_is_deterministic():
         "Two identical SIADH runs diverged (kickoff SS2)")
 
 
+# ================= M33: per-student sessions ==============================
+# The projector becomes a lab: a browser that presents a `vl_sid` cookie
+# gets its OWN three Runners; a client that presents none (verify.py,
+# THIS SUITE, curl) drives the same module-level `runners` it always
+# has, which is what keeps every test above meaning what it meant. The
+# id is minted by the page's JS — the server only reads it — and the
+# attempts log stays global: one room, one leaderboard.
+
+def _m33():
+    """The app once sessions exist, or SKIP (M33)."""
+    import app as vital_app
+    if not hasattr(vital_app, "registry"):
+        pytest.skip("the session registry doesn't exist yet - M33")
+    return vital_app
+
+
+@pytest.fixture
+def fresh_registry(monkeypatch):
+    """A registry no other test has seated anyone in."""
+    from sessions import SessionRegistry
+    vital_app = _m33()
+    monkeypatch.setattr(
+        vital_app, "registry",
+        SessionRegistry(vital_app._make_runners, max_sessions=40,
+                        idle_s=1800))
+    return vital_app
+
+
+def test_two_sessions_cannot_touch_each_others_state(fresh_registry):
+    """(eee) The whole point: a wrong click on one device must never
+    move another device's body."""
+    vital_app = fresh_registry
+    default_speed = vital_app.runners["temp"].speed
+    a = vital_app.app.test_client()
+    a.set_cookie("vl_sid", "team-a")
+    b = vital_app.app.test_client()
+    b.set_cookie("vl_sid", "team-b")
+    r = a.post("/control?loop=temp", json={"action": "speed", "value": 16})
+    assert r.status_code == 200
+    assert a.get("/state?loop=temp").get_json()["speed"] == 16
+    assert b.get("/state?loop=temp").get_json()["speed"] == 1, (
+        "device B saw device A's speed - sessions are not isolated")
+    assert vital_app.runners["temp"].speed == default_speed, (
+        "a session's action reached the DEFAULT runners - verify.py and "
+        "the projector would be at the mercy of every student device")
+
+
+def test_a_reload_keeps_your_session(fresh_registry):
+    """(eee) The cookie is the session: a new page (new client, same
+    cookie) finds the same body mid-story."""
+    vital_app = fresh_registry
+    before = vital_app.app.test_client()
+    before.set_cookie("vl_sid", "period5-green")
+    before.post("/control?loop=temp", json={"action": "speed", "value": 16})
+    reloaded = vital_app.app.test_client()
+    reloaded.set_cookie("vl_sid", "period5-green")
+    assert reloaded.get("/state?loop=temp").get_json()["speed"] == 16, (
+        "a reload lost the session - the cookie must be the key, not "
+        "the client")
+
+
+def test_an_unknown_sid_gets_a_fresh_healthy_sandbox(fresh_registry):
+    """(eee) An evicted or never-seen id is not an error: it is seated
+    with a fresh healthy sandbox, which is also what makes a server
+    restart harmless to a class."""
+    vital_app = fresh_registry
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_sid", "someone-who-was-evicted")
+    j = c.get("/state?loop=water").get_json()
+    assert "case" not in j and "challenge" not in j and j["preset"] is None
+    flags = {k: v for k, v in j["now"].items() if k.endswith("_enabled")}
+    assert flags and all(flags.values()), (
+        "a fresh session arrived with parts already broken")
+
+
+def test_the_room_is_capped_with_words(monkeypatch):
+    """(fff) Seat N devices and the N+1th is refused in plain English —
+    on the API and on the page — while everyone seated keeps playing."""
+    from sessions import SessionRegistry
+    vital_app = _m33()
+    monkeypatch.setattr(
+        vital_app, "registry",
+        SessionRegistry(vital_app._make_runners, max_sessions=2,
+                        idle_s=1800))
+    for sid in ("seat-1", "seat-2"):
+        c = vital_app.app.test_client()
+        c.set_cookie("vl_sid", sid)
+        assert c.get("/state?loop=temp").status_code == 200
+    late = vital_app.app.test_client()
+    late.set_cookie("vl_sid", "seat-3")
+    refused = late.get("/state?loop=temp")
+    assert refused.status_code == 503
+    assert "full" in refused.get_json()["error"].lower()
+    page = late.get("/")
+    assert page.status_code == 503 and b"full" in page.data, (
+        "the PAGE must refuse a full room in words too - a student's "
+        "first sight of the app cannot be a stack trace")
+    seated = vital_app.app.test_client()
+    seated.set_cookie("vl_sid", "seat-1")
+    assert seated.get("/state?loop=temp").status_code == 200, (
+        "a full room broke a seated device - the cap must only refuse "
+        "NEW sessions")
+
+
+def test_idle_sessions_are_evicted_and_return_fresh():
+    """(fff) The sweep, driven by a fake clock so the test needs no
+    sleeping: touched sessions live, idle ones are dropped, and a
+    dropped id is quietly re-seated fresh."""
+    from sessions import SessionRegistry
+    made = []
+    def factory():
+        made.append(object())
+        return made[-1]
+    t = {"now": 0.0}
+    reg = SessionRegistry(factory, max_sessions=5, idle_s=100,
+                          clock=lambda: t["now"])
+    first = reg.runners_for("kid")
+    t["now"] = 90
+    assert reg.runners_for("kid") is first, "a touched session was swept"
+    t["now"] = 180
+    assert reg.runners_for("kid") is first, (
+        "touching must reset the idle clock")
+    t["now"] = 281
+    fresh = reg.runners_for("kid")
+    assert fresh is not first and len(made) == 2, (
+        "an idle session must be swept and its id re-seated fresh")
+    assert reg.count() == 1
+
+
+def test_sessions_share_the_one_attempts_log(fresh_registry):
+    """(ggg) One room, one leaderboard: every session reads the same
+    bests, because the log is global and keyed by team label."""
+    vital_app = fresh_registry
+    a = vital_app.app.test_client()
+    a.set_cookie("vl_sid", "team-a")
+    cookieless = vital_app.app.test_client()
+    j_a = a.get("/state?loop=temp").get_json()
+    j_default = cookieless.get("/state?loop=temp").get_json()
+    assert j_a["bests"] == j_default["bests"], (
+        "two sessions see different bests - the attempts log must be "
+        "shared, or the head-to-head means nothing")
+
+
 def test_siadh_preset_is_a_complete_diagnosis():
     """(ddd) M32: SIADH is a row in the Phase 5 preset table — a full
     configuration on a healthy chassis, named in a banner, and CLEARED

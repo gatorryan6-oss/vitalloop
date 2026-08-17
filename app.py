@@ -22,6 +22,7 @@ import attempts
 from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
 from engine.water import WaterSimulation
+from sessions import RoomFull, SessionRegistry
 
 app = Flask(__name__)
 
@@ -289,21 +290,57 @@ class Runner:
         return out
 
 
-runners = {
-    "temp": Runner(Simulation(), "temp"),
-    "glucose": Runner(GlucoseSimulation(), "glucose"),
-    "water": Runner(WaterSimulation(), "water"),
-}
+def _make_runners():
+    """One fresh set of the three loops — the unit a session owns (M33)."""
+    return {
+        "temp": Runner(Simulation(), "temp"),
+        "glucose": Runner(GlucoseSimulation(), "glucose"),
+        "water": Runner(WaterSimulation(), "water"),
+    }
+
+
+# The DEFAULT session: any client that presents no session id (verify.py,
+# pytest, curl) drives these, exactly as it has since M7 — which is what
+# keeps eight phases of tests meaning what they meant. The projector is
+# just the teacher's browser now, and that browser carries a sid like
+# everyone else's.
+runners = _make_runners()
+
+# Per-device sessions (M33). The cap bounds worst-case memory (history
+# is a data product and grows all period); the idle sweep returns a
+# closed tab's memory within half an hour. Both are app policy, tunable.
+MAX_SESSIONS = 40
+SESSION_IDLE_S = 30 * 60
+registry = SessionRegistry(_make_runners, MAX_SESSIONS, SESSION_IDLE_S)
+
+
+def _session_runners():
+    """The runners this REQUEST addresses: its session's own, or the
+    default set for a client with no session id. May raise RoomFull."""
+    sid = request.cookies.get("vl_sid")
+    if not sid:
+        return runners
+    return registry.runners_for(sid[:64])
 
 
 def _runner():
     """The Runner the request addresses (?loop=temp|glucose, default temp),
     or None for an unknown loop name."""
-    return runners.get(request.args.get("loop", "temp"))
+    return _session_runners().get(request.args.get("loop", "temp"))
+
+
+@app.errorhandler(RoomFull)
+def _room_full(exc):
+    """The cap, refused in plain English — never a stack trace on a
+    student's phone."""
+    if request.path == "/":
+        return (f"<h1>Vital Loop</h1><p>{exc}</p>", 503)
+    return jsonify({"error": str(exc)}), 503
 
 
 @app.route("/")
 def index():
+    _session_runners()   # a full room refuses the PAGE in words (M33)
     # The challenge table rides into the page via the template, so the
     # card's story/goal text has ONE source (kickoff SS5).
     #
@@ -2138,7 +2175,7 @@ def compare():
 @app.route("/export.csv")
 def export_csv():
     loop = request.args.get("loop", "temp")
-    runner = runners.get(loop)
+    runner = _runner()   # session-aware (M33): your CSV is YOUR run
     if runner is None:
         return jsonify({"error": "unknown loop"}), 400
     if runner.blind():

@@ -27,10 +27,10 @@ Entry format:
   (no teacher dashboard), worksheets as printable app routes (no docx),
   verbal class direction (no mode gating).
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** M33 — per-session Runners (registry, eviction, cap).
-  Then M34 LAN, M35 worksheets, M36 lab pass. The M33/M34 session model
-  and M35 worksheet format are flagged ASSUMPTIONS in the Phase 9
-  kickoff — confirm or change them before those milestones build.
+- **Next up:** M34 — LAN launch (run.bat binds 0.0.0.0, join URL +
+  firewall note, live-session footer). Then M35 worksheets, M36 lab
+  pass. The M35 worksheet format is a flagged ASSUMPTION in the Phase 9
+  kickoff — confirm or change before it builds.
 - **Port:** 5083 (this project's own; see CLAUDE.md for the machine registry).
 - **Open bugs:** none.
 - **Standing caution:** the invariants file froze the history record fields
@@ -42,6 +42,64 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M33: Per-student sessions — the projector becomes a lab
+- Shipped: `sessions.py` — `SessionRegistry` (plain Python, no Flask,
+  one lock, injectable clock): cookie sid → that browser's OWN three
+  Runners, created on first sight, idle-swept at 30 min, capped at 40
+  with a plain-English `RoomFull`. App: `_make_runners()` factory, the
+  module-level `runners` kept as the DEFAULT session (any cookieless
+  client — verify.py, pytest, curl — drives it exactly as since M7),
+  `_session_runners()` resolving every route incl. `/export.csv` (your
+  CSV is YOUR run) and the PAGE (a full room refuses the page in words,
+  never a stack trace), `RoomFull` errorhandler. JS mints the id
+  (crypto.randomUUID → `vl_sid` cookie, the server only reads it) and
+  the poll now surfaces a server refusal in the server's words instead
+  of throwing on `j.now`. `sessions.py` joined verify.py's
+  SERVED_SOURCES (M26 4.6 rule). M33 contract: 7 tests — isolation
+  (a device's action moves neither another device nor the default
+  runners), reload-keeps-session, unknown/evicted sid seats a fresh
+  healthy sandbox, the cap refuses API and page in words while seated
+  devices keep playing, fake-clock eviction with touch-resets-idle,
+  one shared attempts log across sessions. 128 invariants + verify
+  pass.
+- Deferred: the live-session count footer to M34 (it's the LAN
+  milestone's teacher-facing face; `registry.count()` is ready).
+- Open bugs: none.
+- Decisions:
+  1. **The CLIENT mints the session id, the server only reads it.**
+     Server-assigned cookies would have seated the pytest client and
+     verify.py in throwaway sessions the moment they touched "/",
+     silently detaching every fixture that mixes route calls with
+     direct `vital_app.runners` access. With client-minted ids the
+     cookieless world is byte-for-byte the M7–M30 world — eight phases
+     of tests and the standing verify kit run UNCHANGED, which was the
+     Phase 8 promise ("a plumbing change, not a rewrite") kept
+     literally.
+  2. **Sessions are runtime state, ON PURPOSE** (kickoff §5): the
+     registry lives in memory, `attempts.json` stays the only durable
+     product, and an evicted or unknown id is NOT an error — it's
+     seated fresh. That one rule is also the restart story: bounce the
+     server mid-class and every device quietly starts over while every
+     score survives.
+  3. **Cap 40 / idle 30 min are memory policy, not UX**: history is a
+     data product that grows all period (~tens of MB per hot session),
+     so the cap bounds the worst case and the sweep returns a closed
+     tab's memory. Both constants sit together in app.py, tunable.
+  4. The existing global `_log_lock` (M26) already made cross-session
+     scoring safe — the milestone added zero attempts code, which is
+     the M26 design paying out.
+  5. VERIFIED LIVE with three real clients on one machine: the browser
+     (self-minted sid) ran its temp loop at 16× on its own clock; a
+     PowerShell client with a cookie container got a fresh body at
+     t = 0.0 and its own hypothermia; the cookieless projector stayed
+     at speed 1 / no preset throughout and cleaned up with its own
+     reset. Console clean (connection-refused burst during the verify
+     restart window, ridden out by the poll's catch).
+     *Harness note for future sessions:* Windows PowerShell 5.1
+     silently DROPS a `Cookie:` header passed via `-Headers` —
+     Invoke-RestMethod needs a `WebRequestSession` cookie container,
+     or the "session" you think you're driving is the default one.
 
 ## 2026-08-17 — M32: SIADH on the page — preset, banner, and case 5
 - Shipped: fourth disease row in the water Diseases card (Central DI /

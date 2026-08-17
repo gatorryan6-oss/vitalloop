@@ -21,6 +21,15 @@ const COLOR_GRID = palette.getPropertyValue("--grid").trim();
 const COLOR_BASELINE = palette.getPropertyValue("--baseline").trim();
 const COLOR_MUTED = palette.getPropertyValue("--muted").trim();
 
+/* M33: every browser gets its own body. The id is minted HERE — the
+   server only ever reads it — so cookieless clients (verify.py, the
+   test suite, curl) keep driving the shared default session, and eight
+   phases of tests keep their meaning. */
+if (!document.cookie.split("; ").some((c) => c.startsWith("vl_sid="))) {
+  document.cookie = "vl_sid=" + crypto.randomUUID() +
+                    "; path=/; max-age=31536000; SameSite=Lax";
+}
+
 let activeLoop = "temp";         // which loop the page is showing
 const buffers = {                // engine records per loop, oldest first
   temp: { pts: [], lastT: -1 },
@@ -32,6 +41,15 @@ let speed = 1;
 
 /* ---------------- polling ---------------- */
 
+/* A server-level refusal (the room is full, M33) in the server's own
+   words. Cleared the moment a poll succeeds again. */
+function roomNotice(text) {
+  const el = document.getElementById("roomNotice");
+  if (!el) return;
+  if (text) { el.textContent = text; el.hidden = false; }
+  else if (!el.hidden) { el.hidden = true; }
+}
+
 async function poll() {
   const loop = activeLoop;       // pin: the tab may switch mid-await
   const buf = buffers[loop];
@@ -42,6 +60,11 @@ async function poll() {
   } catch (e) {
     return;                      // server briefly away; next poll retries
   }
+  if (j.error) {                 // e.g. the room is full (M33): the server
+    roomNotice(j.error);         // refused in words — show them and wait
+    return;
+  }
+  roomNotice(null);
   if (j.now.t < buf.lastT) {     // sim was reset behind our back
     buf.pts = [];
     buf.lastT = -1;
