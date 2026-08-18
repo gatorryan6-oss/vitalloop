@@ -376,6 +376,17 @@ The rooms API contract (built at M43, Phase 11):
     (it may be projected), and "/teacher" appears in no student-facing
     payload.
 
+    (M46) who's-stuck. Challenge stamps and case stamps grow a
+    wall-clock "wall_start" (app-level, never the engine's); Runner
+    grows `tries` (per challenge name: [{points, medal}], this
+    session's finished runs — the LOG stays the scores' one truth).
+    STUCK_BLIND_S == 300, STUCK_QUIET_S == 180, STUCK_ZEROES == 2 —
+    swept policy, tunable WITH their pins. _stuck_reason checks every
+    runner (a blind case on a background tab still counts), one reason
+    per row: blind > zeroes > quiet. Stuck rows sort FIRST.
+    /teacher/room.json: the same rows as data, same PIN gate, still
+    read-only.
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -4671,3 +4682,126 @@ def test_room_never_touches_last_seen():
     assert reg.room() == [], (
         "the room() call at t=90 kept the session alive - a room view "
         "must never touch last_seen, or closed tabs live forever")
+
+
+# ================= M46: who's stuck ========================================
+# The dashboard learns judgment. Three flags, swept before pinning (the
+# M38 lesson): a blind case unanswered past 5 min (a decisive team reads
+# the charts in 2-4), a device quiet past 3 min (a live page polls at
+# 4 Hz; phones auto-sleep inside 2 min), and a SECOND zero-medal run of
+# one challenge (at 11+ wall-min a run, the second is when to walk over).
+
+def _stuck_app():
+    import app as vital_app
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("the stuck thresholds don't exist yet - M46")
+    return vital_app
+
+
+def test_the_stuck_thresholds_are_pinned_policy():
+    vital_app = _stuck_app()
+    assert vital_app.STUCK_BLIND_S == 300
+    assert vital_app.STUCK_QUIET_S == 180
+    assert vital_app.STUCK_ZEROES == 2, (
+        "tunable policy, but tuned WITH this pin - the reasoning lives "
+        "beside the constants in app.py")
+
+
+def test_game_stamps_carry_wall_start(fresh_registry):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M46")
+    kid = _device(vital_app, "stamp-kid")
+    assert kid.post("/control?loop=temp",
+                    json={"action": "diagnose",
+                          "value": 1}).status_code == 200
+    runner = vital_app.registry.runners_for("stamp-kid")["temp"]
+    assert runner.case.get("wall_start", 0) > 0, (
+        "a case must stamp when the class went blind - the stuck flag "
+        "counts from here")
+    vital_app.start_challenge(runner, "temp", "cold_store", None)
+    assert runner.challenge.get("wall_start", 0) > 0
+
+
+def test_a_long_blind_case_flags_stuck(fresh_registry, monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M46")
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    kid = _device(vital_app, "stalled-kid")
+    assert kid.post("/control?loop=water",
+                    json={"action": "diagnose",
+                          "value": 1}).status_code == 200
+    runner = vital_app.registry.runners_for("stalled-kid")["water"]
+    rows = vital_app._room_rows()
+    assert rows[0]["stuck"] is None, (
+        "a case the class JUST started is not stuck - the flag needs "
+        f"{vital_app.STUCK_BLIND_S} quiet seconds first")
+    runner.case["wall_start"] -= vital_app.STUCK_BLIND_S + 60
+    rows = vital_app._room_rows()
+    assert rows[0]["stuck"] and "blind" in rows[0]["stuck"], (
+        "a blind case past the threshold must flag, even though the "
+        "device is still polling merrily")
+    # ...and the flag reaches the teacher's page, sorted to the top.
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/teacher").data.decode("utf-8")
+    assert "blind case" in body and "room-stuck" in body
+
+
+def test_repeated_zero_medal_runs_flag_and_a_medal_clears(fresh_registry):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M46")
+    kid = _device(vital_app, "zeroes-kid")
+    assert kid.get("/state?loop=temp").status_code == 200
+    runner = vital_app.registry.runners_for("zeroes-kid")["temp"]
+    runner.tries["cold_store"] = [{"points": 10, "medal": None},
+                                  {"points": 20, "medal": None}]
+    rows = vital_app._room_rows()
+    assert rows[0]["stuck"] and "no medal" in rows[0]["stuck"], (
+        "two zero-medal runs of one challenge is the walk-over signal")
+    runner.tries["cold_store"].append({"points": 70, "medal": "silver"})
+    assert vital_app._room_rows()[0]["stuck"] is None, (
+        "a team that just medaled is not stuck, whatever came before")
+
+
+def test_a_quiet_device_flags_and_stuck_sorts_first(monkeypatch):
+    vital_app = _stuck_app()
+    from sessions import SessionRegistry
+    t = {"now": 0.0}
+    reg = SessionRegistry(vital_app._make_runners, max_sessions=5,
+                          idle_s=30 * 60, clock=lambda: t["now"])
+    monkeypatch.setattr(vital_app, "registry", reg)
+    reg.runners_for("sleepy", period="P3", team="Gone Quiet")
+    t["now"] = vital_app.STUCK_QUIET_S + 30.0
+    reg.runners_for("awake", period="P1", team="Still Here")
+    rows = vital_app._room_rows()
+    assert [r["team"] for r in rows] == ["Gone Quiet", "Still Here"], (
+        "stuck rows sort FIRST - P1 before P3 everywhere else, but the "
+        "flagged team outranks the alphabet")
+    assert "quiet" in rows[0]["stuck"] and rows[1]["stuck"] is None
+
+
+def test_room_json_is_gated_and_reads_without_stepping(fresh_registry,
+                                                       monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M46")
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    kid = _device(vital_app, "json-kid")
+    assert kid.get("/state?loop=body").status_code == 200
+    runners = vital_app.registry.runners_for("json-kid")
+    before = {loop: list(r.sim.history()) for loop, r in runners.items()}
+    nosy = vital_app.app.test_client()
+    assert nosy.get("/teacher/room.json").status_code == 403, (
+        "the data feed needs the PIN exactly like the page does")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    j = teacher.get("/teacher/room.json").get_json()
+    assert j["count"] == 1 and j["rows"][0]["loop"] == "body"
+    assert {"period", "team", "doing", "idle", "stuck"} <= set(j["rows"][0])
+    after = {loop: list(r.sim.history()) for loop, r in runners.items()}
+    assert before == after, (
+        "the auto-refresh feed stepped a student's simulation - every "
+        "room view must be read-only")

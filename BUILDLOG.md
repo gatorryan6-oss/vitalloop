@@ -18,11 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M45 (see Milestones; M44 summary kept below) — Phase
-  11 underway. `/teacher` exists: launch-minted PIN printed in the
-  console (VL_TEACHER_PIN pins it for rehearsal), cookie once per
-  device, wrong PIN refused in words, and behind it a read-only room
-  table — period, team, tab, doing, last-seen — built on
+- **Committed:** M46 (see Milestones; earlier summaries kept below) —
+  Phase 11 underway. The dashboard has judgment: every row carries
+  time-in-mode and runs-so-far, and a stuck flag — blind case past
+  5 min, two zero-medal runs of one challenge, or a device quiet past
+  3 min — sorts flagged teams to the top of a self-refreshing table.
+  Thresholds are swept, named, pinned policy.
+- **M45 (for reference):** `/teacher` exists: launch-minted PIN printed
+  in the console (VL_TEACHER_PIN pins it for rehearsal), cookie once
+  per device, wrong PIN refused in words, and behind it a read-only
+  room table — period, team, tab, doing, last-seen — built on
   `registry.room()`, which sweeps but never seats, touches or steps.
   Blind cases show BY NUMBER ONLY: the page is safe to project.
 - **M44 (for reference):** Phase 11 underway (spec:
@@ -35,9 +40,10 @@ Entry format:
   the projector is, having skipped the join screen — sees everyone.
   Pre-M44 records (no period key) read as Unassigned and keep
   displaying. The board names its scope on screen.
-- **Next up:** M46 who's-stuck flags (time-in-mode, attempts-so-far,
-  swept thresholds, stuck-first sort, auto-refresh), M47 full pass +
-  phase close.
+- **Next up:** M47 — the full pass and the phase close (join / skip /
+  rejoin across periods, scoped boards, the dashboard through a blind
+  case, leak checks extended, engine hashes + cookieless world
+  byte-identical, M42 grammar intact, worksheets print).
 - **Phase 10 (for reference):** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
   `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
   180 mg/dL spills into the urine and drags water out with it, and the
@@ -92,6 +98,41 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-18 — M46: Who's stuck
+- Shipped: the M46 contract (6 tests). Challenge and case stamps grew a
+  wall-clock `wall_start`; Runner grew `tries` (per-challenge
+  [{points, medal}], fed at the one place attempts log — the log stays
+  the scores' one truth). Three swept, named, pinned thresholds with
+  the reasoning beside them in app.py: `STUCK_BLIND_S = 300` (a
+  decisive team reads a case's charts in 2–4 min; 600 would burn a
+  third of the period), `STUCK_QUIET_S = 180` (a live page polls at
+  4 Hz; phones auto-sleep inside 2 min), `STUCK_ZEROES = 2` (at 11–19
+  wall-min per challenge run — measured across all 8 challenges at
+  their pinned speeds — the SECOND medal-less run is when to walk
+  over). `_stuck_reason` checks EVERY runner (a blind case on a
+  background tab still counts), one reason per row, blind > zeroes >
+  quiet. Stuck rows sort first, red-flagged; rows carry "· N min in"
+  and "· N runs, best X". `/teacher/room.json` (same PIN gate, still
+  read-only) feeds a 4-second self-refresh that rebuilds the table
+  with textContent only (the M27 rule). 185 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. The tally is IN-MEMORY per session (dies with the sweep) — right
+     for a live who's-stuck view; anything historical reads the log.
+  2. VERIFIED LIVE with real wall-clock, no backdating: a ghost device
+     seated at 02:41:33 flagged "quiet 3 min" at 02:44:37 (184 s); a
+     blind case started 02:41:35 flagged "blind case 5 min, no answer"
+     at 02:46:44 (309 s), taking priority over that session's own
+     quiet state as designed. The teacher page — signed in fresh after
+     the restart rotated the PIN (old cookie correctly bounced to the
+     form) — raised both rows to red flags BY ITSELF, no reload. Note:
+     in this session's hidden preview pane Chrome throttles the 4 s
+     timer to ~1/min; on a visible screen it ticks at full rate.
+  3. The DOM-read verification style (M39–M42) continues; a human
+     should still glance at /teacher on a phone during the M34-style
+     real-wifi checkpoint.
 
 ## 2026-08-18 — M45: /teacher — the PIN and the room list
 - Shipped: `TEACHER_PIN` minted per launch (`secrets`, app-level — the

@@ -764,3 +764,7 @@ main {
 .room-period { font-weight: 650; }
 .room-loop { color: var(--ink-2); }
 .room-idle { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* M46: the flag column, and the row that needs a teacher. */
+.room-flag { font-weight: 650; color: #b4231f; }
+.room-stuck td { background: #fdf0ef; }

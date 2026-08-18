@@ -31,17 +31,20 @@
   </section>
 {% else %}
   <section class="teacher-room">
-    <h2>{{ rows|length }} device{{ '' if rows|length == 1 else 's' }} playing</h2>
-    {% if not rows %}
-    <p class="join-hint">Nobody yet. Devices appear here as they open the
-      app — reload to look again.</p>
-    {% else %}
-    <table class="room-table">
+    <h2 id="roomCount">{{ rows|length }} device{{ '' if rows|length == 1 else 's' }} playing</h2>
+    <p id="roomEmpty" class="join-hint" {% if rows %}hidden{% endif %}>Nobody
+      yet. Devices appear here as they open the app.</p>
+    <table class="room-table" id="roomTable" {% if not rows %}hidden{% endif %}>
+      <thead>
       <tr>
-        <th>Period</th><th>Team</th><th>Tab</th><th>Doing</th><th>Last seen</th>
+        <th>Needs you</th><th>Period</th><th>Team</th><th>Tab</th>
+        <th>Doing</th><th>Last seen</th>
       </tr>
+      </thead>
+      <tbody id="roomRows">
       {% for r in rows %}
-      <tr>
+      <tr{% if r.stuck %} class="room-stuck"{% endif %}>
+        <td class="room-flag">{{ r.stuck or "" }}</td>
         <td class="room-period">{{ r.period }}</td>
         <td class="room-team">{{ r.team }}</td>
         <td class="room-loop">{{ r.loop }}</td>
@@ -49,11 +52,56 @@
         <td class="room-idle">{{ r.idle }}</td>
       </tr>
       {% endfor %}
+      </tbody>
     </table>
-    <p class="join-hint">Reload for a fresh look. A blind case shows by
-      number only, so this page is safe to project.</p>
-    {% endif %}
+    <p class="join-hint">Refreshes itself every few seconds. Stuck teams
+      rise to the top. A blind case shows by number only, so this page is
+      safe to project.</p>
   </section>
+
+  <script>
+  /* M46: keep the room fresh. Same rows the server just rendered, from
+     /teacher/room.json — names go in with textContent, never innerHTML
+     (the M27 rule: the projector shows typed names back verbatim). */
+  (function () {
+    const tbody = document.getElementById("roomRows");
+    if (!tbody) return;
+    async function tick() {
+      let j;
+      try {
+        const r = await fetch("/teacher/room.json");
+        if (!r.ok) return;              // stale PIN: keep the last view
+        j = await r.json();
+      } catch (e) { return; }           // server mid-restart: try later
+      const n = j.count;
+      document.getElementById("roomCount").textContent =
+        `${n} device${n === 1 ? "" : "s"} playing`;
+      document.getElementById("roomEmpty").hidden = n > 0;
+      document.getElementById("roomTable").hidden = n === 0;
+      tbody.textContent = "";
+      for (const row of j.rows) {
+        const tr = document.createElement("tr");
+        if (row.stuck) tr.className = "room-stuck";
+        const cells = [
+          [row.stuck || "", "room-flag"],
+          [row.period, "room-period"],
+          [row.team, "room-team"],
+          [row.loop, "room-loop"],
+          [row.doing, "room-doing"],
+          [row.idle, "room-idle"],
+        ];
+        for (const [text, cls] of cells) {
+          const td = document.createElement("td");
+          td.className = cls;
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+    setInterval(tick, 4000);
+  })();
+  </script>
 {% endif %}
 </main>
 

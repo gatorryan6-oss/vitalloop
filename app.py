@@ -62,6 +62,10 @@ class Runner:
                                  # fixed order, never a die roll)
         self.attempt_error = None   # a score that did NOT save (M26);
                                     # /state carries it to the screen
+        self.tries = {}          # per challenge name: [{points, medal}]
+                                 # this SESSION's finished runs (M46) —
+                                 # in-memory, for the who's-stuck flag;
+                                 # the log stays the scores' one truth
         self._last_wall = time.monotonic()
         self._tick_debt = 0.0    # fractional ticks owed, carried between polls
 
@@ -199,6 +203,11 @@ class Runner:
             c["attempt"], self.attempt_error = log_attempt(
                 build_attempt(c["loop"], c["name"], c["report"], c["score"],
                               label=c.get("label"), events=c["feed"]))
+            # M46: this session's own tally of the run, for the teacher's
+            # who's-stuck flag. The LOG stays the one truth for scores.
+            self.tries.setdefault(c["name"], []).append(
+                {"points": c["score"]["points"],
+                 "medal": c["score"]["medal"]})
         return {
             "name": c["name"],
             "title": entry["title"],
@@ -481,22 +490,80 @@ def _fmt_idle(seconds):
     return f"{int(seconds // 60)} min ago"
 
 
+# The stuck thresholds (M46) — named policy, swept before pinning:
+# challenges run 675-1125 wall-s at their pinned speeds and cases
+# fast-forward their warmup, leaving a 2-4 min chart read for a decisive
+# team. So: a BLIND case past 5 min is a stall (600 would burn a third
+# of the period before flagging); a healthy page polls at 4 Hz, so idle
+# past 3 min is a sleeping or closed device, not a slow reader (phones
+# auto-sleep in 30 s-2 min); and at 11+ wall-min per run, the SECOND
+# zero-medal run on one challenge is the moment to walk over, not the
+# fifth. All three are app policy, tunable with their pins.
+STUCK_BLIND_S = 300      # a blind case unanswered this long
+STUCK_QUIET_S = 180      # no poll from the device this long
+STUCK_ZEROES = 2         # this many runs of one challenge, no medal yet
+
+
+def _stuck_reason(entry, now):
+    """Why this SESSION needs the teacher, in words — or None.
+
+    Checks every runner, not just the fronted tab: a blind case left on
+    a background tab is still a stalled team. One reason per row, most
+    actionable first: blind beats zeroes beats quiet."""
+    for runner in entry["runners"].values():
+        with runner.lock:
+            case = runner.case
+            if (case is not None and case["grade"] is None
+                    and "wall_start" in case
+                    and now - case["wall_start"] > STUCK_BLIND_S):
+                mins = int((now - case["wall_start"]) // 60)
+                return f"blind case {mins} min, no answer"
+    for runner in entry["runners"].values():
+        with runner.lock:
+            for name, tries in runner.tries.items():
+                medals = [t["medal"] for t in tries]
+                if len(medals) >= STUCK_ZEROES and not any(medals):
+                    return f"{len(medals)} runs, no medal"
+    if entry["idle_s"] > STUCK_QUIET_S:
+        return f"quiet {int(entry['idle_s'] // 60)} min"
+    return None
+
+
 def _room_rows():
     """The room, described for the teacher's table — a plain-data pass
-    over registry.room() that reads runner state and steps NOTHING."""
+    over registry.room() that reads runner state and steps NOTHING.
+    Plain strings and numbers only: the auto-refresh (M46) ships these
+    same rows as JSON."""
+    now = time.monotonic()
     rows = []
     for entry in registry.room():
         active = max(entry["runners"].values(),
                      key=lambda r: r._last_wall)
+        with active.lock:
+            game = active.case or active.challenge
+            mode_s = (now - game["wall_start"]
+                      if game and "wall_start" in game else None)
+            tries = (active.tries.get(active.challenge["name"], [])
+                     if active.challenge else [])
+        doing = _describe_runner(active)
+        if mode_s is not None and mode_s >= 60:
+            doing += f" · {int(mode_s // 60)} min in"
+        if tries:
+            best = max(t["points"] or 0 for t in tries)
+            doing += (f" · {len(tries)} run{'s' if len(tries) != 1 else ''}"
+                      f", best {best}")
         rows.append({
             "sid": entry["sid"][:8],
             "period": entry["period"] or "Unassigned",
             "team": entry["team"] or "(no team)",
             "loop": active.loop,
-            "doing": _describe_runner(active),
+            "doing": doing,
             "idle": _fmt_idle(entry["idle_s"]),
+            "stuck": _stuck_reason(entry, now),
         })
-    rows.sort(key=lambda r: (r["period"] == "Unassigned", r["period"],
+    # Stuck rows first — the whole point of the page — then by class.
+    rows.sort(key=lambda r: (r["stuck"] is None,
+                             r["period"] == "Unassigned", r["period"],
                              r["team"]))
     return rows
 
@@ -522,6 +589,18 @@ def teacher():
         return render_template("teacher.html", authed=False, error=None)
     return render_template("teacher.html", authed=True,
                            rows=_room_rows(), periods=PERIODS)
+
+
+@app.route("/teacher/room.json")
+def teacher_room():
+    """The room as data, for the dashboard's auto-refresh (M46). Same
+    PIN gate, same read-only rows the page rendered — and like every
+    room view it steps nothing."""
+    if not _teacher_ok():
+        return jsonify({"error": "the teacher PIN is missing or stale — "
+                                 "reload /teacher and sign in again"}), 403
+    rows = _room_rows()
+    return jsonify({"rows": rows, "count": len(rows)})
 
 
 # Student worksheets (M35). Printable pages, NOT documents in the repo:
@@ -2435,6 +2514,9 @@ def start_challenge(runner, loop, name, label=None):
     t0 = runner.sim.state()["t"]
     runner.challenge = {
         "loop": loop, "name": name,
+        # Wall-clock birth stamp (M46) — app-level like every wall read;
+        # the teacher's "12 min in" line, never the engine's business.
+        "wall_start": time.monotonic(),
         "t_start": t0, "t_end": t0 + entry["duration_s"],
         "report": None, "score": None, "attempt": None,
         # whose run this is (M27) — a TEAM name
@@ -2669,7 +2751,10 @@ def control():
             runner.attempt_error = None
             runner.case = {"loop": loop, "name": name, "grade": None,
                            "attempt": None,
-                           "label": clean_label(cmd.get("label"))}
+                           "label": clean_label(cmd.get("label")),
+                           # M46: when the class went blind, wall-clock —
+                           # the who's-stuck flag counts from here.
+                           "wall_start": time.monotonic()}
             runner.running = True
         elif action == "answer":
             # The class commits, the app grades, and everything it was
