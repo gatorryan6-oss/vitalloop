@@ -355,6 +355,16 @@ The rooms API contract (built at M43, Phase 11):
                                       # READ-ONLY: never seats a session,
                                       # never touches last_seen.
 
+    (M44) an attempt carries "period", stamped at build time from the
+    requesting session's cookie ("" = Unassigned; pre-M44 records have
+    no key and read the same). challenge_runs / leaderboard /
+    best_attempt grew a period=... kwarg: a name scopes to that class,
+    None means everyone, and the DEFAULT scopes to the request's own
+    viewer — Unassigned viewers (the projector) and non-request callers
+    see everyone. /state carries "board_period" so the page can say
+    which scope it is showing. compare_attempts stays cross-period ON
+    PURPOSE: racing another class is a feature.
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -1607,10 +1617,11 @@ def _attempts_module():
 
 
 # Kickoff SS5: the frozen fields of one attempt. Fields are added by
-# APPENDING (M28's diagnosis answer), never by renaming — a worksheets
-# phase or a gradebook export reads this file, not a screenshot.
+# APPENDING (M28's diagnosis answer, M44's period), never by renaming —
+# a worksheets phase or a gradebook export reads this file, not a
+# screenshot.
 ATTEMPT_FIELDS = {"id", "wall_time", "loop", "mode", "name", "label",
-                  "points", "medal", "met", "rows"}
+                  "points", "medal", "met", "rows", "period"}
 
 # One crafted record per evaluator, enough for it to produce every row.
 CRAFTED_RECORD = {
@@ -4438,3 +4449,99 @@ def test_identity_is_read_only_and_never_seats_anyone():
         "asking about an unknown sid must answer None, not create it")
     assert reg.count() == 0, (
         "identity() seated a session - the room views must be read-only")
+
+
+# ================= M44: the leaderboard learns periods =====================
+# An attempt now says whose CLASS it was, and the board a device sees is
+# its own class's — while the projector, having skipped the join screen,
+# keeps showing everyone. Old logs have no period key and must keep
+# loading and displaying: "" and "no key" read identically (Unassigned).
+
+def _m44():
+    vital_app = _h2h()
+    if "period" not in vital_app.build_attempt(
+            "temp", "cold_store", {"met": True, "rows": []},
+            {"points": 0, "medal": None, "rows": [], "zeroed": None}):
+        pytest.skip("attempts don't carry period yet - it arrives at M44")
+    return vital_app
+
+
+def test_an_attempt_is_stamped_with_the_requesters_period(monkeypatch):
+    vital_app = _m44()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P1", "P3"])
+    report = {"met": True, "rows": []}
+    score = {"points": 50, "medal": None, "rows": [], "zeroed": None}
+    with vital_app.app.test_request_context(
+            "/", headers={"Cookie": "vl_period=P3"}):
+        att = vital_app.build_attempt("water", "aid_station", report, score)
+    assert att["period"] == "P3", (
+        "an attempt built during a P3 session's request must be stamped "
+        "P3 - stamped at build time, never inferred later")
+    att = vital_app.build_attempt("water", "aid_station", report, score)
+    assert att["period"] == "", (
+        'outside any request (tests, console) the stamp is "" - '
+        "Unassigned, same as a pre-M44 record reads")
+    grade = {"points": 100, "correct": True, "rows": [],
+             "answer": {"role": "receptor", "part": "beta"}}
+    with vital_app.app.test_request_context(
+            "/", headers={"Cookie": "vl_period=P3"}):
+        catt = vital_app.build_case_attempt("glucose", "case_1", grade)
+    assert catt["period"] == "P3", "diagnosis attempts carry the class too"
+
+
+def test_the_board_scopes_by_period_and_old_records_survive(monkeypatch):
+    vital_app = _m44()
+    log = [
+        _run(70, None, False, [], label="Old World", rid=1),   # no key at all
+        {**_run(88, "gold", True, [], label="Third Period", rid=2,
+                when="2026-08-18T10:00:00"), "period": "P3"},
+        {**_run(95, "gold", True, [], label="Fifth Period", rid=3,
+                when="2026-08-18T11:00:00"), "period": "P5"},
+    ]
+    monkeypatch.setattr(vital_app, "ATTEMPTS", log)
+    names = lambda board: [e["label"] for e in board]
+    assert names(vital_app.leaderboard("water", "aid_station",
+                                       period=None)) == \
+        ["Fifth Period", "Third Period", "Old World"], (
+        "period=None is everyone - including records from before M44")
+    assert names(vital_app.leaderboard("water", "aid_station",
+                                       period="P3")) == ["Third Period"], (
+        "a scoped board shows that class's runs and no other")
+    assert names(vital_app.leaderboard("water", "aid_station",
+                                       period="")) == ["Old World"], (
+        'the "" scope is the Unassigned class, and a pre-M44 record '
+        "(no key) belongs to it - old logs must keep displaying")
+    best = vital_app.best_attempt("water", "aid_station", period="P3")
+    assert best["label"] == "Third Period" and best["runs"] == 1, (
+        "the card's best-so-far line scopes like the board: your "
+        "class's best, not the school's")
+
+
+def test_state_carries_the_scoped_board_and_names_its_scope(
+        fresh_registry, monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "PERIODS"):
+        pytest.skip("app.PERIODS doesn't exist yet - it arrives at M43")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        {**_run(88, "gold", True, [], label="Third Period", rid=1),
+         "period": "P3"},
+        {**_run(95, "gold", True, [], label="Fifth Period", rid=2),
+         "period": "P5"},
+    ])
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_sid", "p3-kid")
+    c.set_cookie("vl_period", "P3")
+    j = c.get("/state?loop=water").get_json()
+    assert j["board_period"] == "P3", (
+        "/state must say whose board it is carrying - the page renders "
+        "this label, it never guesses")
+    assert [e["label"] for e in j["leaderboard"]["aid_station"]] == \
+        ["Third Period"], "a P3 device's poll carries P3's board only"
+    projector = vital_app.app.test_client()   # cookieless: the projector
+    j = projector.get("/state?loop=water").get_json()
+    assert j["board_period"] is None
+    assert [e["label"] for e in j["leaderboard"]["aid_station"]] == \
+        ["Fifth Period", "Third Period"], (
+        "the Unassigned viewer (the projector) sees everyone - that "
+        "symmetry is the design, not a fallback")

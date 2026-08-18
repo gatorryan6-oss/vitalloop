@@ -523,18 +523,28 @@ function drawGameLayer(card, j) {
   warn.hidden = !j.attempts_error;
   if (j.attempts_error) warn.textContent = j.attempts_error;
   const board = j.leaderboard ? j.leaderboard[cid] : null;
-  drawLeaderboard(card, board || []);
+  drawLeaderboard(card, board || [], j.board_period);
   fillH2HPickers(card, board || []);
 }
 
-function drawLeaderboard(card, entries) {
+/* The board names its scope (M44) — but only when the room actually
+   HAS periods (the join feature is on, or an old claim is around);
+   a periodless classroom should never see scope chrome. */
+function boardScope(boardPeriod) {
+  if (boardPeriod) return ` — ${boardPeriod}`;
+  const joinOn = !!document.getElementById("joinOverlay") ||
+                 getCookie("vl_period") !== null;
+  return joinOn ? " — all periods" : "";
+}
+
+function drawLeaderboard(card, entries, boardPeriod) {
   const div = card.querySelector(".challenge-board");
   div.hidden = entries.length === 0;
   if (!entries.length) return;
   div.innerHTML = "";
   const head = document.createElement("div");
   head.className = "board-title";
-  head.textContent = "Leaderboard";
+  head.textContent = "Leaderboard" + boardScope(boardPeriod);
   div.appendChild(head);
   const table = document.createElement("table");
   table.className = "board-table";

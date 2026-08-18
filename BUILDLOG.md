@@ -18,19 +18,19 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M43 — Phase 11 underway (spec:
+- **Committed:** M44 — Phase 11 underway (spec:
   `vital_loop_phase11_kickoff.md`, scoped 2026-08-18: period codes /
-  join screen + teacher dashboard). Periods exist: `periods.txt` is the
-  teacher's list, a skippable first-visit join screen claims a period
-  and team name into cookies (`vl_period`/`vl_team`, the vl_sid
-  pattern — page sets, server only reads), the registry mirrors the
-  claims, and a footer badge proves the join stuck. Missing/empty
-  `periods.txt` = joining quietly off. The cookieless world (verify,
-  pytest, curl) is untouched.
-- **Next up:** M44 — the leaderboard learns periods (`period` appended
-  to ATTEMPT_FIELDS, boards scoped to the viewer's period, the
-  projector/Unassigned sees everyone). Then M45 `/teacher` (PIN + room
-  list), M46 who's-stuck flags, M47 full pass + phase close.
+  join screen + teacher dashboard). M43 gave devices periods
+  (`periods.txt`, skippable join screen, cookies, badge); M44 made the
+  boards mean "us": every attempt is stamped with its class's `period`
+  at build time, each device's leaderboard and best-so-far line scope
+  to its own class, and the Unassigned viewer — which is exactly what
+  the projector is, having skipped the join screen — sees everyone.
+  Pre-M44 records (no period key) read as Unassigned and keep
+  displaying. The board names its scope on screen.
+- **Next up:** M45 `/teacher` (launch-minted PIN + read-only room list
+  from a registry accessor), M46 who's-stuck flags, M47 full pass +
+  phase close.
 - **Phase 10 (for reference):** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
   `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
   180 mg/dL spills into the urine and drags water out with it, and the
@@ -86,7 +86,37 @@ Entry format:
 
 ## Milestones
 
-## 2026-08-18 — M43: Periods exist — periods.txt, the join screen, the badge
+## 2026-08-18 — M44: The leaderboard learns periods
+- Shipped: `period` appended to the frozen attempt fields (M27's
+  grow-by-appending rule): stamped at `build_attempt` /
+  `build_case_attempt` time from the requesting session's cookie —
+  never inferred later — "" for Unassigned, and pre-M44 records (no
+  key) read identically via `.get(..., "")`. `challenge_runs` /
+  `leaderboard` / `best_attempt` grew a `period=` kwarg (None =
+  everyone; default = a sentinel meaning "the request's own viewer"),
+  so inside a poll the board scopes itself with no plumbing through
+  `Runner.snapshot`. `/state` carries `board_period`; the page's board
+  title says its scope ("Leaderboard — P3" / "— all periods"), shown
+  only when the room actually has periods. 3 new invariants (173 pass)
+  + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. `compare_attempts` stays cross-period ON PURPOSE — racing another
+     class is a feature, and the compare is picked by id, not by scope.
+  2. Attempt-stamp and viewer-scope are two different reads of the same
+     cookie: an attempt gets "" when unassigned (a real value in the
+     record), a VIEWER gets None (= everyone) — the projector's whole
+     job, and also what keeps every pre-M44 test meaning what it meant.
+  3. VERIFIED LIVE in the browser (DOM-read, M39–M42 style), against a
+     seeded three-record log (one pre-M44 keyless, one P3, one P5;
+     teacher's real 730 KB log backed up and restored around the test):
+     P3 device → badge "P3 — Test Rig", board "Leaderboard — P3" with
+     only Third Period, best-so-far 88 (the class's, not the school's
+     95); skipped device → "Unassigned", "— all periods", all three
+     rows incl. the keyless record, best 95 across 3 runs. One
+     connection-refused burst in the console = the poll riding out the
+     server restart (M33), not an app error.
 - Shipped: Phase 11 opens (spec committed first: teacher dashboard +
   period codes, interview 2026-08-18, all three recommended options
   taken — skippable join screen / `periods.txt` / teacher PIN).

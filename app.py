@@ -18,7 +18,8 @@ import threading
 import time
 from urllib.parse import unquote
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import (Flask, Response, has_request_context, jsonify,
+                   render_template, request)
 
 import attempts
 import periods
@@ -413,6 +414,10 @@ def state():
     since = request.args.get("since", -1.0, type=float)
     out = runner.snapshot(since)
     out["sessions"] = registry.count()   # the room, arriving (M34)
+    # M44: which class's board this payload carries (the snapshot's
+    # leaderboard/bests scoped themselves off this same request).
+    # None = everyone — Unassigned viewers and the projector.
+    out["board_period"] = _viewer_period()
     return jsonify(out)
 
 
@@ -1287,6 +1292,32 @@ def clean_label(raw):
     return " ".join(raw.split())[:MAX_LABEL_CHARS] or None
 
 
+def _attempt_period():
+    """The period to stamp on an attempt (M44): the requesting session's.
+
+    Attempts are only ever built during the owning session's poll or
+    answer, so the request's cookie IS that session's claim. "" for the
+    default session, Unassigned devices, tests and the console — old
+    records have no period key at all, and `.get(..., "")` makes the
+    two read the same."""
+    if not has_request_context():
+        return ""
+    return _cookie_period() or ""
+
+
+def _viewer_period():
+    """The period whose BOARD this request should see: the viewer's own
+    class, or None (everyone) for Unassigned viewers — which is exactly
+    what the projector, having skipped the join screen, should show —
+    and for non-request callers (tests, the console)."""
+    if not has_request_context():
+        return None
+    return _cookie_period() or None
+
+
+_REQUEST_SCOPE = object()    # sentinel: "scope to the request's viewer"
+
+
 def build_attempt(loop, name, report, score, label=None, mode="challenge",
                   events=None):
     """One finished run as a log record (Phase 8 kickoff SS5 fields).
@@ -1315,6 +1346,9 @@ def build_attempt(loop, name, report, score, label=None, mode="challenge",
         # crisis attempt is only readable later if the log says which
         # events the team faced (kickoff SS5).
         "events": list(events or ()),
+        # -- appended at M44: whose CLASS this run belongs to. Stamped
+        # at build time, never inferred later; "" = Unassigned.
+        "period": _attempt_period(),
     }
 
 
@@ -1336,22 +1370,32 @@ def log_attempt(record):
         return stored, None
 
 
-def challenge_runs(loop, name):
+def challenge_runs(loop, name, period=_REQUEST_SCOPE):
     """Every logged run of ONE challenge, best first.
 
     Ties go to the earlier run — to take the top spot you have to BEAT
     it, not match it.
+
+    `period` (M44): a period name shows that class's runs only; None
+    shows everyone. The default scopes to the request's viewer — their
+    own class, or everyone for Unassigned viewers and non-request
+    callers. Records from before M44 have no period key and read as ""
+    (Unassigned), so old logs stay whole on the all-scope board.
     """
+    if period is _REQUEST_SCOPE:
+        period = _viewer_period()
     runs = [a for a in ATTEMPTS
             if a.get("loop") == loop and a.get("name") == name
-            and a.get("mode") == "challenge"]
+            and a.get("mode") == "challenge"
+            and (period is None or a.get("period", "") == period)]
     return sorted(runs, key=lambda a: (-(a.get("points") or 0),
                                        a.get("wall_time") or ""))
 
 
-def best_attempt(loop, name):
-    """The best run of one challenge so far, for the card's line."""
-    runs = challenge_runs(loop, name)
+def best_attempt(loop, name, period=_REQUEST_SCOPE):
+    """The best run of one challenge so far, for the card's line —
+    scoped like the board: your class's best, not the school's (M44)."""
+    runs = challenge_runs(loop, name, period=period)
     if not runs:
         return None
     best = runs[0]
@@ -1363,16 +1407,19 @@ def best_attempt(loop, name):
 LEADERBOARD_LIMIT = 20      # a class period has teams, not thousands
 
 
-def leaderboard(loop, name, limit=LEADERBOARD_LIMIT):
+def leaderboard(loop, name, limit=LEADERBOARD_LIMIT,
+                period=_REQUEST_SCOPE):
     """One compact line per run, best first (M27).
 
     Read straight off the log — the browser gets the same numbers the
     report cards showed, so a leaderboard can never drift from them.
+    Scoped to the viewer's class by default (M44); head-to-head compare
+    stays cross-period on purpose — racing another class is a feature.
     """
     return [{"id": a.get("id"), "label": a.get("label"),
              "points": a.get("points"), "medal": a.get("medal"),
              "met": a.get("met"), "wall_time": a.get("wall_time")}
-            for a in challenge_runs(loop, name)[:limit]]
+            for a in challenge_runs(loop, name, period=period)[:limit]]
 
 
 def _summary(att):
@@ -2253,6 +2300,7 @@ def build_case_attempt(loop, case_id, grade, label=None):
         "rows": grade["rows"],       # the report card, verbatim
         "answer": grade["answer"],
         "correct": grade["correct"],
+        "period": _attempt_period(),   # appended at M44, as above
     }
 
 
