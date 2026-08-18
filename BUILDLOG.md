@@ -18,7 +18,20 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
+- **Committed:** M43 — Phase 11 underway (spec:
+  `vital_loop_phase11_kickoff.md`, scoped 2026-08-18: period codes /
+  join screen + teacher dashboard). Periods exist: `periods.txt` is the
+  teacher's list, a skippable first-visit join screen claims a period
+  and team name into cookies (`vl_period`/`vl_team`, the vl_sid
+  pattern — page sets, server only reads), the registry mirrors the
+  claims, and a footer badge proves the join stuck. Missing/empty
+  `periods.txt` = joining quietly off. The cookieless world (verify,
+  pytest, curl) is untouched.
+- **Next up:** M44 — the leaderboard learns periods (`period` appended
+  to ATTEMPT_FIELDS, boards scoped to the viewer's period, the
+  projector/Unassigned sees everyone). Then M45 `/teacher` (PIN + room
+  list), M46 who's-stuck flags, M47 full pass + phase close.
+- **Phase 10 (for reference):** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
   `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
   180 mg/dL spills into the urine and drags water out with it, and the
   sugar still in the blood pulls on the osmoreceptors directly. A
@@ -28,17 +41,13 @@ Entry format:
   before the coupling was written and by an app-level check that the
   three original pages still offer what they offered.
   Remote: https://github.com/gatorryan6-oss/vitalloop
-- **Next up:** STOPPED for confirmation before Phase 11. Candidates:
-  1. **Teacher dashboard** — a live who's-stuck view of the room's
-     sessions (deferred from Phase 10's scope choice).
-  2. **Period codes / join screen** — grouping sessions by class period
-     so the leaderboard can be scoped to one period.
-  3. **The concentrating ceiling on the water loop's OWN solute.** M20
+- **Deferred candidates (kept from the Phase 11 scope choice):**
+  1. **The concentrating ceiling on the water loop's OWN solute.** M20
      knowingly left `urine_osm` un-ceilinged after a salt bolus, and
      M37 deliberately did NOT fix it (Phase 6 is not Phase 10's to
      rewrite). It is a real physiological wrinkle and a small, honest
      piece of work whenever it is wanted.
-  4. **Hemoconcentration**, measured and deliberately deferred at M38:
+  2. **Hemoconcentration**, measured and deliberately deferred at M38:
      worth +3 to +9 mg/dL over a class period, which is real and
      invisible. Would matter only if a multi-day scenario ever arrives.
 - **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
@@ -77,7 +86,37 @@ Entry format:
 
 ## Milestones
 
-## 2026-08-17 — M42: The full pass, and Phase 10 closes
+## 2026-08-18 — M43: Periods exist — periods.txt, the join screen, the badge
+- Shipped: Phase 11 opens (spec committed first: teacher dashboard +
+  period codes, interview 2026-08-18, all three recommended options
+  taken — skippable join screen / `periods.txt` / teacher PIN).
+  `periods.py` (parser: comments, blanks, dupes, order kept, capped at
+  12; missing/empty file → `[]` = joining QUIETLY OFF), seed
+  `periods.txt` (P1–P7), registry mirrors `period`/`team` claims from
+  cookies (`runners_for` grew optional kwargs; new read-only
+  `identity(sid)` that never seats or touches `last_seen`), skippable
+  first-visit overlay (only rendered when the list is non-empty), and
+  the footer badge ("P3 — The Mongooses" / "Unassigned"). `periods.py`
+  + `periods.txt` added to verify.py's SERVED_SOURCES — an edited
+  period list on a stale server now fails verification by name. 8 new
+  invariants (170 total pass) + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. Cookie semantics: ABSENT `vl_period` = never asked (overlay's
+     cue); EMPTY = asked-and-skipped (Unassigned, never asked again);
+     a name not on the teacher's list (stale year-old cookie) counts
+     as Unassigned, never an error. The cookie is the SOURCE OF TRUTH;
+     the registry only mirrors it — which is why idle sweeps and
+     server restarts still cost a student nothing.
+  2. Team names pass through `clean_label` (M27) — one hygiene rule
+     for every name in the app.
+  3. VERIFIED LIVE in the browser (DOM-read, as at M39–M42: the
+     preview pane could not composite): fresh device → overlay with
+     all 7 periods, Join disabled until a pick; P3 + "The Mongooses"
+     → badge and encoded cookies; reload → no overlay, badge holds;
+     cleared cookies → overlay returns; Skip → "Unassigned", empty
+     cookie; no console errors; sim still polling underneath.
 - Shipped: the M42 contract (3 tests). **The full pass, four loops
   wide** — every loop proved to carry the whole grammar (preset,
   plain challenge, crisis, ≥2 cases, CSV columns, answer vocabulary,

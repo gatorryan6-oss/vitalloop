@@ -30,6 +30,67 @@ if (!document.cookie.split("; ").some((c) => c.startsWith("vl_sid="))) {
                     "; path=/; max-age=31536000; SameSite=Lax";
 }
 
+/* M43: the room learns names. Period and team ride in cookies the page
+   sets and the server only reads — the vl_sid pattern. An ABSENT
+   vl_period means "never asked" (the overlay's cue); an EMPTY one means
+   "asked, skipped": Unassigned, and never asked again. */
+function getCookie(name) {
+  const hit = document.cookie.split("; ")
+    .find((c) => c.startsWith(name + "="));
+  return hit === undefined
+    ? null : decodeURIComponent(hit.slice(name.length + 1));
+}
+
+function setCookie(name, value) {
+  document.cookie = name + "=" + encodeURIComponent(value) +
+                    "; path=/; max-age=31536000; SameSite=Lax";
+}
+
+/* The footer badge: proof the join stuck, legible from the back row.
+   Blank until the device has answered the join question (or forever,
+   when joining is off and no old cookie is around). */
+function renderPeriodBadge() {
+  const el = document.getElementById("periodBadge");
+  if (!el) return;
+  const period = getCookie("vl_period");
+  if (period === null) { el.textContent = ""; return; }
+  const team = getCookie("vl_team");
+  el.textContent = period
+    ? period + (team ? " — " + team : "")
+    : "Unassigned";
+}
+
+(function wireJoin() {
+  renderPeriodBadge();
+  const overlay = document.getElementById("joinOverlay");
+  if (!overlay) return;                       // joining is off (M43)
+  if (getCookie("vl_period") !== null) return;   // already answered
+  overlay.hidden = false;
+  const go = document.getElementById("joinGo");
+  let picked = null;
+  overlay.querySelectorAll(".join-period").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      picked = btn.dataset.period;
+      overlay.querySelectorAll(".join-period").forEach(
+        (b) => b.classList.toggle("selected", b === btn));
+      go.disabled = false;
+    });
+  });
+  go.addEventListener("click", () => {
+    if (picked === null) return;
+    setCookie("vl_period", picked);
+    setCookie("vl_team",
+              document.getElementById("joinTeam").value.trim());
+    overlay.hidden = true;
+    renderPeriodBadge();
+  });
+  document.getElementById("joinSkip").addEventListener("click", () => {
+    setCookie("vl_period", "");
+    overlay.hidden = true;
+    renderPeriodBadge();
+  });
+})();
+
 let activeLoop = "temp";         // which loop the page is showing
 const buffers = {                // engine records per loop, oldest first
   temp: { pts: [], lastT: -1 },

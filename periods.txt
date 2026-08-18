@@ -1,0 +1,14 @@
+# Vital Loop — class periods (M43). One per line, in the order they
+# should appear on the join screen. Lines starting with # and blank
+# lines are ignored. Edit in Notepad, then restart the app (run.bat)
+# to pick up changes.
+#
+# Delete or comment out every line to turn the join screen off — the
+# app runs exactly as before, everyone Unassigned.
+P1
+P2
+P3
+P4
+P5
+P6
+P7

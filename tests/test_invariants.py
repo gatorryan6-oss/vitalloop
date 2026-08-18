@@ -337,6 +337,24 @@ The water engine API contract (built at M20):
     sim.drinks()                # intake event log, oldest first
     sim.state() / sim.history() / sim.reset()   # as in the other engines
 
+The rooms API contract (built at M43, Phase 11):
+
+    import periods
+    periods.load_periods(path=PERIODS_FILE)
+                                      # -> [names], teacher's order, deduped;
+                                      # missing/empty file -> [] = joining
+                                      # QUIETLY OFF (no overlay, no error)
+    app.PERIODS                       # the launch-time list the page renders
+    registry.runners_for(sid, period=None, team=None)
+                                      # None = no claim (changes nothing);
+                                      # "" = a real claim: Unassigned.
+                                      # The COOKIE is the source of truth -
+                                      # the registry only mirrors it, so
+                                      # sweeps and restarts cost nothing.
+    registry.identity(sid)            # -> {"period","team"} or None.
+                                      # READ-ONLY: never seats a session,
+                                      # never touches last_seen.
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -4282,3 +4300,141 @@ def test_engine_imports_no_web_framework():
     assert not offenders, (
         "engine/ must stay pure Python (kickoff SS3) but imports web "
         f"frameworks: {offenders}")
+
+
+# ================= M43: periods and the join screen ========================
+# Phase 11 begins: a device may claim a class period and a team name. The
+# claims ride in cookies the page sets and the server only reads (the
+# vl_sid pattern), the teacher's list lives in periods.txt, and the whole
+# feature must switch itself OFF quietly when that file is missing or
+# empty — the join step can never block the lesson (Phase 11 kickoff SS2).
+
+def _periods_module():
+    if not (ROOT / "periods.py").exists():
+        pytest.skip("periods.py doesn't exist yet - it arrives at M43")
+    import periods
+    return periods
+
+
+def _rooms_app():
+    import app as vital_app
+    if not hasattr(vital_app, "PERIODS"):
+        pytest.skip("app.PERIODS doesn't exist yet - it arrives at M43")
+    return vital_app
+
+
+def test_periods_file_parses_comments_blanks_dupes_and_order(tmp_path):
+    periods = _periods_module()
+    f = tmp_path / "periods.txt"
+    f.write_text("# the teacher's list\n\nP1\n  P3  \nP1\nP7\n# done\n",
+                 encoding="utf-8")
+    assert periods.load_periods(f) == ["P1", "P3", "P7"], (
+        "comments and blanks ignored, whitespace stripped, duplicates "
+        "dropped, and the teacher's order kept - the join screen renders "
+        "this list verbatim")
+
+
+def test_missing_or_empty_periods_file_turns_joining_off(tmp_path):
+    periods = _periods_module()
+    assert periods.load_periods(tmp_path / "not_there.txt") == [], (
+        "a missing periods.txt must mean [] - joining quietly off, "
+        "never an exception at launch")
+    f = tmp_path / "comments_only.txt"
+    f.write_text("# nothing today\n\n", encoding="utf-8")
+    assert periods.load_periods(f) == [], (
+        "a file of nothing but comments is an empty list too")
+
+
+def test_the_join_overlay_renders_only_when_joining_is_on(monkeypatch):
+    vital_app = _rooms_app()
+    client = vital_app.app.test_client()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P1", "P4"])
+    page = client.get("/").data.decode("utf-8")
+    assert 'id="joinOverlay"' in page and 'data-period="P4"' in page, (
+        "with periods on the list, the page must carry the join screen "
+        "and a button per period")
+    monkeypatch.setattr(vital_app, "PERIODS", [])
+    page = client.get("/").data.decode("utf-8")
+    assert 'id="joinOverlay"' not in page, (
+        "an empty periods.txt must remove the join screen from the page "
+        "entirely - quietly off, not an empty overlay")
+
+
+def test_a_session_wears_its_period_and_team(fresh_registry, monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "PERIODS"):
+        pytest.skip("app.PERIODS doesn't exist yet - it arrives at M43")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P1", "P3"])
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_sid", "badge-kid")
+    c.set_cookie("vl_period", "P3")
+    c.set_cookie("vl_team", "The%20Mongooses")   # JS encodeURIComponent
+    assert c.get("/state?loop=temp").status_code == 200
+    assert vital_app.registry.identity("badge-kid") == {
+        "period": "P3", "team": "The Mongooses"}, (
+        "the session must mirror the cookies' period and team - the "
+        "room views (M45) read this")
+
+
+def test_a_period_off_the_list_counts_as_unassigned(fresh_registry,
+                                                    monkeypatch):
+    """Last year's cookie, or hand-edited junk: never an error on a
+    student's phone, just Unassigned."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "PERIODS"):
+        pytest.skip("app.PERIODS doesn't exist yet - it arrives at M43")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P1"])
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_sid", "stale-kid")
+    c.set_cookie("vl_period", "P9")
+    assert c.get("/state?loop=temp").status_code == 200
+    assert vital_app.registry.identity("stale-kid")["period"] == "", (
+        'a period that is not on the teacher\'s list must land as "" '
+        "(Unassigned), not as a made-up period of one")
+
+
+def test_the_cookieless_world_never_joins_anything(fresh_registry):
+    """verify.py, pytest and curl present no vl_sid - a period cookie
+    alone must seat nobody, and the default session stays periodless,
+    which is what keeps eleven phases of tests meaning what they meant."""
+    vital_app = fresh_registry
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_period", "P1")              # note: no vl_sid
+    assert c.get("/state?loop=temp").status_code == 200
+    assert vital_app.registry.count() == 0, (
+        "a period claim without a session id seated someone in the "
+        "registry - the cookieless world must stay the module-level "
+        "default session, untouched")
+
+
+def test_a_swept_session_gets_its_period_back_from_the_cookie():
+    """Eviction and restarts stay free BECAUSE the cookie is the source
+    of truth: the browser re-presents its claims on the next request."""
+    from sessions import SessionRegistry
+    t = {"now": 0.0}
+    reg = SessionRegistry(lambda: {"temp": object()}, max_sessions=5,
+                          idle_s=100, clock=lambda: t["now"])
+    reg.runners_for("kid", period="P3", team="The Mongooses")
+    t["now"] = 500.0                             # long past idle_s
+    reg.runners_for("kid", period="P3", team="The Mongooses")
+    assert reg.identity("kid") == {"period": "P3",
+                                   "team": "The Mongooses"}, (
+        "a swept session that rejoined with the same cookies lost its "
+        "period - eviction must cost a student nothing")
+    # And a touch with NO claims (None) must never erase a real one.
+    reg.runners_for("kid")
+    assert reg.identity("kid")["period"] == "P3", (
+        "a claimless touch (period=None) erased a stored period - None "
+        'means "no claim", only "" and real names are claims')
+
+
+def test_identity_is_read_only_and_never_seats_anyone():
+    from sessions import SessionRegistry
+    if not hasattr(SessionRegistry, "identity"):
+        pytest.skip("SessionRegistry.identity doesn't exist yet - M43")
+    reg = SessionRegistry(lambda: {"temp": object()}, max_sessions=5,
+                          idle_s=100)
+    assert reg.identity("ghost") is None, (
+        "asking about an unknown sid must answer None, not create it")
+    assert reg.count() == 0, (
+        "identity() seated a session - the room views must be read-only")

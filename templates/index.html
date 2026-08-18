@@ -577,7 +577,36 @@
 
 <div id="tooltip" hidden></div>
 
+{% if periods %}
+<!-- M43: the join screen. First visit only (the page's JS shows it when
+     no vl_period cookie exists), skippable on purpose — the join step
+     can never block the lesson. Not rendered at all when periods.txt
+     is empty or missing: joining quietly off. -->
+<div id="joinOverlay" class="join-overlay" hidden>
+  <div class="join-card">
+    <h2>Join your class</h2>
+    <p class="join-hint">Pick your period and name your team. Skipping is
+      fine — you can still do everything, you just won't be on your
+      class's leaderboard.</p>
+    <div class="join-periods">
+      {% for p in periods %}
+      <button type="button" class="join-period" data-period="{{ p }}">{{ p }}</button>
+      {% endfor %}
+    </div>
+    <label class="join-team-label">Team name
+      <input id="joinTeam" maxlength="24" autocomplete="off"
+             placeholder="optional — e.g. The Mongooses">
+    </label>
+    <div class="join-actions">
+      <button id="joinGo" type="button" disabled>Join</button>
+      <button id="joinSkip" type="button">Skip — just explore</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <footer class="room-footer">
+  <span id="periodBadge" class="period-badge"></span>
   <span id="sessionCount"></span>
   <span class="worksheet-links">Worksheets:
     <a href="/worksheet/temp">temperature</a> &middot;

@@ -34,7 +34,7 @@ class SessionRegistry:
         self._lock = threading.Lock()
         self._sessions = {}              # sid -> {"runners", "last_seen"}
 
-    def runners_for(self, sid):
+    def runners_for(self, sid, period=None, team=None):
         """This session's runners, created fresh on first sight.
 
         Touching a session keeps it alive; idle ones are swept on every
@@ -42,6 +42,13 @@ class SessionRegistry:
         school day. An evicted (or never-seen) id is not an error — it
         gets a fresh healthy sandbox, which is also what makes a server
         restart harmless to the class: everyone quietly starts over.
+
+        `period` / `team` (M43) are the request's identity claims,
+        mirrored onto the session for the room views. None means "no
+        claim" and changes nothing; "" is a real claim (Unassigned by
+        choice). The COOKIE stays the source of truth — a swept session
+        that rejoins re-presents its claims and gets them right back,
+        which is what keeps eviction and restarts free.
         """
         now = self._clock()
         with self._lock:
@@ -53,10 +60,25 @@ class SessionRegistry:
                         f"the room is full ({self.max_sessions} devices "
                         "are already playing) — close the app on a spare "
                         "tab or device, or ask the teacher to restart it")
-                entry = {"runners": self._factory(), "last_seen": now}
+                entry = {"runners": self._factory(), "last_seen": now,
+                         "period": None, "team": None}
                 self._sessions[sid] = entry
             entry["last_seen"] = now
+            if period is not None:
+                entry["period"] = period
+            if team is not None:
+                entry["team"] = team
             return entry["runners"]
+
+    def identity(self, sid):
+        """{"period", "team"} for a live session, else None. Read-only:
+        never seats anyone, never touches last_seen — a room view must
+        not keep a closed tab alive."""
+        with self._lock:
+            entry = self._sessions.get(sid)
+            if entry is None:
+                return None
+            return {"period": entry["period"], "team": entry["team"]}
 
     def count(self):
         """Live sessions right now (the M34 footer reads this)."""

@@ -16,10 +16,12 @@ import io
 import re
 import threading
 import time
+from urllib.parse import unquote
 
 from flask import Flask, Response, jsonify, render_template, request
 
 import attempts
+import periods
 from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
 from engine.body import Body
@@ -327,13 +329,44 @@ SESSION_IDLE_S = 30 * 60
 registry = SessionRegistry(_make_runners, MAX_SESSIONS, SESSION_IDLE_S)
 
 
+# The teacher's period list (M43), read once at launch — periods.txt is
+# in verify.py's SERVED_SOURCES, so a server holding last year's list
+# fails verification by name instead of quietly serving stale periods.
+PERIODS = periods.load_periods()
+
+
+def _cookie_period():
+    """The period this request claims: a name off the teacher's list,
+    "" for Unassigned (skipped, or a stale cookie naming a period that
+    is no longer on the list — never an error on a student's phone),
+    or None for no claim at all (cookieless clients, and every client
+    from before M43)."""
+    raw = request.cookies.get("vl_period")
+    if raw is None:
+        return None
+    claimed = unquote(raw)
+    return claimed if claimed in PERIODS else ""
+
+
+def _cookie_team():
+    """The team name this request claims, through the same hygiene as
+    the challenge cards' labels (M27), or None for no claim."""
+    raw = request.cookies.get("vl_team")
+    if raw is None:
+        return None
+    return clean_label(unquote(raw))
+
+
 def _session_runners():
     """The runners this REQUEST addresses: its session's own, or the
-    default set for a client with no session id. May raise RoomFull."""
+    default set for a client with no session id. May raise RoomFull.
+    A session's period/team claims (M43) refresh on every touch — the
+    cookie is the source of truth, the registry only mirrors it."""
     sid = request.cookies.get("vl_sid")
     if not sid:
         return runners
-    return registry.runners_for(sid[:64])
+    return registry.runners_for(sid[:64], period=_cookie_period(),
+                                team=_cookie_team())
 
 
 def _runner():
@@ -365,7 +398,10 @@ def index():
     return render_template("index.html", challenges=CHALLENGES,
                            answers=ANSWER_OPTIONS,
                            case_counts={loop: len(entries)
-                                        for loop, entries in CASES.items()})
+                                        for loop, entries in CASES.items()},
+                           # M43: an empty list removes the join screen
+                           # from the page entirely — joining quietly off.
+                           periods=PERIODS)
 
 
 @app.route("/state")

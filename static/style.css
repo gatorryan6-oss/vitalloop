@@ -670,3 +670,67 @@ main {
   font-size: 0.85rem;
   padding: 0.6rem 0 1rem;
 }
+.room-footer > span { margin: 0 0.9rem; }
+
+/* M43: the badge — proof the join stuck, quiet but legible. */
+.period-badge { color: var(--ink-2); font-weight: 650; }
+
+/* M43: the join screen. One card, big targets — it is read on phones. */
+.join-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 11, 11, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 1rem;
+}
+.join-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.4rem 1.6rem;
+  max-width: 26rem;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(11, 11, 11, 0.25);
+}
+.join-card h2 { margin: 0 0 0.3rem; }
+.join-hint { color: var(--ink-2); font-size: 0.95rem; margin: 0 0 0.9rem; }
+.join-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.join-period { min-width: 3.2rem; font-weight: 600; }
+.join-period.selected {
+  background: var(--series-core);
+  border-color: var(--series-core);
+  color: var(--surface);
+}
+.join-team-label {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  margin-bottom: 1rem;
+}
+.join-team-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  background: var(--page);
+}
+.join-actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+#joinGo {
+  background: var(--series-core);
+  border-color: var(--series-core);
+  color: var(--surface);
+  font-weight: 600;
+}
+#joinGo:disabled { opacity: 0.45; cursor: default; }
+#joinSkip { color: var(--ink-2); }
