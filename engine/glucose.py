@@ -273,8 +273,15 @@ class GlucoseSimulation:
             uptake += INSULIN_DISPOSAL_MAX * effective
             if self._exercise:
                 uptake += EXERCISE_UPTAKE
+            # The kidney spill, given its own name at M37 so another loop
+            # can read it. Same arithmetic, same place in the sum, and it
+            # is still counted inside `uptake` — this is a READOUT, not a
+            # re-plumbing, which is what keeps Phase 2-9 byte-identical.
+            renal_loss = 0.0
             if self._glucose > RENAL_THRESHOLD:
-                uptake += RENAL_COEF * (self._glucose - RENAL_THRESHOLD) / 100.0
+                renal_loss = (RENAL_COEF
+                              * (self._glucose - RENAL_THRESHOLD) / 100.0)
+            uptake += renal_loss
 
             net = (gut_flux + liver_flux - uptake) * minutes
             self._glucose = max(0.0, self._glucose + net)
@@ -282,12 +289,13 @@ class GlucoseSimulation:
             self._append_record(error=error, insulin=insulin,
                                 glucagon=glucagon, uptake=uptake,
                                 liver_flux=liver_flux,
-                                injected=injected, total=total)
+                                injected=injected, total=total,
+                                renal_loss=renal_loss)
 
     # ---------------- the data product (Phase 2 kickoff SS5) ----------------
 
     def _append_record(self, error, insulin, glucagon, uptake, liver_flux,
-                       injected, total):
+                       injected, total, renal_loss=0.0):
         self._history.append({
             "t": self._t,
             "glucose": self._glucose,
@@ -309,6 +317,9 @@ class GlucoseSimulation:
             "pump_enabled": self._pump_enabled,
             "pump_rate": self._pump_rate,
             "insulin_sensitivity": self._insulin_sensitivity,
+            # grown at M37 (Phase 10): the kidney spill, reported so the
+            # water loop can read it. Appended, like every growth since M12.
+            "renal_loss": renal_loss,
         })
 
     def history(self):

@@ -2255,13 +2255,17 @@ CSV_FIELDS = {
                 # grown at M15 with the Phase 4 pump fields, same rule
                 "pump_enabled", "pump_rate",
                 # grown at M17 with the Phase 5 disease knob, same rule
-                "insulin_sensitivity"],
+                "insulin_sensitivity",
+                # grown at M37 with the Phase 10 coupling readout, same rule
+                "renal_loss"],
     "water": ["t", "osmolarity", "water_liters", "gut_water", "exercise",
               "error", "adh", "thirst", "urine_rate", "urine_osm",
               "adh_enabled", "kidney_enabled", "water_access",
               "sensor_enabled",
               # grown at M31 with the Phase 9 SIADH knob, same rule
-              "adh_override"],
+              "adh_override",
+              # grown at M37 with the Phase 10 coupling term, same rule
+              "tubular_load"],
 }
 
 

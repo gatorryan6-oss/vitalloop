@@ -41,6 +41,11 @@ SWEAT_ML_MIN = 12.0              # while exercising / in the heat
 GUT_ABSORB_ML_MIN = 40.0         # drunk water entering the blood
 
 # ---- Solute flows (mOsm/min) ----
+MAX_URINE_OSM = 1200.0           # mOsm/L — the concentrating CEILING. The
+                                 # kidney can pack this much solute into a
+                                 # liter and no more, so solute that must
+                                 # leave drags at least this much water with
+                                 # it. Idle until something couples in (M37).
 WASTE_PRODUCTION = 0.45          # urea etc. made by metabolism, ~650/day
 EXCRETION_GAIN = 0.005           # extra clearance per mOsm above normal
 EXCRETION_FLOOR, EXCRETION_CAP = 0.05, 3.0
@@ -75,6 +80,8 @@ class WaterSimulation:
         self._enabled = {"adh": True, "kidney": True, "access": True}
         self._sensor_enabled = True
         self._adh_override = None        # SIADH knob (M31), None = healthy
+        self._tubular_load = 0.0         # mOsm/min arriving from ANOTHER
+                                         # loop (M37); 0.0 = uncoupled
         self._drinks = []                # {"t", "ml", "auto"}
         self._t = 0.0
         self._history = []
@@ -131,6 +138,27 @@ class WaterSimulation:
             raise ValueError("adh override is a 0-1 activity level")
         self._adh_override = level
 
+    def set_tubular_load(self, mosm_per_min):
+        """Osmoles arriving in the tubule from OUTSIDE this loop (M37).
+
+        Phase 10's coupling term: filtered glucose the kidney could not
+        reabsorb. They have to be excreted, and because no kidney can
+        concentrate past MAX_URINE_OSM, water leaves with them —
+        osmotic diuresis. The load is NOT added to the plasma solute
+        pool: that sugar was already subtracted from the blood by the
+        glucose loop's own budget, and counting it twice would invent
+        solute out of nothing.
+
+        0.0 (the default) means uncoupled, and the loop behaves exactly
+        as it has since M20.
+        """
+        mosm_per_min = float(mosm_per_min)
+        if mosm_per_min < 0.0:
+            raise ValueError(
+                "a tubular load is what arrives in the urine, so it "
+                "cannot be negative")
+        self._tubular_load = mosm_per_min
+
     def drinks(self):
         """The intake event log, oldest first — a data product, like
         doses(). Auto-drinks are marked: the class can SEE the loop
@@ -176,7 +204,22 @@ class WaterSimulation:
                 WASTE_PRODUCTION
                 + EXCRETION_GAIN * (self._solutes - SOLUTES_MOSM),
                 EXCRETION_FLOOR, EXCRETION_CAP)
-            urine_osm = excretion / (urine_rate / 1000.0)
+            # Solute arriving from ANOTHER loop (M37) drags its OWN water
+            # out on top of whatever ADH was already allowing: it cannot
+            # be packed tighter than MAX_URINE_OSM, so that much water
+            # goes with it whether the body can spare it or not. This is
+            # why osmotic diuresis floods while ADH is pinned at maximum —
+            # the exact opposite of insipidus.
+            #
+            # Deliberately ADDITIVE, and deliberately only about the
+            # foreign solute: applying the ceiling to this loop's own
+            # excretion too would change what a salt bolus does, and
+            # Phase 6 is not ours to rewrite (M20 decision 3 knowingly
+            # left urine_osm un-ceilinged there). With no load this line
+            # is exactly zero and the loop is the loop it always was.
+            urine_rate += self._tubular_load / MAX_URINE_OSM * 1000.0
+            urine_osm = ((excretion + self._tubular_load)
+                         / (urine_rate / 1000.0))
 
             # Water budget (mL/min -> L per tick).
             absorbed = min(GUT_ABSORB_ML_MIN * minutes, self._gut_water)
@@ -215,6 +258,7 @@ class WaterSimulation:
             "water_access": self._enabled["access"],
             "sensor_enabled": self._sensor_enabled,
             "adh_override": self._adh_override,
+            "tubular_load": self._tubular_load,
         })
 
     def history(self):

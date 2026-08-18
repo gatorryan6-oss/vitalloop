@@ -18,7 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
+- **Committed:** M37 — Phase 10 underway. Spec:
+  `vital_loop_phase10_kickoff.md` (scope picked 2026-08-17:
+  **cross-loop coupling only**; teacher dashboard and period codes move
+  to Phase 11). All three kickoff-interview questions were answered:
+  a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
+  only. The loops now meet.
+- **Next up:** M38 — the return leg (dehydration feeding back on the
+  sugar), sweep-first and deferrable if the sweep says it doesn't
+  teach. Then M39 tab, M40 diagram, M41 game layer, M42 close.
+- **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
   `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
   device on the room's wifi gets its own three loops (M33) through the
   double-click LAN launch (M34), the water loop carries its fourth
@@ -53,6 +62,86 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M37: The loops meet (Phase 10 starts)
+- Shipped: Phase 10 kickoff (`vital_loop_phase10_kickoff.md`) and
+  `engine/body.py` — a `Body` owning one glucose sim and one water sim,
+  stepped in lockstep, carrying the kidney spill across each tick.
+  Glucose record grows `renal_loss`; water grows `tubular_load` and
+  `set_tubular_load()`; both appended to their CSVs. New frozen
+  `BODY_FIELDS` schema. `python -m engine.body_demo`: an untreated day,
+  then the two siphons side by side. M37 contract — 11 tests: both
+  engines' FULL Phase 9 records hashed from committed code BEFORE the
+  edit and unchanged after; the coupling is a THRESHOLD not a leak (a
+  healthy body's water loop compared tick-for-tick against a standalone
+  one, byte-identical); the mellitus signature; the mellitus/insipidus
+  contrast; the conversion derived not typed; load validation; unknown
+  part refused; determinism; and neither engine importing the other.
+  147 invariants + verify pass; all three CSVs still 200.
+- Deferred: nothing. The return leg is M38 as specced.
+- Open bugs: none.
+- Decisions:
+  1. **HALF THE COUPLING WAS ALREADY BUILT, and finding that changed the
+     milestone.** `engine/glucose.py` has spilled sugar above 180 mg/dL
+     since Phase 2 (`RENAL_THRESHOLD`, `RENAL_COEF`) — folded silently
+     into `uptake`. So the glucose side needed NO behavior change: M37
+     only gives the existing term a name (`renal_loss`) while leaving it
+     inside `uptake`. A readout, not a re-plumbing, which is why
+     byte-identical Phase 2–9 glucose is structural rather than hoped
+     for.
+  2. **THE REGRESSION GUARD CAUGHT ME OVERREACHING, exactly as designed.**
+     The first implementation made urine flow
+     `max(ADH_allows, total_solute / 1200)` — which enforces the
+     concentrating ceiling on the water loop's OWN excretion too, and so
+     changed what a salt bolus does. Two hashes went red. M20 decision 3
+     had knowingly left `urine_osm` un-ceilinged there, and Phase 6 is
+     not this phase's to rewrite. Rebuilt as ADDITIVE and foreign-solute
+     only: `urine_rate += tubular_load / MAX_URINE_OSM * 1000`. With no
+     load the line is exactly zero, both hashes went green, and the
+     coupled numbers barely moved (peak flow 3.0 → 3.14 mL/min). The
+     un-ceilinged salt-bolus urine osm remains a documented Phase 6
+     simplification and a Phase 11 candidate — noted, not silently
+     fixed.
+  3. **The unit conversion is DERIVED from the engine's own constant,
+     not typed.** `CARB_TO_MGDL = 5.56` means 1 g raises the pool
+     5.56 mg/dL, so the pool is 1000/5.56 = ~180 dL; glucose is
+     ~180 mg/mmol and does not dissociate; so 1 mg/dL/min of spill is
+     ~0.998 mOsm/min. The two 180s are a coincidence of THIS model's
+     pool size, not a law, so `body.py` computes the factor and a test
+     pins it to `CARB_TO_MGDL` — change the pool and the coupling
+     follows honestly instead of silently disagreeing.
+  4. **SWEEP FIRST, and the calibration needed no tuning at all.**
+     Sustained glucose → urine, straight off the mechanism: 250 mg/dL
+     → 2.2 L/day, 300 → 3.4, 350 → 4.6, 400 → 5.8, 500 → 8.2. Untreated
+     type 1 clinically runs 300–500 mg/dL and passes 3–6 L/day, so the
+     model brackets reality using only constants Phase 2 and Phase 6
+     chose for unrelated reasons. Nothing was fitted to make that
+     happen.
+  5. **An honest limit, logged rather than engineered around:** THIS
+     model's untreated type 1 averages 229 mg/dL over a fed day (fasting
+     plateau ~186), not the 300–500 of a real untreated patient, so its
+     12 h output is 1.42 L against a healthy 0.77 L — real polyuria,
+     but moderate. The mechanism is right and the disease is mild. Not
+     "fixed" by inventing severity: the demo shows the post-meal
+     stretches (glucose 330, spill 3.0 mg/dL/min, urine 3.17 mL/min at
+     1077 mOsm/L, ADH 0.87) where the story is unmistakable. A real
+     severity beat exists for M41 and costs no new physics — a thirsty
+     patient reaching for SUGARY drinks, which the app can already
+     express as `eat()` + `drink()`.
+  6. **Pins are measured, not hoped for.** First draft of the signature
+     test asserted mean urine osm > 900 while "flooding"; measured 838,
+     because a diabetic body that has just had a drink also floods —
+     dilutely — and so does a healthy one. Re-cut to judge only ticks
+     the SPILL is driving (`renal_loss > 1.0`): mean 980, min 704, ADH
+     never below 0.75. The pin now names the mechanism instead of a
+     side effect.
+  7. Measured signatures, for the record: MELLITUS 1.42 L/12 h at 980
+     mOsm/L with ADH 0.83; INSIPIDUS 8.64 L/12 h at 38 mOsm/L with ADH
+     0.00; HEALTHY 0.77 L and not one milligram spilled. Insipidus
+     passes six times the water and it is nearly pure — tasteless.
+     Mellitus passes less, loaded, with the hormone working the whole
+     time — honey-sweet. M23 taught those two words; this milestone is
+     where the class can finally read them off a chart.
 
 ## 2026-08-17 — M36: The lab pass, and Phase 9 closes
 - Shipped: the M36 contract in `tests/test_invariants.py` (2 tests).

@@ -560,19 +560,25 @@ GLUCOSE_FIELDS = {
     "pump_rate",        # U/h the pump algorithm chose this tick; 0.0 off
     # -- grown at M17 (Phase 5 kickoff SS5):
     "insulin_sensitivity",  # 0..1, how well tissues hear insulin; 1 healthy
+    # -- grown at M37 (Phase 10 kickoff SS5): the kidney spill, named so
+    # the water loop can read it. It was ALREADY happening (M6 folded it
+    # into `uptake`, where it still is) — this reports the component.
+    "renal_loss",       # mg/dL/min leaving in the urine above 180 mg/dL
 }
 
 PHASE3_FIELDS_ADDED = {"injected_insulin", "total_insulin", "iob_units",
                        "basal_rate"}
 PHASE4_FIELDS_ADDED = {"pump_enabled", "pump_rate"}
 PHASE5_FIELDS_ADDED = {"insulin_sensitivity"}
+PHASE10_FIELDS_ADDED = {"renal_loss"}
 
 # The record shapes as frozen at each phase's end — the stacked regression
 # guards (n) and (s) hash exactly these subsets of their scripted runs.
 PHASE2_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE3_FIELDS_ADDED
-                               - PHASE4_FIELDS_ADDED - PHASE5_FIELDS_ADDED)
+                               - PHASE4_FIELDS_ADDED - PHASE5_FIELDS_ADDED
+                               - PHASE10_FIELDS_ADDED)
 PHASE23_GLUCOSE_FIELDS = sorted(GLUCOSE_FIELDS - PHASE4_FIELDS_ADDED
-                                - PHASE5_FIELDS_ADDED)
+                                - PHASE5_FIELDS_ADDED - PHASE10_FIELDS_ADDED)
 
 # (k) sha256 of json.dumps(_scripted_run(Simulation), sort_keys=True),
 # recorded 2026-08-13 with M5 committed — the last Phase 1 state.
@@ -1225,7 +1231,9 @@ WATER_FIELDS = {
     "water_access",     # can prove they matter)
     "sensor_enabled",
     "adh_override",     # grown at M31 (Phase 9): the SIADH knob — appended,
-}                       # like every record growth since M12
+                        # like every record growth since M12
+    "tubular_load",     # grown at M37 (Phase 10): mOsm/min arriving in the
+}                       # tubule from ANOTHER loop; 0.0 = uncoupled
 
 
 def _water():
@@ -3554,6 +3562,276 @@ def test_siadh_is_in_the_diagnosis_game():
     assert case["answer"] == {"role": "control", "part": "pituitary"}, (
         "SIADH is a control-center failure - the machinery is intact "
         "and the signal is wrong, fever's pattern in a new loop")
+
+
+# ================= Phase 10: the loops meet ===============================
+# The first coupling in the project, and the rules that keep it honest:
+#
+#   * it is a THRESHOLD, not a leak. A healthy body's water loop must be
+#     byte-identical coupled or not, because healthy glucose never crosses
+#     180 mg/dL. If normal physiology feels the link at all, the link is
+#     wrong;
+#   * it may not rewrite an uncoupled lesson. Both engines carry a hash of
+#     their FULL Phase 9 record, recorded from committed code before the
+#     coupling was written;
+#   * mellitus and insipidus must stay tellable apart. Both flood. One
+#     floods DILUTE because the ADH signal is gone; the other floods
+#     CONCENTRATED while ADH is maximal, because osmoles are dragging
+#     water out. That contrast is the whole lesson and it is pinned.
+
+# (aaaa) sha256 of json.dumps of the FULL Phase 9 record of
+# _scripted_dosing_run / _scripted_water_run, both recorded 2026-08-17
+# with M36 committed — the last state before the loops met.
+GLUCOSE_PHASE9_HASH = \
+    "58b550b44b95fc620f7f88f5fb70d2ff1f1ae8e267ef14fc7488cf1a4075330d"
+WATER_PHASE9_HASH = \
+    "edb2469f464dc41dfc858816f35e6a33ab78cf7c5cbb2370d34f6398ad53bdc6"
+
+# Kickoff Phase 10 SS5: the frozen coupled-body record shape.
+BODY_FIELDS = {
+    "t",                # sim time, seconds
+    "glucose",          # mg/dL - the sugar loop's controlled variable
+    "insulin",
+    "glucagon",
+    "renal_loss",       # mg/dL/min spilling into the urine (the SOURCE)
+    "tubular_load",     # mOsm/min arriving in the tubule (the LINK)
+    "osmolarity",       # mOsm/L - the water loop's controlled variable
+    "water_liters",
+    "adh",
+    "thirst",
+    "urine_rate",       # mL/min - where the coupling shows up
+    "urine_osm",        # mOsm/L - and what tells mellitus from insipidus
+}
+
+
+def _body():
+    """The coupled body, or SKIP loudly if not built yet (M37)."""
+    if not (ENGINE_PKG / "body.py").exists():
+        pytest.skip("engine/body.py doesn't exist yet - it arrives at M37")
+    from engine.body import Body
+    return Body
+
+
+def _diabetic_day(Body, hours=12, meals=(2, 6, 10), grams=75, setup=None):
+    """An untreated day: three ordinary meals, no insulin."""
+    b = Body()
+    if setup:
+        setup(b)
+    meal_ticks = {int(h * 3600) for h in meals}
+    for tick in range(int(hours * 3600)):
+        if tick in meal_ticks:
+            b.eat(grams, 1.0)
+        b.step(1)
+    return b
+
+
+def test_glucose_phase9_record_unchanged_by_phase10():
+    """(aaaa) The spill readout may not move one recorded value."""
+    import hashlib
+    import json
+    GlucoseSimulation = _glucose()
+    records, _ = _scripted_dosing_run(GlucoseSimulation)
+    fields = sorted(set(records[0]) - PHASE10_FIELDS_ADDED)
+    subset = [{k: r[k] for k in fields} for r in records]
+    digest = hashlib.sha256(
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
+    assert digest == GLUCOSE_PHASE9_HASH, (
+        "the Phase 9 glucose record changed - naming the kidney spill must "
+        "be a READOUT, not a re-plumbing; `uptake` still includes it")
+
+
+def test_water_phase9_record_unchanged_by_phase10():
+    """(aaaa) And the water loop, uncoupled, is the loop it always was."""
+    import hashlib
+    import json
+    WaterSimulation = _water()
+    records, _ = _scripted_water_run(WaterSimulation)
+    fields = sorted(set(records[0]) - {"tubular_load"})
+    subset = [{k: r[k] for k in fields} for r in records]
+    digest = hashlib.sha256(
+        json.dumps(subset, sort_keys=True).encode()).hexdigest()
+    assert digest == WATER_PHASE9_HASH, (
+        "the Phase 9 water record changed - an uncoupled water loop must "
+        "behave exactly as it did before Phase 10 existed")
+
+
+def test_body_records_have_the_frozen_fields():
+    Body = _body()
+    b = Body()
+    b.step(5)
+    records = b.history()
+    assert records, "history() returned nothing after stepping"
+    for r in (records[0], records[-1], b.state()):
+        assert set(r.keys()) == BODY_FIELDS, (
+            f"Record fields {sorted(r.keys())} != frozen set "
+            f"{sorted(BODY_FIELDS)} (Phase 10 kickoff SS5)")
+
+
+def test_the_coupling_is_a_threshold_not_a_leak():
+    """(bbbb) A healthy body must not feel the link AT ALL. Its water loop
+    is compared tick-for-tick against a standalone one: identical, or the
+    coupling is leaking into normal physiology."""
+    Body = _body()
+    WaterSimulation = _water()
+    b = _diabetic_day(Body, hours=6, meals=(1, 3), grams=75)   # healthy
+    assert max(r["renal_loss"] for r in b.history()) == 0.0, (
+        "a healthy body spilled sugar - normal glucose never crosses the "
+        "180 mg/dL threshold, meals included")
+    assert max(r["tubular_load"] for r in b.history()) == 0.0
+
+    solo = WaterSimulation()
+    solo.step(6 * 3600)
+    coupled = b.water.history()
+    fields = [k for k in solo.state() if k != "tubular_load"]
+    for i, (a, c) in enumerate(zip(solo.history(), coupled)):
+        for k in fields:
+            assert a[k] == c[k], (
+                f"tick {i}: coupled water {k}={c[k]!r} but standalone "
+                f"{k}={a[k]!r} - a healthy body's water loop must be "
+                "byte-identical whether or not a sugar loop is attached")
+
+
+def test_untreated_mellitus_floods_with_sugar_loaded_urine():
+    """(bbbb) The signature: copious urine that is MAXIMALLY concentrated,
+    while ADH is high and working. The kidney is not failing to hold
+    water - it is being forced to let water go with the sugar."""
+    Body = _body()
+    b = _diabetic_day(Body, setup=lambda s:
+                      s.set_effector_enabled("beta", False))
+    h = b.history()
+    assert max(r["glucose"] for r in h) > 250.0, (
+        "an untreated day never got hyperglycemic enough to spill")
+    # Judged on ticks the SPILL is actually driving. A body that has just
+    # had a drink floods too, dilutely, and so does a healthy one — so
+    # "lots of urine" alone names nothing.
+    spilling = [r for r in h if r["renal_loss"] > 2.0]
+    signature = [r for r in spilling if r["urine_rate"] > 2.0
+                 and r["urine_osm"] > 800.0 and r["adh"] > 0.5]
+    assert len(signature) > 3600, (
+        f"only {len(signature)} ticks of copious-AND-concentrated urine at "
+        f"high ADH (out of {len(spilling)} spilling) - the mellitus "
+        "signature must be a stretch of the lesson, not a blip")
+    # And the water actually leaves: more urine than a healthy twin passes.
+    healthy = _diabetic_day(Body)
+    litres = sum(r["urine_rate"] for r in h) / 60.0 / 1000.0
+    healthy_litres = sum(r["urine_rate"] for r in healthy.history()) \
+        / 60.0 / 1000.0
+    assert litres > healthy_litres * 1.4, (
+        f"the diabetic body passed {litres:.2f} L against the healthy "
+        f"body's {healthy_litres:.2f} L - the polyuria must be visible")
+
+
+def test_insipidus_and_mellitus_flood_differently():
+    """(bbbb) The M23 naming payoff, as a check. Both diseases pass water;
+    the urine tells them apart, which is exactly why one was tasted and
+    called tasteless and the other tasted and called honey-sweet."""
+    Body = _body()
+    mellitus = _diabetic_day(Body, setup=lambda s:
+                             s.set_effector_enabled("beta", False))
+    insipidus = _diabetic_day(Body, setup=lambda s:
+                              s.set_effector_enabled("adh", False))
+
+    # Mellitus is judged while the sugar is driving; insipidus has no
+    # spill to judge by, so its flood is the whole flood.
+    m_flood = [r for r in mellitus.history() if r["renal_loss"] > 1.0]
+    i_flood = [r for r in insipidus.history() if r["urine_rate"] > 2.0]
+    assert m_flood and i_flood, "both diseases must actually flood"
+
+    m_osm = sum(r["urine_osm"] for r in m_flood) / len(m_flood)
+    i_osm = sum(r["urine_osm"] for r in i_flood) / len(i_flood)
+    assert m_osm > 800.0, (
+        f"mellitus urine averaged {m_osm:.0f} mOsm/L while flooding - it "
+        "must be LOADED, because solute is what is dragging the water")
+    assert i_osm < 200.0, (
+        f"insipidus urine averaged {i_osm:.0f} mOsm/L while flooding - it "
+        "must be DILUTE, because nothing is telling the kidney to hold on")
+
+    m_adh = sum(r["adh"] for r in m_flood) / len(m_flood)
+    assert m_adh > 0.4, (
+        "mellitus must flood WITH its ADH working - a broken hormone is "
+        "the other disease, and confusing them is the mistake this case "
+        "exists to prevent")
+
+
+def test_the_spill_conversion_is_derived_not_typed():
+    """(cccc) The mg/dL/min -> mOsm/min factor must fall out of the pool
+    size the glucose engine already declares, so changing that pool
+    changes the coupling honestly instead of silently disagreeing."""
+    _body()
+    from engine import body
+    from engine.glucose import CARB_TO_MGDL
+    assert body.GLUCOSE_SPACE_DL == pytest.approx(1000.0 / CARB_TO_MGDL), (
+        "the glucose space must be READ from CARB_TO_MGDL, not retyped")
+    assert body.MGDL_MIN_TO_MOSM_MIN == pytest.approx(
+        body.GLUCOSE_SPACE_DL / body.GLUCOSE_MW)
+    assert body.MGDL_MIN_TO_MOSM_MIN == pytest.approx(1.0, abs=0.05), (
+        "the factor should land near 1 mOsm per mg/dL/min for a ~180 dL "
+        "pool and a ~180 mg/mmol sugar - if it has drifted far from that, "
+        "one of the two numbers is wrong")
+
+
+def test_tubular_load_rejects_nonsense():
+    """(cccc)"""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    with pytest.raises(ValueError):
+        sim.set_tubular_load(-1.0)
+    sim.set_tubular_load(0.0)      # uncoupled is legal
+    sim.set_tubular_load(3.0)
+    sim.step(10)
+    assert sim.state()["tubular_load"] == 3.0
+
+
+def test_body_rejects_an_unknown_part():
+    Body = _body()
+    b = Body()
+    with pytest.raises(KeyError):
+        b.set_effector_enabled("pancreas_ish", False)
+    b.set_effector_enabled("beta", False)      # a sugar part
+    b.set_effector_enabled("kidney", False)    # and a water part
+
+
+def _scripted_body_run():
+    """Exercises both loops and the link, for the determinism check."""
+    Body = _body()
+    b = Body()
+    b.step(600)
+    b.set_effector_enabled("beta", False)
+    b.eat(90, 1.0)
+    b.step(3600)
+    b.drink(500)
+    b.set_exercise(True)
+    b.step(1800)
+    b.set_exercise(False)
+    b.inject(4)
+    b.step(3600)
+    return b.history(), b.doses(), b.drinks()
+
+
+def test_body_is_deterministic():
+    assert _scripted_body_run() == _scripted_body_run(), (
+        "Two identical coupled runs diverged (kickoff SS2)")
+
+
+def test_neither_engine_imports_the_other():
+    """(dddd) The Body owns both loops and passes one number between them.
+    If the engines start importing each other, each loop stops being
+    independently testable and 'loop-agnostic where cheap' is over."""
+    if not (ENGINE_PKG / "body.py").exists():
+        pytest.skip("engine/body.py doesn't exist yet - M37")
+    pairs = [("glucose.py", "water"), ("water.py", "glucose")]
+    for filename, forbidden in pairs:
+        tree = ast.parse((ENGINE_PKG / filename).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            for name in names:
+                assert forbidden not in name, (
+                    f"engine/{filename} imports {name} - the two loops must "
+                    "stay independent; engine/body.py is what joins them")
 
 
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}

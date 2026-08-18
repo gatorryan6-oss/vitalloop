@@ -1,0 +1,175 @@
+"""One person: the glucose loop and the water loop, stepped together
+(Phase 10, M37).
+
+Nine phases taught three loops one at a time. This is where two of them
+meet. The link is a single number, and neither engine had to be taught
+about the other to make it work:
+
+  * the glucose loop has spilled sugar into the urine above 180 mg/dL
+    since Phase 2 (RENAL_THRESHOLD) — it just never said so out loud;
+  * the water loop can now be handed osmoles that arrive in the tubule
+    from somewhere else (set_tubular_load) and must be carried out with
+    water, because no kidney concentrates past ~1200 mOsm/L.
+
+Wire the first to the second and untreated diabetes stops being two
+diseases that happen to share a name. The sugar is IN the urine, the
+sugar is what is pulling the water out, and the patient drinks and
+drinks and cannot keep up. That is the classic triad — polyuria,
+polydipsia, thirst that never quits — falling out of two models that
+were each built to teach something else.
+
+It is also where the class finally earns the words from M23: insipidus
+is TASTELESS urine (water, no sugar, the ADH signal is broken) and
+mellitus is HONEY-SWEET urine (sugar, dragging water, while ADH works
+perfectly). Same flood, opposite mechanism. The urine concentration
+trace is what tells them apart, and here it is a number you can watch.
+
+Neither engine imports the other — this class owns both and passes one
+number between them, so each loop stays independently testable and the
+three single-loop lessons are untouched.
+
+Deterministic and fixed-timestep like everything else: no clock reads,
+no randomness. API and record fields are FROZEN by
+tests/test_invariants.py.
+"""
+
+from engine.glucose import CARB_TO_MGDL, GlucoseSimulation
+from engine.water import WaterSimulation
+
+# ---- The conversion, derived rather than guessed ----
+# CARB_TO_MGDL says 1 g (1000 mg) of absorbed carbohydrate raises the pool
+# by 5.56 mg/dL, so the pool IS 1000 / 5.56 = ~180 dL of blood-and-tissue
+# water. A spill of 1 mg/dL/min therefore leaves the body at
+# 1 x 180 dL = ~180 mg/min, and glucose is ~180 mg per mmol and does not
+# dissociate, so that is ~1 mOsm/min.
+#
+# The two 180s are a coincidence of THIS model's pool size, not a law of
+# nature, so the factor is computed from the constant instead of typed as
+# 1.0 — change the pool and the coupling follows honestly.
+GLUCOSE_MW = 180.16                        # mg per mmol
+GLUCOSE_SPACE_DL = 1000.0 / CARB_TO_MGDL   # ~180 dL
+MGDL_MIN_TO_MOSM_MIN = GLUCOSE_SPACE_DL / GLUCOSE_MW    # ~0.998
+
+# Which loop owns which breaker, for set_effector_enabled dispatch.
+_GLUCOSE_PARTS = ("beta", "alpha", "liver")
+_WATER_PARTS = ("adh", "kidney", "access")
+
+
+class Body:
+    """Two loops, one person, one clock."""
+
+    DT = 1.0                     # seconds of sim time per tick
+
+    def __init__(self):
+        self.glucose = GlucoseSimulation()
+        self.water = WaterSimulation()
+        self.reset()
+
+    def reset(self):
+        """Fresh start for both loops, uncoupled until the first tick."""
+        self.glucose.reset()
+        self.water.reset()
+        self.water.set_tubular_load(0.0)
+        self._t = 0.0
+        self._history = []
+        self._append_record()
+
+    # ------------------------- disturbances -------------------------
+    # Delegation, so a caller drives ONE person instead of juggling two
+    # objects. Only what a body can actually be asked to do.
+
+    def eat(self, grams, rate_g_per_min):
+        self.glucose.eat(grams, rate_g_per_min)
+
+    def inject(self, units):
+        self.glucose.inject(units)
+
+    def set_basal_rate(self, u_per_hr):
+        self.glucose.set_basal_rate(u_per_hr)
+
+    def set_pump_enabled(self, on):
+        self.glucose.set_pump_enabled(on)
+
+    def set_insulin_sensitivity(self, s):
+        self.glucose.set_insulin_sensitivity(s)
+
+    def drink(self, ml):
+        self.water.drink(ml)
+
+    def eat_salt(self, mosm):
+        self.water.eat_salt(mosm)
+
+    def set_adh_override(self, level):
+        self.water.set_adh_override(level)
+
+    def set_exercise(self, on):
+        """One person: exercising burns sugar AND sweats."""
+        self.glucose.set_exercise(on)
+        self.water.set_exercise(on)
+
+    def set_effector_enabled(self, name, on):
+        """Break a part of either loop, by its own name."""
+        if name in _GLUCOSE_PARTS:
+            self.glucose.set_effector_enabled(name, on)
+        elif name in _WATER_PARTS:
+            self.water.set_effector_enabled(name, on)
+        else:
+            raise KeyError(
+                f"Unknown part {name!r}; expected one of "
+                f"{sorted(_GLUCOSE_PARTS + _WATER_PARTS)}")
+
+    def set_sensor_enabled(self, on):
+        """Both sensor sets at once — one body, blinded."""
+        self.glucose.set_sensor_enabled(on)
+        self.water.set_sensor_enabled(on)
+
+    def doses(self):
+        return self.glucose.doses()
+
+    def drinks(self):
+        return self.water.drinks()
+
+    # ---------------------------- the loop ----------------------------
+
+    def step(self, n=1):
+        """Advance n ticks, glucose first so the water loop sees THIS
+        tick's spill rather than last tick's."""
+        for _ in range(int(n)):
+            self.glucose.step(1)
+            spill = self.glucose.state()["renal_loss"]      # mg/dL/min
+            self.water.set_tubular_load(spill * MGDL_MIN_TO_MOSM_MIN)
+            self.water.step(1)
+            self._t += self.DT
+            self._append_record()
+
+    # ------------------- the data product (kickoff SS5) -------------------
+
+    def _append_record(self):
+        g = self.glucose.state()
+        w = self.water.state()
+        self._history.append({
+            "t": self._t,
+            # the sugar loop
+            "glucose": g["glucose"],
+            "insulin": g["insulin"],
+            "glucagon": g["glucagon"],
+            "renal_loss": g["renal_loss"],
+            # the link
+            "tubular_load": w["tubular_load"],
+            # the water loop
+            "osmolarity": w["osmolarity"],
+            "water_liters": w["water_liters"],
+            "adh": w["adh"],
+            "thirst": w["thirst"],
+            "urine_rate": w["urine_rate"],
+            "urine_osm": w["urine_osm"],
+        })
+
+    def history(self):
+        """Every coupled record since reset, oldest first. The two sub
+        loops keep their own full histories too — this is the join."""
+        return [dict(r) for r in self._history]
+
+    def state(self):
+        """The newest record."""
+        return dict(self._history[-1])
