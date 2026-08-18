@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vital Loop — teacher</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="teacher-page">
+
+<header>
+  <div class="brand">
+    <h1>Vital Loop — the room</h1>
+    <p class="tagline">Teacher view. Read-only: looking never touches a
+      student's simulation.</p>
+  </div>
+</header>
+
+<main class="teacher-main">
+{% if not authed %}
+  <section class="teacher-gate">
+    <h2>Teacher PIN</h2>
+    <p class="join-hint">It's printed in the app's console window on the
+      teaching machine, next to the address. New PIN every restart.</p>
+    {% if error %}<p class="attempts-error">{{ error }}</p>{% endif %}
+    <form method="post" action="/teacher" class="teacher-pin-form">
+      <input name="pin" inputmode="numeric" autocomplete="off"
+             maxlength="8" aria-label="teacher PIN" autofocus>
+      <button type="submit">Open the room</button>
+    </form>
+  </section>
+{% else %}
+  <section class="teacher-room">
+    <h2>{{ rows|length }} device{{ '' if rows|length == 1 else 's' }} playing</h2>
+    {% if not rows %}
+    <p class="join-hint">Nobody yet. Devices appear here as they open the
+      app — reload to look again.</p>
+    {% else %}
+    <table class="room-table">
+      <tr>
+        <th>Period</th><th>Team</th><th>Tab</th><th>Doing</th><th>Last seen</th>
+      </tr>
+      {% for r in rows %}
+      <tr>
+        <td class="room-period">{{ r.period }}</td>
+        <td class="room-team">{{ r.team }}</td>
+        <td class="room-loop">{{ r.loop }}</td>
+        <td class="room-doing">{{ r.doing }}</td>
+        <td class="room-idle">{{ r.idle }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="join-hint">Reload for a fresh look. A blind case shows by
+      number only, so this page is safe to project.</p>
+    {% endif %}
+  </section>
+{% endif %}
+</main>
+
+</body>
+</html>

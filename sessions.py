@@ -80,6 +80,20 @@ class SessionRegistry:
                 return None
             return {"period": entry["period"], "team": entry["team"]}
 
+    def room(self):
+        """The room as data (M45): one entry per live session, for the
+        teacher's view. Sweeps the idle first (a closed tab is not "in
+        the room") but is otherwise READ-ONLY: it never seats anyone,
+        never touches last_seen, and NEVER steps a simulation — the
+        caller gets the runners object to describe, not to drive."""
+        now = self._clock()
+        with self._lock:
+            self._evict(now)
+            return [{"sid": sid, "period": e["period"], "team": e["team"],
+                     "idle_s": now - e["last_seen"],
+                     "runners": e["runners"]}
+                    for sid, e in self._sessions.items()]
+
     def count(self):
         """Live sessions right now (the M34 footer reads this)."""
         with self._lock:

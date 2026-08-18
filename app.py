@@ -13,13 +13,15 @@ smoothly instead of freezing the server chewing through an hour of ticks.
 import csv
 import datetime
 import io
+import os
 import re
+import secrets
 import threading
 import time
 from urllib.parse import unquote
 
 from flask import (Flask, Response, has_request_context, jsonify,
-                   render_template, request)
+                   redirect, render_template, request)
 
 import attempts
 import periods
@@ -336,6 +338,29 @@ registry = SessionRegistry(_make_runners, MAX_SESSIONS, SESSION_IDLE_S)
 PERIODS = periods.load_periods()
 
 
+def _mint_pin():
+    """The teacher PIN (M45): four digits, new every launch, printed in
+    the console beside the LAN address. App-level randomness — the
+    ENGINES still never see random (kickoff SS2); VL_TEACHER_PIN pins it
+    for tests and rehearsals."""
+    forced = os.environ.get("VL_TEACHER_PIN")
+    if forced:
+        return forced[:8]
+    return f"{secrets.randbelow(10000):04d}"
+
+
+TEACHER_PIN = _mint_pin()
+
+
+def _teacher_ok():
+    """True when this request carries the launch's PIN. The cookie is
+    the one deliberate server-set identity in the app (Phase 11 kickoff
+    SS5) — teacher-only, and a restart rotates the PIN out from under
+    it."""
+    got = request.cookies.get("vl_teacher", "")
+    return secrets.compare_digest(got, TEACHER_PIN)
+
+
 def _cookie_period():
     """The period this request claims: a name off the teacher's list,
     "" for Unassigned (skipped, or a stale cookie naming a period that
@@ -419,6 +444,84 @@ def state():
     # None = everyone — Unassigned viewers and the projector.
     out["board_period"] = _viewer_period()
     return jsonify(out)
+
+
+# --------------------------------------------------------------------------
+# The teacher dashboard (M45). PIN-gated, READ-ONLY, and safe to project:
+# it describes what each device is doing but never names a blind case's
+# diagnosis — the teacher's laptop is often the projector.
+
+def _describe_runner(runner):
+    """One runner's 'doing' line, in words a projected screen may show.
+
+    A blind case is named BY NUMBER ONLY (the no-spoiler rule, Phase 11
+    kickoff SS2) — the sandbox preset, by contrast, is something the
+    student clicked themselves, so naming it spoils nothing."""
+    with runner.lock:
+        if runner.case is not None:
+            entries = CASES[runner.case["loop"]]
+            n = list(entries).index(runner.case["name"]) + 1
+            state = ("blind" if runner.case["grade"] is None
+                     else "answered")
+            return f"case {n} of {len(entries)} — {state}"
+        if runner.challenge is not None:
+            entry = CHALLENGES[runner.challenge["loop"]][
+                runner.challenge["name"]]
+            done = runner.challenge["report"] is not None
+            return (f"challenge: {entry['title']}"
+                    + (" — done" if done else ""))
+        if runner.preset:
+            return f"preset: {PRESETS[runner.loop][runner.preset]['label']}"
+        return "sandbox"
+
+
+def _fmt_idle(seconds):
+    if seconds < 60:
+        return f"{int(seconds)} s ago"
+    return f"{int(seconds // 60)} min ago"
+
+
+def _room_rows():
+    """The room, described for the teacher's table — a plain-data pass
+    over registry.room() that reads runner state and steps NOTHING."""
+    rows = []
+    for entry in registry.room():
+        active = max(entry["runners"].values(),
+                     key=lambda r: r._last_wall)
+        rows.append({
+            "sid": entry["sid"][:8],
+            "period": entry["period"] or "Unassigned",
+            "team": entry["team"] or "(no team)",
+            "loop": active.loop,
+            "doing": _describe_runner(active),
+            "idle": _fmt_idle(entry["idle_s"]),
+        })
+    rows.sort(key=lambda r: (r["period"] == "Unassigned", r["period"],
+                             r["team"]))
+    return rows
+
+
+@app.route("/teacher", methods=["GET", "POST"])
+def teacher():
+    """The PIN gate and the room list. GET without the cookie shows the
+    PIN form; a wrong POST is refused in words (403); a right one sets
+    the cookie and lands on the room."""
+    if request.method == "POST":
+        pin = request.form.get("pin", "")
+        if not secrets.compare_digest(pin, TEACHER_PIN):
+            return render_template(
+                "teacher.html", authed=False,
+                error="That PIN doesn't match this launch. It's printed "
+                      "in the app's console window on the teaching "
+                      "machine — and it changes every restart."), 403
+        resp = redirect("/teacher")
+        resp.set_cookie("vl_teacher", TEACHER_PIN, max_age=8 * 3600,
+                        httponly=True, samesite="Lax")
+        return resp
+    if not _teacher_ok():
+        return render_template("teacher.html", authed=False, error=None)
+    return render_template("teacher.html", authed=True,
+                           rows=_room_rows(), periods=PERIODS)
 
 
 # Student worksheets (M35). Printable pages, NOT documents in the repo:
@@ -2792,10 +2895,18 @@ if __name__ == "__main__":
         print("Every device gets its OWN body; scores land on the one")
         print("shared leaderboard.")
         print()
+        # M45: the teacher's own door — works from a phone on the same
+        # wifi, which is when who's-stuck is worth knowing.
+        print(f"Teacher view (any device):  add /teacher to the address")
+        print(f"  PIN for this launch:      {TEACHER_PIN}")
+        print()
         print("If Windows asks about the firewall the FIRST time: allow")
         print("Python on PRIVATE networks. School wifi sometimes blocks")
         print("device-to-device traffic entirely — if phones can't reach")
         print("the address, that's the network, not the app.")
         print("=" * 62)
         print()
+    else:
+        print(f"Teacher view: http://127.0.0.1:5083/teacher  "
+              f"PIN: {TEACHER_PIN}")
     app.run(host=host, port=5083)

@@ -365,6 +365,17 @@ The rooms API contract (built at M43, Phase 11):
     which scope it is showing. compare_attempts stays cross-period ON
     PURPOSE: racing another class is a feature.
 
+    (M45) app.TEACHER_PIN — minted per launch (VL_TEACHER_PIN pins it
+    for tests/rehearsal); /teacher GET shows the PIN form or the room,
+    POST with a wrong pin is a 403 IN WORDS, a right one sets the
+    cookie (the app's ONE deliberate server-set identity) and lands on
+    the room. registry.room() -> [{sid, period, team, idle_s, runners}]
+    — sweeps the idle but never seats, never touches last_seen, never
+    steps a sim; rendering the dashboard leaves every session's history
+    byte-identical. The room page names a blind case BY NUMBER ONLY
+    (it may be projected), and "/teacher" appears in no student-facing
+    payload.
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -4545,3 +4556,118 @@ def test_state_carries_the_scoped_board_and_names_its_scope(
         ["Fifth Period", "Third Period"], (
         "the Unassigned viewer (the projector) sees everyone - that "
         "symmetry is the design, not a fallback")
+
+
+# ================= M45: /teacher - the PIN and the room list ===============
+# The teacher's door. Three promises: the PIN actually gates it, LOOKING
+# at the room never moves anybody's simulation, and the page is safe to
+# project - a blind case shows by number, never by name.
+
+def _teacher_app():
+    import app as vital_app
+    if not hasattr(vital_app, "TEACHER_PIN"):
+        pytest.skip("TEACHER_PIN doesn't exist yet - it arrives at M45")
+    return vital_app
+
+
+def test_the_pin_gates_the_room(monkeypatch):
+    vital_app = _teacher_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    c = vital_app.app.test_client()
+    page = c.get("/teacher")
+    assert page.status_code == 200
+    body = page.data.decode("utf-8")
+    assert 'name="pin"' in body, "no cookie must mean the PIN form"
+    assert "PIN-SENTINEL-XYZ" not in body, (
+        "the PIN is printed in the CONSOLE, never in a page")
+    wrong = c.post("/teacher", data={"pin": "0000"})
+    assert wrong.status_code == 403
+    assert "match this launch" in wrong.data.decode("utf-8"), (
+        "a wrong PIN is refused in words, not a bare status code")
+    right = c.post("/teacher", data={"pin": "PIN-SENTINEL-XYZ"})
+    assert right.status_code == 302
+    room = c.get("/teacher")          # the client keeps the cookie
+    assert room.status_code == 200
+    assert 'name="pin"' not in room.data.decode("utf-8"), (
+        "the right PIN must land on the room, not the form again")
+
+
+def test_the_pin_is_per_launch_but_pinnable(monkeypatch):
+    vital_app = _teacher_app()
+    monkeypatch.setenv("VL_TEACHER_PIN", "7777")
+    assert vital_app._mint_pin() == "7777", (
+        "VL_TEACHER_PIN must pin the PIN - a rehearsed lesson needs a "
+        "rehearsable login")
+    monkeypatch.delenv("VL_TEACHER_PIN")
+    minted = vital_app._mint_pin()
+    assert len(minted) == 4 and minted.isdigit(), (
+        "an unforced PIN is four digits a teacher can read off a "
+        "console and type on a phone")
+
+
+def test_looking_at_the_room_moves_no_simulation(fresh_registry,
+                                                 monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "TEACHER_PIN"):
+        pytest.skip("TEACHER_PIN doesn't exist yet - it arrives at M45")
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    kid = _device(vital_app, "watched-kid")
+    assert kid.get("/state?loop=temp").status_code == 200
+    runners = vital_app.registry.runners_for("watched-kid")
+    before = {loop: list(r.sim.history()) for loop, r in runners.items()}
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/teacher").status_code == 200
+    after = {loop: list(r.sim.history()) for loop, r in runners.items()}
+    assert before == after, (
+        "rendering the dashboard changed a student's history - the room "
+        "view must be READ-ONLY, byte for byte")
+
+
+def test_a_blind_case_shows_by_number_never_by_name(fresh_registry,
+                                                    monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "TEACHER_PIN"):
+        pytest.skip("TEACHER_PIN doesn't exist yet - it arrives at M45")
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    kid = _device(vital_app, "blind-kid")
+    assert kid.post("/control?loop=temp",
+                    json={"action": "diagnose", "value": 1,
+                          "label": "Team Screen"}).status_code == 200
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/teacher").data.decode("utf-8")
+    assert "case 1 of" in body and "blind" in body, (
+        "the teacher must SEE that a device is mid-case and unanswered")
+    for label in ("Fever", "Heat stroke", "Hypothermia"):
+        assert label not in body, (
+            f'"{label}" is on the projected teacher page while a temp '
+            "case is BLIND - a diagnosis name on screen ends the game")
+
+
+def test_teacher_appears_in_no_student_surface(monkeypatch):
+    vital_app = _teacher_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    c = vital_app.app.test_client()
+    assert "/teacher" not in c.get("/").data.decode("utf-8"), (
+        "the student page must not advertise the teacher's door")
+    state = c.get("/state?loop=temp").data.decode("utf-8")
+    assert "/teacher" not in state and "PIN-SENTINEL-XYZ" not in state, (
+        "the PIN and the teacher route belong to the console and the "
+        "teacher's own device, never to a student payload")
+
+
+def test_room_never_touches_last_seen():
+    from sessions import SessionRegistry
+    if not hasattr(SessionRegistry, "room"):
+        pytest.skip("SessionRegistry.room doesn't exist yet - M45")
+    t = {"now": 0.0}
+    reg = SessionRegistry(lambda: {"temp": object()}, max_sessions=5,
+                          idle_s=100, clock=lambda: t["now"])
+    reg.runners_for("kid")                       # seated at t=0
+    t["now"] = 90.0
+    assert len(reg.room()) == 1, "an active session is in the room"
+    t["now"] = 101.0                             # 101 s since the SEAT
+    assert reg.room() == [], (
+        "the room() call at t=90 kept the session alive - a room view "
+        "must never touch last_seen, or closed tabs live forever")

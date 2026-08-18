@@ -18,7 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M44 — Phase 11 underway (spec:
+- **Committed:** M45 (see Milestones; M44 summary kept below) — Phase
+  11 underway. `/teacher` exists: launch-minted PIN printed in the
+  console (VL_TEACHER_PIN pins it for rehearsal), cookie once per
+  device, wrong PIN refused in words, and behind it a read-only room
+  table — period, team, tab, doing, last-seen — built on
+  `registry.room()`, which sweeps but never seats, touches or steps.
+  Blind cases show BY NUMBER ONLY: the page is safe to project.
+- **M44 (for reference):** Phase 11 underway (spec:
   `vital_loop_phase11_kickoff.md`, scoped 2026-08-18: period codes /
   join screen + teacher dashboard). M43 gave devices periods
   (`periods.txt`, skippable join screen, cookies, badge); M44 made the
@@ -28,8 +35,8 @@ Entry format:
   the projector is, having skipped the join screen — sees everyone.
   Pre-M44 records (no period key) read as Unassigned and keep
   displaying. The board names its scope on screen.
-- **Next up:** M45 `/teacher` (launch-minted PIN + read-only room list
-  from a registry accessor), M46 who's-stuck flags, M47 full pass +
+- **Next up:** M46 who's-stuck flags (time-in-mode, attempts-so-far,
+  swept thresholds, stuck-first sort, auto-refresh), M47 full pass +
   phase close.
 - **Phase 10 (for reference):** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
   `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
@@ -85,6 +92,39 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-18 — M45: /teacher — the PIN and the room list
+- Shipped: `TEACHER_PIN` minted per launch (`secrets`, app-level — the
+  engines still never see random; `VL_TEACHER_PIN` pins it so a
+  rehearsed lesson has a rehearsable login), printed in the console
+  beside the address in both the LAN banner and the localhost line.
+  `/teacher`: PIN form → cookie (the app's ONE deliberate server-set
+  identity, HttpOnly, rotated out by every restart) → the room. Wrong
+  PIN = 403 in plain English. The room table (period / team / tab /
+  doing / last-seen) renders from `registry.room()` — a read-only
+  accessor that sweeps the idle but never seats anyone, never touches
+  `last_seen`, and never steps a sim — plus `_describe_runner`, whose
+  "doing" line names a blind case BY NUMBER ONLY. Rows sort period
+  first, Unassigned last. 6 new invariants (179 pass) + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. The dashboard page is server-rendered with no polling yet —
+     auto-refresh is M46's job, deliberately.
+  2. Naming a sandbox PRESET on the teacher page is fine (the student
+     clicked it themselves); naming a blind case is not. The describe
+     helper's branch order makes that structural: case wins before
+     preset can speak.
+  3. Jinja autoescaping turned "doesn't" into `doesn&#39;t` and failed
+     the wrong-PIN wording test — the pin now asserts an
+     apostrophe-free phrase. Caught by the suite, worth remembering.
+  4. VERIFIED LIVE in the browser (DOM-read, M39–M42 style): PIN 0907
+     read off the preview server's console line; /teacher showed the
+     form with the PIN nowhere in the page; wrong PIN → 403 with the
+     words; right PIN through the real form → the room, showing the
+     seated P3 session as "P3 / Test Rig / temp / sandbox / 17 s ago"
+     — "temp" because the student page really was polling its temp
+     tab, which is the dashboard telling the truth.
 
 ## 2026-08-18 — M44: The leaderboard learns periods
 - Shipped: `period` appended to the frozen attempt fields (M27's

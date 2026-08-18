@@ -734,3 +734,33 @@ main {
 }
 #joinGo:disabled { opacity: 0.45; cursor: default; }
 #joinSkip { color: var(--ink-2); }
+
+/* M45: the teacher page — same look, phone-friendly widths. */
+.teacher-main { max-width: 52rem; margin: 0 auto; padding: 1rem 1.2rem; }
+.teacher-pin-form { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+.teacher-pin-form input {
+  font: inherit;
+  font-size: 1.4rem;
+  width: 8rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  letter-spacing: 0.2em;
+}
+.room-table { border-collapse: collapse; width: 100%; margin-top: 0.6rem; }
+.room-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 0.3rem 0.7rem 0.3rem 0;
+}
+.room-table td {
+  padding: 0.4rem 0.7rem 0.4rem 0;
+  border-top: 1px solid var(--grid);
+  font-size: 0.95rem;
+}
+.room-period { font-weight: 650; }
+.room-loop { color: var(--ink-2); }
+.room-idle { color: var(--muted); font-variant-numeric: tabular-nums; }
