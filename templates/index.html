@@ -499,6 +499,23 @@
       &mdash; and noticing what, and why it matters, is the point.</p>
   </section>
 
+  <section class="chart-card" data-blind-hide>
+    <h2>Diseases &mdash; name the broken loop</h2>
+    <div class="disturb-row">
+      <button class="preset" data-preset="untreated_mellitus" type="button">
+        Untreated diabetes mellitus</button>
+      <button class="preset healthy" data-preset="healthy" type="button">
+        Healthy again</button>
+    </div>
+    <div class="disease-banner" id="bodyBanner" hidden></div>
+  </section>
+
+  {% for cid, ch in challenges["body"].items() %}
+  {{ challenge_card("body", cid, ch) }}
+  {% endfor %}
+
+  {{ diagnose_card("body") }}
+
   <section class="chart-card">
     <h2>Two loops, one arrow &mdash; live</h2>
     <svg id="bodyDiagram" viewBox="0 0 960 430"
@@ -541,6 +558,11 @@
       <button id="bInjectBtn" type="button">Inject 4 U insulin</button>
       <button id="bExerciseBtn" type="button">Exercise: off</button>
     </div>
+    <a class="export" href="/export.csv?loop=body">Export run (CSV)</a>
+  </section>
+
+  <section class="chart-card" data-blind-hide>
+    <h2>Break the loops</h2>
     <div class="disturb-row">
       <button class="breaker" id="bBetaBtn" data-part="beta" type="button">
         Beta cells (insulin)</button>
@@ -549,7 +571,6 @@
     </div>
     <p class="hint">Switch the beta cells off and feed the body: that is
       untreated diabetes. Then take the water away.</p>
-    <a class="export" href="/export.csv?loop=body">Export run (CSV)</a>
   </section>
 </div>
 </main>

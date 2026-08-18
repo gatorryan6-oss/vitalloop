@@ -186,6 +186,19 @@ class Body:
             "thirst": w["thirst"],
             "urine_rate": w["urine_rate"],
             "urine_osm": w["urine_osm"],
+            # The breaker flags of BOTH loops (M41), so a challenge can
+            # tell whether the class quietly un-broke something and a
+            # blind case has something to withhold. Redacted during a
+            # case by the same allowlist as everywhere else.
+            "beta_enabled": g["beta_enabled"],
+            "alpha_enabled": g["alpha_enabled"],
+            "liver_enabled": g["liver_enabled"],
+            "adh_enabled": w["adh_enabled"],
+            "kidney_enabled": w["kidney_enabled"],
+            "water_access": w["water_access"],
+            # set_sensor_enabled() drives both loops together, so one
+            # field says it for the body.
+            "sensor_enabled": g["sensor_enabled"],
         })
 
     def history(self):

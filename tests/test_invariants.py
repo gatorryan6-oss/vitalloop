@@ -1609,6 +1609,16 @@ CRAFTED_RECORD = {
     "crisis_shift": {"t": 1.0, "glucose": 100.0, "beta_enabled": False},
     "race_day": {"t": 1.0, "osmolarity": 290.0, "exercise": True,
                  "sensor_enabled": False, "urine_rate": 3.0},
+    # M41's coupled body. Both loops' numbers, because the ward
+    # evaluator reads both — and `water_access` False, because the
+    # admission's integrity rule is that the patient still cannot
+    # drink for themselves.
+    "ward_round": {"t": 1.0, "glucose": 130.0, "osmolarity": 290.0,
+                   "renal_loss": 0.0, "urine_rate": 1.0,
+                   "water_access": False},
+    "ward_crisis": {"t": 1.0, "glucose": 130.0, "osmolarity": 290.0,
+                    "renal_loss": 0.0, "urine_rate": 1.0,
+                    "water_access": False},
 }
 
 
@@ -2051,6 +2061,9 @@ CHART_KEYS = {
                 "total_insulin", "iob_units", "basal_rate"},
     "water": {"t", "osmolarity", "water_liters", "gut_water", "exercise",
               "error", "adh", "thirst", "urine_rate", "urine_osm"},
+    "body": {"t", "glucose", "insulin", "glucagon", "renal_loss",
+             "tubular_load", "glucose_osm", "osmolarity", "water_liters",
+             "adh", "thirst", "urine_rate", "urine_osm"},
 }
 
 
@@ -3635,6 +3648,11 @@ BODY_FIELDS = {
     "thirst",
     "urine_rate",       # mL/min - where the coupling shows up
     "urine_osm",        # mOsm/L - and what tells mellitus from insipidus
+    # -- grown at M41: both loops' breaker flags, so a challenge can spot
+    # a part being quietly switched back on and a case has something to
+    # withhold. Never in VISIBLE_DURING_CASE.
+    "beta_enabled", "alpha_enabled", "liver_enabled",
+    "adh_enabled", "kidney_enabled", "water_access", "sensor_enabled",
 }
 
 
@@ -3974,6 +3992,147 @@ def test_foreign_osmoles_reject_nonsense():
     assert sim.state()["osmolarity"] > 300.0, (
         "foreign osmoles must show up in the osmolarity this loop "
         "reports - they are part of the real number, not an annotation")
+
+
+# ---------------- M41: the coupled body joins the lesson grammar ----------
+
+def _ward_play(vital_app, cid, doses=(), glass_every=0):
+    """Drive a ward challenge through the PRODUCTION path, using only
+    moves the buttons actually offer: 4 U doses and 250 mL glasses."""
+    from engine.body import Body
+    runner = vital_app.Runner(Body(), "body")
+    vital_app.start_challenge(runner, "body", cid, None)
+    total = int(runner.challenge["t_end"] - runner.challenge["t_start"])
+    moves = [(int(m * 60), lambda s: s.inject(4)) for m in doses]
+    if glass_every:
+        moves += [(int(m * 60), lambda s: s.drink(250))
+                  for m in range(0, 180, glass_every)]
+    done = 0
+    for at, fn in sorted(moves, key=lambda m: m[0]):
+        at = min(at, total)
+        if at > done:
+            with runner.lock:
+                runner._step(at - done)
+            done = at
+        fn(runner.sim)
+    with runner.lock:
+        runner._step(total + 60 - done)
+    block = runner.snapshot(-1)["challenge"]
+    return block["score"], block["report"]
+
+
+def test_the_ward_round_needs_BOTH_loops_treated():
+    """(ffff) The whole reason this challenge exists. Insulin alone and
+    fluids alone must both fall short of the play that does both — or
+    the coupled body is just the glucose loop with extra charts."""
+    vital_app = _game()
+    if "body" not in vital_app.CHALLENGES:
+        pytest.skip("the ward round doesn't exist yet - M41")
+    both, both_rep = _ward_play(vital_app, "ward_round", doses=(0,),
+                                glass_every=30)
+    sugar_only, sugar_rep = _ward_play(vital_app, "ward_round", doses=(0,))
+    water_only, water_rep = _ward_play(vital_app, "ward_round",
+                                       glass_every=30)
+    nothing, nothing_rep = _ward_play(vital_app, "ward_round")
+
+    assert both_rep["met"], (
+        "treating the sugar AND replacing the water must actually pass - "
+        "a challenge nobody can win teaches nothing")
+    assert not sugar_rep["met"], (
+        "insulin alone met the goal - then the water half of this "
+        "patient is decoration")
+    assert not water_rep["met"], "fluids alone met the goal"
+    assert both["points"] > sugar_only["points"], (
+        f"treating both scored {both['points']} against insulin alone's "
+        f"{sugar_only['points']} - doing the whole job must pay")
+    assert both["points"] > water_only["points"]
+    assert min(sugar_only["points"], water_only["points"]) >         nothing["points"], "half a treatment must still beat none"
+    assert both["medal"] == "gold" and sugar_only["medal"] != "gold", (
+        "gold must be unreachable without treating both loops (M26's "
+        "calibration rule)")
+
+
+def test_over_dosing_the_ward_patient_is_punished():
+    """(ffff) The other half of the lesson: more insulin is not better
+    treatment. Three doses in three hours drives them hypo."""
+    vital_app = _game()
+    if "body" not in vital_app.CHALLENGES:
+        pytest.skip("M41")
+    good, _ = _ward_play(vital_app, "ward_round", doses=(0,),
+                         glass_every=30)
+    heavy, heavy_rep = _ward_play(vital_app, "ward_round",
+                                  doses=(0, 45, 90), glass_every=30)
+    lo = {r["key"]: r for r in heavy_rep["rows"]}["lowest"]
+    assert not lo["met"], (
+        "three doses of insulin in three hours left the patient safe - "
+        "the easiest way to kill this patient must still be insulin")
+    assert heavy["points"] < good["points"] - 20, (
+        f"over-dosing scored {heavy['points']} against {good['points']} - "
+        "it has to cost real marks")
+
+
+def test_mellitus_and_insipidus_are_tellable_apart_in_the_cases():
+    """(gggg) The two cases share a brief WORD FOR WORD, so the urine is
+    the only thing that separates them. Pin that it really does."""
+    vital_app = _game()
+    if "body" not in getattr(vital_app, "CASES", {}):
+        pytest.skip("M41")
+    cases = vital_app.CASES["body"]
+    mel = cases["case1"]
+    ins = cases["case2"]
+    assert mel["brief"] == ins["brief"], (
+        "the two diabetes cases must read identically - reading the "
+        "story instead of the charts has to earn nothing")
+    assert mel["answer"] != ins["answer"]
+
+    from engine.body import Body
+    out = {}
+    for name, case in (("mellitus", mel), ("insipidus", ins)):
+        sim = Body()
+        vital_app._apply_preset(sim, case["setup"])
+        for method, args in case.get("start_actions", []):
+            getattr(sim, method)(*args)
+        sim.step(case["warmup_s"])
+        h = [r for r in sim.history() if r["t"] > case["warmup_s"] / 2]
+        flood = [r for r in h if r["urine_rate"] > 2.0]
+        assert flood, f"{name} never actually floods - no case to solve"
+        out[name] = (sum(r["urine_osm"] for r in flood) / len(flood),
+                     max(r["glucose"] for r in h))
+    assert out["mellitus"][0] > 600.0, (
+        f"mellitus urine averaged {out['mellitus'][0]:.0f} mOsm/L while "
+        "flooding - it must be LOADED")
+    assert out["insipidus"][0] < 200.0, (
+        f"insipidus urine averaged {out['insipidus'][0]:.0f} mOsm/L - it "
+        "must be nearly pure water")
+    assert out["mellitus"][1] > 250.0 and out["insipidus"][1] < 150.0, (
+        "the glucose traces must separate them too - that is the second "
+        "half of the evidence")
+
+
+def test_a_blind_body_case_withholds_the_breaker_flags():
+    """(gggg) The coupled body records both loops' flags now (M41), so
+    the allowlist has real work to do here."""
+    vital_app = _game()
+    if "body" not in getattr(vital_app, "CASES", {}):
+        pytest.skip("M41")
+    keep = vital_app.VISIBLE_DURING_CASE["body"]
+    from engine.body import Body
+    record = Body().state()
+    assert set(keep) < set(record), (
+        "the body allowlist must be a STRICT subset of its record - "
+        "there are flags in there that name the answer")
+    out = vital_app.redact_record("body", record)
+    assert not [k for k in out if k.endswith("_enabled")]
+    assert "water_access" not in out
+
+
+def test_the_sandbox_only_exception_is_over():
+    """(gggg) M39 declared the coupled body sandbox-only and time-boxed
+    it to M41. This is the box."""
+    vital_app = _game()
+    assert getattr(vital_app, "SANDBOX_ONLY_LOOPS", set()) == set(), (
+        "a loop is still declared sandbox-only - every loop was supposed "
+        "to carry the whole lesson grammar by the end of Phase 10")
 
 
 def test_neither_engine_imports_the_other():

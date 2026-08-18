@@ -308,7 +308,8 @@ def _make_runners():
 # test, because the lesson grammar (M30) is a real promise and an
 # exception to it should be visible in the app. The coupled body joins
 # the grammar at M41 and this set goes empty again — pinned at M42.
-SANDBOX_ONLY_LOOPS = {"body"}
+# M41 filled the coupled body's grammar in, so the exception is over.
+SANDBOX_ONLY_LOOPS = set()
 
 
 # The DEFAULT session: any client that presents no session id (verify.py,
@@ -556,6 +557,12 @@ HEALTHY_WATER = {"exercise": False, "sensor": True,
                  "adh_override": None}   # M31 knob: every water preset
                                          # clears it — diseases never stack
 
+HEALTHY_BODY = {"exercise": False, "sensor": True,
+                "effectors": {"beta": True, "alpha": True, "liver": True,
+                              "adh": True, "kidney": True, "access": True},
+                "sensitivity": 1.0, "pump": False, "basal": 0.0,
+                "adh_override": None}
+
 PRESETS = {
     "temp": {
         "healthy": {"label": "Healthy", "banner": None, "speed": 1,
@@ -635,6 +642,24 @@ PRESETS = {
                       "First-line treatment: restrict water.",
             "speed": 16,
             **{**HEALTHY_WATER, "adh_override": 1.0}},
+    },
+    "body": {
+        "healthy": {"label": "Healthy", "banner": None, "speed": 1,
+                    **HEALTHY_BODY},
+        "untreated_mellitus": {
+            "label": "Untreated diabetes mellitus",
+            "banner": "no insulin, and now BOTH loops are in it. Sugar "
+                      "climbs past what the kidney can hold onto, spills "
+                      "into the urine, and drags water out with it — "
+                      "while the sugar still in the blood pulls on the "
+                      "osmoreceptors directly. Polyuria, polydipsia, and "
+                      "a water loop working perfectly and still losing. "
+                      "Mellitus = honey-sweet: that urine really does "
+                      "carry the sugar.",
+            "speed": 16,
+            **{**HEALTHY_BODY,
+               "effectors": {"beta": False, "alpha": True, "liver": True,
+                             "adh": True, "kidney": True, "access": True}}},
     },
 }
 
@@ -739,6 +764,72 @@ def _eval_aid_station(records):
             "rows": rows}
 
 
+def _eval_ward(records, metrics="ward_round"):
+    """Both loops at once (M41). The sugar is only half the job: this
+    patient is not drinking for themselves, so every liter the osmotic
+    diuresis takes has to be put back by hand. Treat one and lose."""
+    n = max(1, len(records))
+    end = records[-1] if records else {}
+    lo_g = min((r["glucose"] for r in records), default=0.0)
+    hi_osm = max((r["osmolarity"] for r in records), default=0.0)
+    lo_osm = min((r["osmolarity"] for r in records), default=0.0)
+    end_g = end.get("glucose", 0.0)
+    end_osm = end.get("osmolarity", 0.0)
+    spilled = sum(r["renal_loss"] for r in records) / 60.0   # mg/dL total
+    urine_l = sum(r["urine_rate"] for r in records) / 60.0 / 1000.0
+    # The patient cannot drink for themselves — if that comes back on,
+    # the class stopped being the one keeping them alive.
+    stayed_nbm = all(not r.get("water_access", False) for r in records)         if any("water_access" in r for r in records) else True
+    rows = [
+        # Scored on DISTANCE from the middle of the target band, not on
+        # the raw number. Graded monotonically ("lower is better") a
+        # patient crashed to 1 mg/dL would take full marks for the row —
+        # the first sweep found exactly that, scoring a lethal hypo the
+        # same as doing nothing.
+        {"key": "end_glucose", "label": "glucose at the end",
+         "value": f"{end_g:.0f} mg/dL (target: 80-180)",
+         "met": 80.0 <= end_g <= 180.0, "n": abs(end_g - 130.0)},
+        {"key": "lowest", "label": "lowest glucose",
+         "value": f"{lo_g:.0f} mg/dL (target: never below 70 - insulin "
+                  "is the easy way to kill this patient)",
+         "met": lo_g >= 70.0, "n": lo_g},
+        {"key": "end_osm", "label": "osmolarity at the end",
+         "value": f"{end_osm:.1f} mOsm/L (target: 285-295)",
+         "met": 285.0 <= end_osm <= 295.0, "n": abs(end_osm - 290.0)},
+        # Graded at 315, not at the healthy 305: this patient ARRIVES
+        # hyperosmolar, and the class is answerable for where they take
+        # them, not for the state they were handed (M29's rule about not
+        # grading past what the scenario itself imposes).
+        {"key": "highest_osm", "label": "highest osmolarity",
+         "value": f"{hi_osm:.1f} mOsm/L (target: never above 315 - they "
+                  "arrived dry, so this row is about not making it "
+                  "worse)",
+         "met": hi_osm <= 315.0, "n": hi_osm},
+        {"key": "lowest_osm", "label": "lowest osmolarity",
+         "value": f"{lo_osm:.1f} mOsm/L (target: never below 280 - "
+                  "fluids can be overdone too)",
+         "met": lo_osm >= 280.0, "n": lo_osm},
+        {"key": "sugar_lost", "label": "sugar passed into the urine",
+         "value": f"{spilled:.0f} mg/dL of pool", "met": None, "n": spilled},
+        {"key": "urine", "label": "urine passed",
+         "value": f"{urine_l:.2f} L", "met": None, "n": urine_l},
+        {"key": "nbm", "label": "the patient still could not drink alone",
+         "value": "yes" if stayed_nbm else "no - water access came back",
+         "met": stayed_nbm, "n": None},
+    ]
+    if metrics in STOPS:
+        rows.append(_stop_row(records, metrics))
+    return {"met": all(r["met"] for r in rows if r["met"] is not None),
+            "rows": rows}
+
+
+def _eval_ward_crisis(records):
+    """The same reading of the same two loops, plus the hard-stop line
+    the crisis adds. One evaluator, so the plain round and the crisis
+    can never start disagreeing about what a good outcome is."""
+    return _eval_ward(records, "ward_crisis")
+
+
 # ================= Crisis mode (M29) =====================================
 #
 # A challenge that ambushes you on a schedule. Two pieces of machinery,
@@ -774,6 +865,17 @@ STOPS = {
          "line": "glucose reached 400 mg/dL — the patient was admitted "
                  "before the shift was over",
          "test": lambda r: r["glucose"] >= 400.0},
+    ],
+    "ward_crisis": [
+        {"key": "er_hypo",
+         "line": "glucose fell to 40 mg/dL — severe hypoglycemia, and "
+                 "the insulin you gave is what caused it",
+         "test": lambda r: r["glucose"] <= 40.0},
+        {"key": "hhs",
+         "line": "osmolarity reached 330 mOsm/L — hyperosmolar "
+                 "hyperglycemic state, and this patient is now "
+                 "unconscious",
+         "test": lambda r: r["osmolarity"] >= 330.0},
     ],
     "race_day": [
         {"key": "hyponatremia",
@@ -924,6 +1026,9 @@ EVALUATORS = {
     "blast_freezer": _eval_blast_freezer,
     "crisis_shift": _eval_crisis_shift,
     "race_day": _eval_race_day,
+    # M41 — the coupled body, plain and crisis, on one evaluator
+    "ward_round": _eval_ward,
+    "ward_crisis": _eval_ward_crisis,
 }
 
 
@@ -1022,6 +1127,28 @@ SCORING = {
                                   "doesn't count"},
         "stopped": {"integrity": "the run ended early — there is no score "
                                  "for a shift that finished in the ER"},
+    },
+    "ward_round": {
+        # Distances from the middle of each band: 0 is perfect.
+        "end_glucose": {"points": 30, "zero_at": 90.0, "full_at": 25.0},
+        "lowest": {"points": 25, "zero_at": 50.0, "full_at": 75.0},
+        "end_osm": {"points": 25, "zero_at": 15.0, "full_at": 3.0},
+        "highest_osm": {"points": 12, "zero_at": 320.0, "full_at": 305.0},
+        "lowest_osm": {"points": 8, "zero_at": 270.0, "full_at": 282.0},
+        "nbm": {"integrity": "the patient started drinking for "
+                             "themselves — that is not this admission"},
+    },
+    "ward_crisis": {
+        "end_glucose": {"points": 30, "zero_at": 90.0, "full_at": 25.0},
+        "lowest": {"points": 25, "zero_at": 50.0, "full_at": 75.0},
+        "end_osm": {"points": 25, "zero_at": 15.0, "full_at": 3.0},
+        "highest_osm": {"points": 12, "zero_at": 320.0, "full_at": 305.0},
+        "lowest_osm": {"points": 8, "zero_at": 270.0, "full_at": 282.0},
+        "nbm": {"integrity": "the patient started drinking for "
+                             "themselves — that is not this admission"},
+        "stopped": {"integrity": "the round ended early — there is no "
+                                 "score for a patient who went "
+                                 "unconscious on your shift"},
     },
     "race_day": {
         "in_band": {"points": 55, "zero_at": 50.0, "full_at": 100.0},
@@ -1475,6 +1602,84 @@ CHALLENGES = {
             "medals": {"gold": 85, "silver": 70, "bronze": 55},
         },
     },
+    "body": {
+        "ward_round": {
+            "title": "The ward round",
+            "start_label": "Take the patient",
+            "story": "Admitted this morning: type 1, and the insulin ran "
+                     "out two days ago. Sugar is high and climbing, the "
+                     "kidneys are already spilling it, and water is "
+                     "going out with it. This patient is too ill to "
+                     "drink for themselves — every glass has to come "
+                     "from you. Three hours; treat what you can see.",
+            "goal": "Glucose 80-180 mg/dL at the end and never below 70; "
+                    "osmolarity 285-295 at the end, never above 305 or "
+                    "below 280.",
+            "duration_s": 3 * 3600,
+            "speed": 16,
+            "setup": {**HEALTHY_BODY,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True, "adh": True,
+                                    "kidney": True, "access": False}},
+            "start_actions": [("eat", (100, 2.0)), ("eat_salt", (450,))],
+            "metrics": "ward_round",
+            # M41 sweep, built only from moves the buttons offer (4 U
+            # doses, 250 mL glasses): 4 U + a glass every 30 min 87,
+            # every 45 min 86, every 20 min 85 — all three MET. Then the
+            # misses: pouring every 15 min 79, insulin alone 77, fluids
+            # alone 77, nothing at all 52, and every extra dose of
+            # insulin collapses it (two doses 41, four doses 31). Silver
+            # sits above the best MISS on purpose.
+            "medals": {"gold": 85, "silver": 82, "bronze": 70},
+        },
+        "ward_crisis": {
+            "title": "The ward round goes wrong",
+            "start_label": "Take the patient",
+            "crisis": True,
+            "story": "The same admission, the same two loops — and a day "
+                     "that does not leave you alone. Things will happen "
+                     "that you did not order. Watch the feed, and "
+                     "remember that treating the sugar is only half of "
+                     "what this patient is losing.",
+            "goal": "Glucose 80-180 mg/dL at the end and never below 70; "
+                    "osmolarity 285-295 at the end, never above 305 or "
+                    "below 280.",
+            "duration_s": 3 * 3600,
+            "speed": 16,
+            "setup": {**HEALTHY_BODY,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True, "adh": True,
+                                    "kidney": True, "access": False}},
+            "start_actions": [("eat", (100, 2.0)), ("eat_salt", (450,))],
+            "metrics": "ward_crisis",
+            "events": [
+                {"at": 45 * 60,
+                 "do": ("set_insulin_sensitivity", (0.3,)),
+                 "line": "The patient spikes a temperature. Illness makes "
+                         "tissues deaf to insulin — whatever you have "
+                         "given is suddenly worth a fraction of what it "
+                         "was, and this is exactly how a ward admission "
+                         "turns into an emergency."},
+                {"at": 100 * 60,
+                 "do": ("eat", (60, 2.0)),
+                 "line": "A relative, trying to help, has given them a "
+                         "sweet drink because they said they were "
+                         "thirsty."},
+                {"at": 150 * 60,
+                 "do": ("set_exercise", (True,)),
+                 "line": "They are moved to a warm side room and start "
+                         "sweating — another way out for water you were "
+                         "already struggling to replace."},
+            ],
+            # A HIGHER ladder than the plain round, and the sweep is
+            # why: the +150 min sweating ambush takes water back out, so
+            # pouring every 15 min — an over-pour that misses in the
+            # plain round — scores 88 here. On the plain ladder that
+            # would have been a MISS taking gold. 4 U + a glass every
+            # 30 min 96, /45 95, /20 94 (all MET); best miss 88.
+            "medals": {"gold": 92, "silver": 90, "bronze": 70},
+        },
+    },
 }
 
 
@@ -1527,6 +1732,17 @@ ANSWER_OPTIONS = {
         {"key": "muscle", "label": "Muscle & fat (take up glucose)"},
         {"key": "liver", "label": "Liver (releases glucose)"},
     ]},
+    # The coupled body (M41): both loops' parts on one menu, because the
+    # question is no longer "which part" but "WHICH LOOP" — and the two
+    # diseases that pass liters of urine live in different loops.
+    "body": {"roles": ANSWER_ROLES, "parts": [
+        {"key": "none", "label": "Nothing is broken"},
+        {"key": "beta", "label": "Beta cells (insulin)"},
+        {"key": "pituitary", "label": "ADH release (hypothalamus → "
+                                      "pituitary)"},
+        {"key": "kidney", "label": "Kidneys (retain water)"},
+        {"key": "thirst", "label": "Thirst → drinking"},
+    ]},
     "water": {"roles": ANSWER_ROLES, "parts": [
         {"key": "none", "label": "Nothing is broken"},
         {"key": "sensor", "label": "Osmoreceptors"},
@@ -1558,6 +1774,15 @@ VISIBLE_DURING_CASE = {
                 "total_insulin", "iob_units", "basal_rate"},
     "water": {"t", "osmolarity", "water_liters", "gut_water", "exercise",
               "error", "adh", "thirst", "urine_rate", "urine_osm"},
+    # The coupled body (M41) records no breaker flags and no disease
+    # knobs at all — every field it keeps is a measurement a clinician
+    # would actually have. So the allowlist is the whole record, and
+    # redaction here is a no-op BY CONSTRUCTION rather than by trust.
+    # The gate still runs, and still fails closed on anything a later
+    # phase adds without listing it here on purpose.
+    "body": {"t", "glucose", "insulin", "glucagon", "renal_loss",
+             "tubular_load", "glucose_osm", "osmolarity", "water_liters",
+             "adh", "thirst", "urine_rate", "urine_osm"},
 }
 
 
@@ -1832,6 +2057,72 @@ CASES = {
                     "loop has no alarm for holding too much. The "
                     "treatment falls out of the charts: stop the "
                     "glasses, and the slide stops.",
+        },
+    },
+    # The coupled body (M41). All three cases open on somebody passing
+    # far too much urine, and the whole question is WHICH LOOP is at
+    # fault. For two thousand years that answer came from tasting it;
+    # here it comes from the urine concentration trace and the glucose
+    # reading — the same evidence, in a form nobody has to swallow.
+    "body": {
+        # 1 control (the sugar loop) · 2 control (the water loop) · 3 intact
+        "case1": {
+            "brief": "Passing water far more often than anyone should, "
+                     "and thirsty enough to keep a jug by the bed.",
+            "setup": {**HEALTHY_BODY,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True, "adh": True,
+                                    "kidney": True, "access": True}},
+            "start_actions": [("eat", (100, 2.0))],
+            "speed": 16,
+            "warmup_s": 5400,
+            "answer": {"role": "control", "part": "beta"},
+            "note": "Diabetes MELLITUS. The urine is pouring out and it "
+                    "is LOADED — up near the concentrating ceiling — "
+                    "while ADH sits high and the kidneys do everything "
+                    "they are told. Nothing in the water loop is broken. "
+                    "The sugar is what is leaving, and the water is only "
+                    "following it out. The glucose trace and the spill "
+                    "say where the fault really is: two rooms away, in "
+                    "beta cells that are making no insulin at all.",
+        },
+        "case2": {
+            "brief": "Passing water far more often than anyone should, "
+                     "and thirsty enough to keep a jug by the bed.",
+            "setup": {**HEALTHY_BODY,
+                      "effectors": {"beta": True, "alpha": True,
+                                    "liver": True, "adh": False,
+                                    "kidney": True, "access": True}},
+            "speed": 16,
+            "warmup_s": 5400,
+            "answer": {"role": "control", "part": "pituitary"},
+            "note": "Diabetes INSIPIDUS. The same flood, the opposite "
+                    "urine: nearly pure water, dilute as it comes, "
+                    "because no ADH is being released to tell the "
+                    "kidneys to hold any of it back. Glucose is normal "
+                    "and nothing is spilling. Insipidus = tasteless. "
+                    "Same word 'diabetes' — a siphon — and two entirely "
+                    "different broken loops, which is why physicians "
+                    "once told them apart by taste and now tell them "
+                    "apart by exactly the two traces you just read.",
+        },
+        "case3": {
+            "brief": "Passing water far more often than anyone should, "
+                     "and thirsty enough to keep a jug by the bed.",
+            "setup": {**HEALTHY_BODY},
+            "start_actions": [("drink", (2500,))],
+            "speed": 16,
+            "warmup_s": 3600,
+            "answer": {"role": "none", "part": "none"},
+            "note": "Nothing was broken. This person drank two and a "
+                    "half liters, and a working water loop did exactly "
+                    "what it should: ADH switched off, the kidneys "
+                    "dumped the excess, and the urine ran DILUTE and "
+                    "fast until the balance came back. Glucose normal, "
+                    "nothing spilling, osmolarity already heading home "
+                    "on its own. Passing a lot of urine is a symptom, "
+                    "not a diagnosis — and a loop working hard is not a "
+                    "loop that has failed.",
         },
     },
 }
@@ -2310,7 +2601,11 @@ CSV_FIELDS = {
     # in the order the story is told — sugar, spill, link, water.
     "body": ["t", "glucose", "insulin", "glucagon", "renal_loss",
              "tubular_load", "glucose_osm", "osmolarity", "water_liters",
-             "adh", "thirst", "urine_rate", "urine_osm"],
+             "adh", "thirst", "urine_rate", "urine_osm",
+             # grown at M41 with the breaker flags, appended as always
+             "beta_enabled", "alpha_enabled", "liver_enabled",
+             "adh_enabled", "kidney_enabled", "water_access",
+             "sensor_enabled"],
 }
 
 

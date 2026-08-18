@@ -135,7 +135,7 @@ function setText(id, text) {
    source; this only renders what /state hands over --- */
 
 const BANNER_IDS = { temp: "tempBanner", glucose: "glucoseBanner",
-                     water: "waterBanner" };
+                     water: "waterBanner", body: "bodyBanner" };
 
 function updateBanner(loop, preset) {
   const div = document.getElementById(BANNER_IDS[loop]);
@@ -343,9 +343,9 @@ function savedLine(attempt) {
    until the server sends it, which is the entire point. --- */
 
 const CASE_IDS = { temp: "tempDiagnose", glucose: "glucoseDiagnose",
-                   water: "waterDiagnose" };
+                   water: "waterDiagnose", body: "bodyDiagnose" };
 // Where each loop's fast-forward ended, for the marker on the chart.
-const caseWarmup = { temp: null, glucose: null, water: null };
+const caseWarmup = { temp: null, glucose: null, water: null, body: null };
 
 const CASE_HEADLINES = {
   correct: "RIGHT — that is exactly what failed",

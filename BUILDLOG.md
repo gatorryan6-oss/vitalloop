@@ -24,12 +24,7 @@ Entry format:
   to Phase 11). All three kickoff-interview questions were answered:
   a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
   only. The loops now meet.
-- **Next up:** M41 — the coupled body joins the lesson grammar (preset,
-  challenge, blind case). Then M42, the close.
-- **Open exception, time-boxed:** `SANDBOX_ONLY_LOOPS = {"body"}` in
-  app.py. The coupled body is explorable but has no preset, challenge
-  or case yet (kickoff §2: explorable before scored). M41 fills it and
-  empties the set; M42 pins the set empty.
+- **Next up:** M42 — the full pass and the phase close.
 - **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
   `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
   device on the room's wifi gets its own three loops (M33) through the
@@ -65,6 +60,80 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M41: The coupled body joins the lesson grammar
+- Shipped: the fourth loop now teaches every verb. A preset (**Untreated
+  diabetes mellitus**, banner naming both links and earning the word
+  honey-sweet) with Healthy as the way back; **two challenges** — "The
+  ward round" and its crisis variant "The ward round goes wrong" (three
+  ambushes: illness making tissues deaf to insulin, a relative bringing
+  a sweet drink, a warm side room and sweating) with two hard stops
+  (glucose ≤ 40, osmolarity ≥ 330 = HHS); **three blind cases** —
+  mellitus, insipidus and an intact body, all three opening on the SAME
+  brief word for word; `_eval_ward` + a `SCORING` entry per challenge;
+  answer vocabulary and a redaction allowlist for the loop. The body
+  record grew both loops' breaker flags so integrity rules and blind
+  cases have something to work with. `SANDBOX_ONLY_LOOPS` is empty
+  again. 159 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **THE SWEEP OVERTURNED THE SCORING TWICE, and both were real bugs.**
+     (a) Grading "glucose at the end" monotonically meant LOWER IS
+     ALWAYS BETTER, so a patient crashed to **1 mg/dL took full marks**
+     for that row and a lethal hypo tied doing nothing at 70 points.
+     Both "end" rows now score DISTANCE from the middle of their band.
+     (b) The peak-osmolarity row was graded at the healthy 305 — but
+     this patient ARRIVES above it, so every play failed for the state
+     they were handed. Moved to 315, which is M29's rule about not
+     grading past what the scenario itself imposes, applied to a
+     starting condition instead of an ambush.
+  2. **The premise "treat one and lose" had to be EARNED, not asserted.**
+     The first build let insulin alone pass: treat the sugar promptly
+     and the water problem mostly resolves itself, which is honest
+     physiology but no challenge. Fixed by making the patient arrive
+     already hyperosmolar (a `eat_salt` start action — two days without
+     insulin is not a patient who arrives dry-eyed), so the water
+     deficit is inherited and must be replaced. Now pinned as a test:
+     both-treated MET and gold, insulin-alone and fluids-alone both
+     MISS, and both beat doing nothing.
+  3. **Medal ladders from the sweep, using ONLY moves the buttons offer**
+     (4 U doses, 250 mL glasses — M26's rule). *ward_round*: 4 U + a
+     glass every 30 min **87**, every 45 min 86, every 20 min 85 (all
+     MET); then the misses — over-pouring every 15 min 79, insulin alone
+     77, fluids alone 77, nothing 52, and every extra insulin dose
+     collapses it (two 41, four 31). Medals 85 / 82 / 70, with silver
+     deliberately above the best MISS.
+  4. **The crisis needed its OWN ladder, and the sweep is why.** Its
+     sweating ambush takes water back out, so the over-pour that misses
+     in the plain round scores 88 there — which on the shared ladder was
+     a MISSING run taking GOLD. Crisis medals are 92 / 90 / 70, and a
+     sweep across the whole 60-play grid now confirms **no run without
+     MET reaches gold or silver on either challenge**.
+  5. **The coupled body records both loops' breaker flags now.** Without
+     them the "the patient still could not drink alone" integrity rule
+     was DEAD CODE — a team could re-enable water access mid-challenge
+     and nothing would notice — and a blind case would have had nothing
+     to withhold. So the record grew seven flags (appended), the CSV
+     grew with it, and `VISIBLE_DURING_CASE["body"]` is now a strict
+     subset of the record, pinned as such.
+  6. **Two cases with the SAME answer role, on purpose.** Mellitus and
+     insipidus are both control-centre failures — in different loops.
+     The role repeats; the reasoning cannot, because the only thing
+     separating them is the urine (measured: mellitus floods at ~1000
+     mOsm/L with glucose above 250, insipidus at ~38 with glucose
+     normal) and that contrast is pinned.
+  7. **A mistake worth recording: I inserted the two challenges into
+     `CASES` instead of `CHALLENGES`** — the closing braces of the two
+     tables look identical and my patch matched the wrong one. Caught
+     immediately because the app reported `body challenges: []`, and
+     moved with a brace-counting script rather than by hand. The lesson
+     is the boring one: when patching by exact-match, assert on
+     something that identifies the TABLE, not just the punctuation.
+  8. Verified through the production routes: preset → banner "Untreated
+     diabetes mellitus"; challenge start 200; blind case → zero
+     `*_enabled` or `water_access` fields in `/state`, CSV 409; answered
+     control/beta → **correct, 100/100**; CSV back to 200 after reset.
 
 ## 2026-08-17 — M40: Two loops, one arrow
 - Shipped: a fourth diagram on the M4/M22 kit — deliberately NOT a third
