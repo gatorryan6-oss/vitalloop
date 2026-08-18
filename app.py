@@ -22,6 +22,7 @@ from flask import Flask, Response, jsonify, render_template, request
 import attempts
 from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
+from engine.body import Body
 from engine.water import WaterSimulation
 from sessions import RoomFull, SessionRegistry
 
@@ -297,7 +298,17 @@ def _make_runners():
         "temp": Runner(Simulation(), "temp"),
         "glucose": Runner(GlucoseSimulation(), "glucose"),
         "water": Runner(WaterSimulation(), "water"),
+        # M39: the coupled body — two loops on one clock.
+        "body": Runner(Body(), "body"),
     }
+
+
+# Loops that are DELIBERATELY sandbox-only for now: explorable, but with
+# no challenge, case or preset yet. Declared here rather than hidden in a
+# test, because the lesson grammar (M30) is a real promise and an
+# exception to it should be visible in the app. The coupled body joins
+# the grammar at M41 and this set goes empty again — pinned at M42.
+SANDBOX_ONLY_LOOPS = {"body"}
 
 
 # The DEFAULT session: any client that presents no session id (verify.py,
@@ -471,6 +482,35 @@ def _mark_fields(text, fields):
     for f in sorted(set(fields), key=len, reverse=True):
         out = re.sub(rf"\b{re.escape(f)}\b", f"<code>{f}</code>", out)
     return Markup(out)
+
+
+WORKSHEETS["body"] = {
+    "title": "Two loops, one body",
+    "variable": "blood glucose AND plasma osmolarity, at the same time",
+    "before": "Open the Whole body tab, switch the beta cells off, and "
+              "feed the body a meal. Let it run until the urine "
+              "readings change, and keep your charts (or the CSV "
+              "export) in front of you.",
+    "fields": ["glucose", "renal_loss", "tubular_load", "glucose_osm",
+               "osmolarity", "urine_rate", "urine_osm", "thirst"],
+    "read": [
+        "The glucose reading at the moment renal_loss first rose above "
+        "zero: ______ mg/dL. Why that number and not some other? ______",
+        "At the peak: renal_loss ______ mg/dL/min, and the "
+        "tubular_load it became: ______ mOsm/min",
+        "urine_rate before the spill started: ______ mL/min, and at the "
+        "peak of it: ______ mL/min",
+        "urine_osm during the spill: ______ mOsm/L. Is that urine "
+        "dilute or concentrated? ______",
+        "What was adh doing at that same moment — and what does that "
+        "tell you about whether the water loop is broken? ______",
+        "glucose_osm is the sugar's own share of plasma osmolarity. At "
+        "the peak it was ______ mOsm/L. Which receptors feel that, and "
+        "what did thirst do about it? ______",
+        "How much did this body drink, compared with a healthy one? "
+        "______ (Count the drink markers on the chart.)",
+    ],
+}
 
 
 @app.route("/worksheet/<loop>")
@@ -2266,6 +2306,11 @@ CSV_FIELDS = {
               "adh_override",
               # grown at M37/M38 with the Phase 10 coupling terms
               "tubular_load", "foreign_osm"],
+    # The coupled body (M39): both loops and the two links between them,
+    # in the order the story is told — sugar, spill, link, water.
+    "body": ["t", "glucose", "insulin", "glucagon", "renal_loss",
+             "tubular_load", "glucose_osm", "osmolarity", "water_liters",
+             "adh", "thirst", "urine_rate", "urine_osm"],
 }
 
 

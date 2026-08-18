@@ -8,7 +8,7 @@
 const POLL_MS = 250;
 // Visible strip per loop: temperature moves in minutes, glucose in
 // hours, water over a longer afternoon still.
-const WINDOWS = { temp: 600, glucose: 7200, water: 14400 };
+const WINDOWS = { temp: 600, glucose: 7200, water: 14400, body: 14400 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const palette = getComputedStyle(document.documentElement);
@@ -35,6 +35,7 @@ const buffers = {                // engine records per loop, oldest first
   temp: { pts: [], lastT: -1 },
   glucose: { pts: [], lastT: -1, doses: [] },
   water: { pts: [], lastT: -1, drinks: [] },
+  body: { pts: [], lastT: -1, doses: [], drinks: [] },
 };
 let running = true;              // play/speed of the ACTIVE loop's runner
 let speed = 1;
@@ -638,6 +639,27 @@ function updateReadouts(now) {
   const ss = String(s % 60).padStart(2, "0");
   setText("clockReadout", `${mm}:${ss}`);
 
+  if (activeLoop === "body") {
+    // Two controlled variables, side by side — the whole point of the tab.
+    setText("r1Label", "glucose"
+      + (now.renal_loss > 0.01 ? " — SPILLING SUGAR" : ""));
+    setText("r1Value", now.glucose.toFixed(0) + " mg/dL");
+    const r1 = document.getElementById("r1Value");
+    r1.classList.remove("hypo", "severe", "hyper");
+    if (now.glucose > 180) r1.classList.add("hyper");
+    if (now.glucose < 70) r1.classList.add("hypo");
+    setText("r2Label", "osmolarity"
+      + (now.osmolarity > 305 ? " — DEHYDRATED" : ""));
+    setText("r2Value", now.osmolarity.toFixed(1) + " mOsm/L");
+    const bex = document.getElementById("bExerciseBtn");
+    if (bex) {
+      bex.textContent = now.exercise ? "Exercise: ON" : "Exercise: off";
+      bex.setAttribute("aria-pressed", String(!!now.exercise));
+    }
+    lastExercise = now.exercise;   // the toggle reads this, like the others
+    return;
+  }
+
   if (activeLoop === "water") {
     setText("r1Label", "osmolarity");
     setText("r1Value", now.osmolarity.toFixed(1) + " mOsm/L");
@@ -824,6 +846,39 @@ document.getElementById("gExerciseBtn").addEventListener("click", () =>
 document.querySelectorAll(".gscenario").forEach(b =>
   b.addEventListener("click", () =>
     control({ action: "scenario", value: b.dataset.scenario })));
+
+/* --- the coupled body (M39) --- */
+/* One person: the same actions the single-loop tabs offer, aimed at a
+   body that has both loops running. The breakers keep their own local
+   state because the coupled record carries values, not flags. */
+
+const bodyBroken = { beta: false, access: false };
+
+function wireBodyBreaker(id, part, label) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    bodyBroken[part] = !bodyBroken[part];
+    const ok = await control({ action: "effector", name: part,
+                               on: !bodyBroken[part] });
+    if (!ok || ok.error) { bodyBroken[part] = !bodyBroken[part]; return; }
+    btn.classList.toggle("broken", bodyBroken[part]);
+    btn.textContent = bodyBroken[part] ? `${label} — DISABLED` : label;
+  });
+}
+
+if (document.getElementById("bEatBtn")) {
+  document.getElementById("bEatBtn").addEventListener("click", () =>
+    control({ action: "eat", grams: 75, rate: 1.0 }));
+  document.getElementById("bDrinkBtn").addEventListener("click", () =>
+    control({ action: "drink", ml: 250 }));
+  document.getElementById("bInjectBtn").addEventListener("click", () =>
+    control({ action: "inject", units: 4 }));
+  document.getElementById("bExerciseBtn").addEventListener("click", () =>
+    control({ action: "exercise", value: !lastExercise }));
+  wireBodyBreaker("bBetaBtn", "beta", "Beta cells (insulin)");
+  wireBodyBreaker("bAccessBtn", "access", "Water access");
+}
 
 /* --- insulin dosing (M12) --- */
 
@@ -1245,10 +1300,56 @@ const urineOsmChart = makeChart("urineOsmChart", {
   series: [{ key: "urine_osm", color: COLOR_UPTAKE, label: "conc." }],
 });
 
+/* --- the coupled body (M39): both loops on one clock --- */
+const bodyGlucoseChart = makeChart("bodyGlucoseChart", {
+  loop: "body", yMin: 0, yMax: 400, yStep: 100,
+  series: [{ key: "glucose", color: COLOR_CORE }],
+  bands: [{ y0: 70, y1: 140, color: HEALTHY_BAND_FILL }],
+  refLines: [
+    { y: 90, label: "set point 90" },
+    { y: 180, label: "kidney spills above here" },
+  ],
+  markers: () => (buffers.body.doses || []).map(d => ({
+    t: d.t, label: `${d.units} U`, color: COLOR_UPTAKE,
+  })),
+});
+const spillChart = makeChart("spillChart", {
+  loop: "body", yMin: 0, yMax: 5, yStep: 1,
+  series: [{ key: "renal_loss", color: COLOR_UPTAKE, label: "sugar out" }],
+});
+const bodyOsmChart = makeChart("bodyOsmChart", {
+  loop: "body", yMin: 260, yMax: 330, yStep: 10,
+  series: [
+    { key: "osmolarity", color: COLOR_CORE, label: "plasma" },
+    { key: "glucose_osm", color: COLOR_UPTAKE, label: "sugar's share" },
+  ],
+  bands: [{ y0: 285, y1: 295, color: HEALTHY_BAND_FILL }],
+  refLines: [
+    { y: 290, label: "set point 290" },
+    { y: 305, label: "dehydration" },
+  ],
+  markers: () => (buffers.body.drinks || []).map(d => ({
+    t: d.t,
+    label: d.ml >= 1000 ? `${(d.ml / 1000).toFixed(1)} L`
+                        : `${d.ml.toFixed(0)} mL`,
+    color: d.auto ? COLOR_SWEAT : COLOR_CORE,
+  })),
+});
+const bodyUrineChart = makeChart("bodyUrineChart", {
+  loop: "body", yMin: 0, yMax: 14, yStep: 7,
+  series: [{ key: "urine_rate", color: COLOR_VASO, label: "flow" }],
+});
+const bodyUrineOsmChart = makeChart("bodyUrineOsmChart", {
+  loop: "body", yMin: 0, yMax: 1600, yStep: 400,
+  series: [{ key: "urine_osm", color: COLOR_UPTAKE, label: "conc." }],
+});
+
 const chartsByLoop = {
   temp: [coreChart, envChart, effectorChart],
   glucose: [glucoseChart, hormoneChart, pumpChart, flowChart],
   water: [osmChart, adhChart, urineFlowChart, urineOsmChart],
+  body: [bodyGlucoseChart, spillChart, bodyOsmChart, bodyUrineChart,
+         bodyUrineOsmChart],
 };
 
 function drawAll() {
@@ -1260,7 +1361,7 @@ function drawAll() {
 /* --- the loop switcher (M7) --- */
 
 const PAGE_IDS = { temp: "page-temp", glucose: "page-glucose",
-                   water: "page-water" };
+                   water: "page-water", body: "page-body" };
 
 document.querySelectorAll(".loop-tab").forEach(b =>
   b.addEventListener("click", () => {

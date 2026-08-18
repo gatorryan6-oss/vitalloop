@@ -23,6 +23,8 @@
       Glucose</button>
     <button class="loop-tab" data-loop="water" type="button">
       Water</button>
+    <button class="loop-tab" data-loop="body" type="button">
+      Whole body</button>
   </nav>
 
   <div class="readouts">
@@ -483,6 +485,67 @@
          aria-label="Urine concentration over time"></svg>
   </section>
 </div>
+
+<div id="page-body" hidden>
+  <section class="chart-card model-note">
+    <h2>Two loops, one body</h2>
+    <p>The sugar loop and the water loop, on one clock. They meet in the
+      kidney: above <strong>180&nbsp;mg/dL</strong> the tubules cannot
+      reabsorb all the filtered glucose, so sugar goes into the urine
+      &mdash; and osmoles drag water out with them.</p>
+    <p class="model-caveat">The single-loop tabs leave this out on
+      purpose. The same body will not read the same here as it does on
+      the Glucose tab, because <em>every model leaves something out</em>
+      &mdash; and noticing what, and why it matters, is the point.</p>
+  </section>
+
+  <section class="chart-card">
+    <h2>Blood glucose (mg/dL)</h2>
+    <svg id="bodyGlucoseChart" viewBox="0 0 960 200"
+         preserveAspectRatio="none"
+         aria-label="Blood glucose over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Sugar leaving in the urine (mg/dL&middot;min) &mdash; the link</h2>
+    <svg id="spillChart" viewBox="0 0 960 160" preserveAspectRatio="none"
+         aria-label="Renal glucose spill over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Plasma osmolarity (mOsm/L), and the sugar's own share of it</h2>
+    <svg id="bodyOsmChart" viewBox="0 0 960 200" preserveAspectRatio="none"
+         aria-label="Plasma osmolarity over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Urine flow (mL/min) and concentration (mOsm/L)</h2>
+    <svg id="bodyUrineChart" viewBox="0 0 960 160" preserveAspectRatio="none"
+         aria-label="Urine flow over time"></svg>
+    <svg id="bodyUrineOsmChart" viewBox="0 0 960 160"
+         preserveAspectRatio="none"
+         aria-label="Urine concentration over time"></svg>
+  </section>
+
+  <section class="chart-card">
+    <h2>Disturb the whole body</h2>
+    <div class="disturb-row">
+      <button id="bEatBtn" type="button">Eat a meal (75 g)</button>
+      <button id="bDrinkBtn" type="button">Drink a glass (250 mL)</button>
+      <button id="bInjectBtn" type="button">Inject 4 U insulin</button>
+      <button id="bExerciseBtn" type="button">Exercise: off</button>
+    </div>
+    <div class="disturb-row">
+      <button class="breaker" id="bBetaBtn" data-part="beta" type="button">
+        Beta cells (insulin)</button>
+      <button class="breaker" id="bAccessBtn" data-part="access"
+              type="button">Water access</button>
+    </div>
+    <p class="hint">Switch the beta cells off and feed the body: that is
+      untreated diabetes. Then take the water away.</p>
+    <a class="export" href="/export.csv?loop=body">Export run (CSV)</a>
+  </section>
+</div>
 </main>
 
 <div id="tooltip" hidden></div>
@@ -492,7 +555,8 @@
   <span class="worksheet-links">Worksheets:
     <a href="/worksheet/temp">temperature</a> &middot;
     <a href="/worksheet/glucose">glucose</a> &middot;
-    <a href="/worksheet/water">water</a></span>
+    <a href="/worksheet/water">water</a> &middot;
+    <a href="/worksheet/body">whole body</a></span>
 </footer>
 
 <script src="/static/diagram.js"></script>

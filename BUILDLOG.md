@@ -24,8 +24,12 @@ Entry format:
   to Phase 11). All three kickoff-interview questions were answered:
   a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
   only. The loops now meet.
-- **Next up:** M39 — the Whole body tab. Then M40 diagram, M41 game
-  layer, M42 close.
+- **Next up:** M40 — the coupled diagram (two loops, one spill arrow).
+  Then M41 game layer, M42 close.
+- **Open exception, time-boxed:** `SANDBOX_ONLY_LOOPS = {"body"}` in
+  app.py. The coupled body is explorable but has no preset, challenge
+  or case yet (kickoff §2: explorable before scored). M41 fills it and
+  empties the set; M42 pins the set empty.
 - **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
   `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
   device on the room's wifi gets its own three loops (M33) through the
@@ -61,6 +65,66 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M39: The Whole body tab
+- Shipped: a FOURTH loop — `Runner(Body(), "body")` in `_make_runners`,
+  so every session gets a coupled body alongside its three single
+  loops, with its own frozen CSV column list. UI: a "Whole body" tab
+  and page — a model-note card naming what the single-loop tabs leave
+  out, five panels (glucose with the 180 spill line drawn as a
+  reference, the spill itself, plasma osmolarity WITH the sugar's own
+  share overlaid, urine flow, urine concentration), disturbance
+  controls (meal / glass / 4 U / exercise) and two breakers (beta
+  cells, water access), CSV link. Readouts show BOTH controlled
+  variables at once and the glucose label flips to "SPILLING SUGAR"
+  above threshold. A sixth worksheet route, `/worksheet/body` ("Two
+  loops, one body"). 154 invariants + verify pass.
+- Deferred: the coupled DIAGRAM to M40 as specced; preset/challenge/
+  case to M41.
+- Open bugs: none.
+- Decisions:
+  1. **A fourth loop broke five lesson-grammar tests, and the fix was to
+     make the exception VISIBLE rather than to narrow the tests
+     quietly.** `test_every_loop_has_a_crisis`, `..._can_teach_the_whole_
+     lesson`, `..._sandbox_is_gameless`, the worksheet suite and the M36
+     lab pass all assumed every loop in `runners` has the full grammar.
+     Rather than weaken them, app.py now DECLARES
+     `SANDBOX_ONLY_LOOPS = {"body"}`, the grammar tests iterate the
+     loops that are not declared, and a new test asserts a declared
+     loop really is game-less AND still serves `/state` and its CSV. The
+     exception lives in the app where a reader will find it, is
+     time-boxed to M41, and M42 pins the set empty. That is the kickoff's
+     own "sandbox first, game second" written down as a check.
+  2. The worksheet suite's failure was not an exception at all — the
+     coupled body genuinely deserves a worksheet, so it got one, and
+     M35's pins (fields exist in the record AND appear on the page,
+     vocabulary exact, no answers) applied to it unchanged.
+  3. The lab pass's "every loop proves it is not redacting" assertion is
+     now scoped to loops that HAVE cases: a loop that cannot be blinded
+     has nothing to prove, and the body record carries values rather
+     than breaker flags.
+  4. `Runner`/`snapshot` needed NO changes for a fourth loop —
+     `doses`/`drinks` were already feature-detected and `Body` provides
+     both. Every control action was tested against the new loop through
+     the routes: eat, drink, inject, exercise, both breakers, speed,
+     pause/resume/reset and salty all answer 200, and a temperature
+     action aimed at it refuses with "env_temp is a temperature-loop
+     action".
+  5. VERIFIED LIVE in the browser, at the DOM level: switched to the
+     tab, broke the beta cells and fed a 75 g meal through the page's
+     own session at 16×, and watched glucose cross the threshold —
+     at sim 21.1 min glucose 207, the header readout reading
+     **"glucose — SPILLING SUGAR"**, `renal_loss` 0.54 mg/dL/min
+     arriving as `tubular_load` 0.54 mOsm/min, urine concentration up at
+     1001 mOsm/L, and the sugar contributing 6.5 mOsm/L of a 294.4
+     plasma osmolarity. All five panels drew (the osmolarity panel with
+     two polylines — plasma and the sugar's share). Console clean.
+     **Honest limit of this check:** the preview pane could not
+     composite frames in this session, so there is no screenshot and the
+     below-the-fold buttons were not clicked with a real mouse — the
+     controls were driven through the page's own session and the
+     rendering read out of the live DOM. A human eyeball on the tab is
+     still worth one minute.
 
 ## 2026-08-17 — M38: The second link — sugar is an osmole, and the spiral
 - Shipped: `set_foreign_osmoles()` on the water loop (plasma osmoles

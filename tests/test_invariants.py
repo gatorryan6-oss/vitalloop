@@ -2450,13 +2450,42 @@ def _armed(vital_app, loop, cid):
 
 # ------------------------------------------------- (ss) the ambush table
 
+def _game_loops(vital_app):
+    """Loops that claim to teach the WHOLE lesson grammar.
+
+    A loop may be deliberately sandbox-only for a while (kickoff §2:
+    "coupling must be explorable before it is scored"), but the app has
+    to SAY SO in `SANDBOX_ONLY_LOOPS` — the exception lives in the code,
+    not in a quietly narrowed test. M42 pins that the set is empty again.
+    """
+    declared = getattr(vital_app, "SANDBOX_ONLY_LOOPS", set())
+    return [l for l in vital_app.runners if l not in declared]
+
+
+def test_a_sandbox_only_loop_is_declared_and_still_works():
+    """An undeclared loop with no game is a gap; a declared one is a
+    decision. Either way it must still teach as a sandbox."""
+    vital_app = _crisis()
+    client = vital_app.app.test_client()
+    for loop in getattr(vital_app, "SANDBOX_ONLY_LOOPS", set()):
+        assert loop in vital_app.runners, (
+            f"{loop!r} is declared sandbox-only but is not a loop")
+        assert loop not in vital_app.CHALLENGES, (
+            f"{loop!r} is declared sandbox-only but HAS a challenge - "
+            "delete it from SANDBOX_ONLY_LOOPS")
+        assert client.get(f"/state?loop={loop}").status_code == 200
+        assert client.get(f"/export.csv?loop={loop}").status_code == 200, (
+            "a sandbox loop still owes the class its spreadsheet")
+
+
 def test_every_loop_has_a_crisis():
     """Kickoff M29: one crisis variant for each of the three loops."""
     vital_app = _crisis()
     loops = {loop for loop, _, _ in _crises(vital_app)}
-    assert loops == set(vital_app.runners), (
+    want = set(_game_loops(vital_app))
+    assert loops == want, (
         f"crisis challenges exist for {sorted(loops)} - M29 is one variant "
-        f"for each of {sorted(vital_app.runners)}")
+        f"for each of {sorted(want)}")
 
 
 def test_crisis_event_shape():
@@ -2794,7 +2823,7 @@ def test_a_challenge_starts_from_the_same_body_every_time(period):
 def test_every_loop_can_teach_the_whole_lesson():
     """(ww) Every verb of the lesson grammar exists on every loop."""
     vital_app = _crisis()
-    for loop in vital_app.runners:
+    for loop in _game_loops(vital_app):
         presets = vital_app.PRESETS[loop]
         assert "healthy" in presets and len(presets) >= 2, (
             f"{loop} has no disease to name, or no way back")
@@ -2812,7 +2841,7 @@ def test_the_sandbox_is_gameless_when_no_game_is_running(period):
     sandbox. A teacher who wants to explore for forty minutes must never
     have to dismiss a game."""
     vital_app, client, _ = period
-    for loop in vital_app.runners:
+    for loop in _game_loops(vital_app):
         # Play a bit of every mode first, then hand the sandbox back.
         cid = list(vital_app.CHALLENGES[loop])[0]
         client.post(f"/control?loop={loop}",
@@ -3486,7 +3515,9 @@ def test_the_lab_pass_every_mode_across_a_room(lab):
             j = c.get(f"/state?loop={loop}").get_json()
             assert "challenge" not in j and "case" not in j
             assert j["preset"] is None
-            assert any(k.endswith("_enabled") for k in j["now"])
+            # Only loops that can BE blinded prove they are not.
+            if loop in vital_app.CASES:
+                assert any(k.endswith("_enabled") for k in j["now"])
 
     # And the projector never felt a thing.
     for loop, runner in vital_app.runners.items():
