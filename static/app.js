@@ -110,6 +110,8 @@ async function poll() {
     window.updateGlucoseDiagram(j.now, blind);
   } else if (loop === "water" && window.updateWaterDiagram) {
     window.updateWaterDiagram(j.now, blind);
+  } else if (loop === "body" && window.updateBodyDiagram) {
+    window.updateBodyDiagram(j.now);
   }
   drawAll();
 }

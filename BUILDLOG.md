@@ -24,8 +24,8 @@ Entry format:
   to Phase 11). All three kickoff-interview questions were answered:
   a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
   only. The loops now meet.
-- **Next up:** M40 — the coupled diagram (two loops, one spill arrow).
-  Then M41 game layer, M42 close.
+- **Next up:** M41 — the coupled body joins the lesson grammar (preset,
+  challenge, blind case). Then M42, the close.
 - **Open exception, time-boxed:** `SANDBOX_ONLY_LOOPS = {"body"}` in
   app.py. The coupled body is explorable but has no preset, challenge
   or case yet (kickoff §2: explorable before scored). M41 fills it and
@@ -65,6 +65,50 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M40: Two loops, one arrow
+- Shipped: a fourth diagram on the M4/M22 kit — deliberately NOT a third
+  copy of the loop picture but a picture of the JOIN. Seven boxes:
+  blood glucose → the kidney tubules → sugar into the urine, down the
+  right through "water follows the osmoles out" to plasma osmolarity,
+  then right-to-left along the bottom through ADH/thirst to drinking.
+  Both links drawn: the spill chain across the top and down, and LINK 2
+  as a dashed path taking the long way round the outside (that sugar
+  never left the blood, so it must not appear to pass through the
+  kidney). Three boxes carry live numbers via `setLine`, so the picture
+  doubles as a readout. 154 invariants + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The dark arrow IS the lesson.** Below 180 mg/dL the spill arrow
+     sits at baseline grey and the response box reads "nothing, yet",
+     with the caption "nothing crosses below 180 mg/dL — a THRESHOLD,
+     not a leak". A healthy body's two loops are drawn side by side and
+     visibly not talking to each other; the coupling only exists when
+     the sugar loop has already failed.
+  2. **The kidney box glows with SPILLING, not with reabsorbing.** Every
+     other box in this project glows when its labelled action is
+     happening (M22 decision), and this box's label is "tubules reabsorb
+     the filtered sugar" — but a box that blazed while working normally
+     and went dark exactly when the interesting thing happened would
+     invert the whole lesson. The label was written to match: it glows
+     as reabsorption fails. Flagged here because it is the one place the
+     project's glow grammar is applied to a failure rather than a
+     function.
+  3. No `status()` badges on this diagram: the coupled body has no
+     breaker flags in its record and no blind case yet. If M41 puts a
+     case on this loop, redaction has to be designed for it then — the
+     M28 allowlist is per-loop and fails closed, so nothing leaks in the
+     meantime.
+  4. VERIFIED LIVE (DOM-level again — the preview pane still cannot
+     composite in this session, so no screenshot): at rest, glucose
+     90 mg/dL, spill arrow `#c3c2b7` at width 2.00 and the box reading
+     "nothing, yet". Beta cells off + a 100 g meal at 16×: at 191 mg/dL
+     the arrow had turned `#4a3aa7` at width 2.13, and at **252 mg/dL it
+     read opacity 0.62 / width 2.83** with the boxes live at "252 mg/dL",
+     "1.44 mg/dL·min", "294.1 mOsm/L" and urine at 1051 mOsm/L. Reset,
+     and the arrow went back to `#c3c2b7` / 2.00 — lit as glucose
+     crossed, dark again when it came home. Console clean.
 
 ## 2026-08-17 — M39: The Whole body tab
 - Shipped: a FOURTH loop — `Runner(Body(), "body")` in `_make_runners`,

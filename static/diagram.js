@@ -441,4 +441,89 @@
     status(W, "kidney", !r.kidney_enabled, blind);
     status(W, "thirst", !r.water_access, blind);
   };
+
+  /* ================= the coupled body (M40) =================
+
+     Not a third copy of the loop diagram — a picture of the JOIN. The
+     top row is the sugar loop's last resort (the kidney), the bottom
+     row is the water loop answering, and the two arrows down the middle
+     are the whole of Phase 10:
+
+       LINK 1  sugar that could not be reabsorbed spills into the urine
+               and drags water out with it (osmotic diuresis);
+       LINK 2  sugar still IN the blood is itself an osmole, so the
+               receptors feel it directly.
+
+     The spill arrow is DARK below 180 mg/dL. That darkness is the
+     lesson: this is a threshold, not a leak, and a healthy body's two
+     loops never talk to each other at all. */
+
+  const B = makeKit("bodyDiagram");
+  const SPILL_FULL = 3.5;        // mg/dL/min that counts as "wide open"
+  const OSM_SHARE_FULL = 15.0;   // mOsm/L of sugar that counts as a lot
+
+  B.box("glucose", 25, 35, 205, 84, "the sugar loop",
+        ["Blood glucose", "— mg/dL"]);
+  B.box("kidney", 300, 35, 220, 84, "effector — the kidney",
+        ["Tubules reabsorb", "the filtered sugar"]);
+  B.box("sugarout", 590, 35, 210, 84, "response",
+        ["Sugar into the urine", "—"]);
+  B.box("waterout", 590, 175, 210, 70, "the link",
+        ["Water follows", "the osmoles out"]);
+  B.box("osm", 590, 300, 210, 84, "the water loop",
+        ["Plasma osmolarity", "— mOsm/L"]);
+  B.box("adh", 300, 300, 220, 84, "control center",
+        ["ADH holds water,", "thirst asks for more"]);
+  B.box("drink", 25, 300, 205, 84, "response",
+        ["Drinking", "— and drinking"]);
+
+  B.arrow("a-g-kidney", 232, 77, 297, 77);
+  B.arrow("a-spill", 522, 77, 587, 77);
+  B.arrow("a-sugar-water", 695, 121, 695, 172);
+  B.arrow("a-water-osm", 695, 247, 695, 297);
+  B.arrow("a-osm-adh", 587, 342, 523, 342);
+  B.arrow("a-adh-drink", 297, 342, 233, 342);
+  // Link 2 takes the long way round the outside, so it never pretends
+  // to be part of the kidney chain: this sugar never left the blood.
+  B.pathArrow("a-osmole", "M 127 121 L 127 262 L 640 262 L 640 296", true);
+
+  B.caption(555, 150, "nothing crosses below 180 mg/dL — a THRESHOLD, not a leak");
+  B.caption(360, 255, "link 2: the sugar still in the blood is itself an osmole");
+  B.caption(480, 412,
+    "two loops, one body — what the sugar loop cannot fix becomes the water loop's problem");
+
+  window.updateBodyDiagram = function (r) {
+    const gErr = r.glucose - 90.0;
+    const oErr = r.osmolarity - 290.0;
+    const dirG = gErr >= 0 ? HOT : COLD;
+    const dirO = oErr >= 0 ? HOT : COLD;
+    const spill = (r.renal_loss || 0) / SPILL_FULL;
+    const share = (r.glucose_osm || 0) / OSM_SHARE_FULL;
+
+    // Live numbers in the boxes, so the picture is also a readout.
+    B.setLine("glucose", 1, `${r.glucose.toFixed(0)} mg/dL`, r.glucose > 180);
+    B.setLine("sugarout", 1,
+      spill > 0.003 ? `${r.renal_loss.toFixed(2)} mg/dL·min` : "nothing, yet",
+      spill > 0.003);
+    B.setLine("osm", 1, `${r.osmolarity.toFixed(1)} mOsm/L`,
+      r.osmolarity > 305);
+
+    B.setGlow("glucose", Math.abs(gErr) / 120, dirG);
+    // The kidney glows with how hard it is DUMPING sugar — the box's
+    // labelled job is reabsorption, and spilling is that job failing.
+    B.setGlow("kidney", spill, C_UPTAKE);
+    B.setGlow("sugarout", spill, C_UPTAKE);
+    B.setGlow("waterout", spill, C_SWEAT);
+    B.setGlow("osm", Math.abs(oErr) / 15, dirO);
+    B.setGlow("adh", Math.max(r.adh, r.thirst), C_SWEAT);
+    B.setGlow("drink", r.thirst, C_SHIVER);
+
+    B.setArrow("a-g-kidney", Math.abs(gErr) / 120, dirG);
+    B.setArrow("a-spill", spill, C_UPTAKE);
+    B.setArrow("a-sugar-water", spill, C_SWEAT);
+    B.setArrow("a-water-osm", spill, C_SWEAT);
+    B.setArrow("a-osm-adh", Math.abs(oErr) / 15, dirO);
+    B.setArrow("a-adh-drink", r.thirst, C_SHIVER);
+    B.setArrow("a-osmole", share, C_UPTAKE);
+  };
 })();
