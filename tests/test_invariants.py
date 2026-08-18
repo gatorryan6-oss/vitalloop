@@ -387,6 +387,23 @@ The rooms API contract (built at M43, Phase 11):
     /teacher/room.json: the same rows as data, same PIN gate, still
     read-only.
 
+    (M46.5) "name your team once": an attempt built with NO card label
+    inherits the requesting session's join-screen team name (through
+    clean_label, like every name); an explicit card label always wins;
+    outside a request nothing changes. The page pre-fills empty label
+    boxes from the cookie, still editable per run.
+
+    (M47) the Phase 11 close. Two classes and a projector through the
+    production routes: attempts land stamped with their class, boards
+    scope per viewer, the dashboard watches a blind case by number
+    with the teacher signed in — and a server restart (a fresh
+    registry) costs a device nothing because its cookies re-present
+    everything. The cookieless world gained exactly ONE key
+    (board_period, always None for it) and no period/team/stuck
+    anywhere — verify.py, curl and ten phases of tests keep meaning
+    what they meant. Engines untouched all phase: the two regression
+    hashes are the proof and are not repeated here.
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -4805,3 +4822,137 @@ def test_room_json_is_gated_and_reads_without_stepping(fresh_registry,
     assert before == after, (
         "the auto-refresh feed stepped a student's simulation - every "
         "room view must be read-only")
+
+
+# ============ M46.5: the join name reaches the scoreboard ==================
+# Found at M47's room pass: the join screen said "name your team once",
+# but the boards only knew names typed on the cards. The fallback keeps
+# the promise; the explicit card label still wins.
+
+def test_a_blank_label_inherits_the_join_team_name(monkeypatch):
+    vital_app = _m44()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    report = {"met": True, "rows": []}
+    score = {"points": 50, "medal": None, "rows": [], "zeroed": None}
+    cookie = "vl_period=P3; vl_team=The%20Mongooses"
+    with vital_app.app.test_request_context("/",
+                                            headers={"Cookie": cookie}):
+        att = vital_app.build_attempt("water", "aid_station", report, score)
+        named = vital_app.build_attempt("water", "aid_station", report,
+                                        score, label="Card Name")
+    assert att["label"] == "The Mongooses", (
+        'the join screen said "name your team once" - a run started '
+        "with a blank label box must inherit that name")
+    assert named["label"] == "Card Name", "an explicit card label wins"
+    att = vital_app.build_attempt("water", "aid_station", report, score)
+    assert att["label"] is None, (
+        "outside a request (tests, console) nothing changed")
+
+
+# ================= M47: the full pass, and Phase 11 closes =================
+# Like M42, the close is half regression check by design: a rooms phase's
+# real risk is not that the new thing fails - it is that the cookieless
+# world, the four loops, or the game's secrecy change quietly underneath.
+
+def test_the_room_pass_with_periods(lab, monkeypatch):
+    """(M47) Two classes and a projector, join to scoreboard, all
+    through production routes, with the dashboard watching."""
+    vital_app, logged = lab
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M43-M46 aren't all here yet - M47 is the close")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [])
+
+    def device(sid, period, team):
+        c = vital_app.app.test_client()
+        c.set_cookie("vl_sid", sid)
+        c.set_cookie("vl_period", period)
+        c.set_cookie("vl_team", team)
+        return c
+
+    a = device("m47-a", "P3", "Third%20Shift")
+    b = device("m47-b", "P5", "Fifth%20Gear")
+    projector = vital_app.app.test_client()
+    projector.set_cookie("vl_sid", "m47-projector")
+    projector.set_cookie("vl_period", "")            # skipped, on purpose
+
+    # 1. Each class plays the same temp challenge through the routes,
+    #    and each attempt lands stamped with ITS class.
+    for client, sid in ((a, "m47-a"), (b, "m47-b")):
+        assert client.post("/control?loop=temp",
+                           json={"action": "challenge",
+                                 "value": "cold_store"}).status_code == 200
+        runner = vital_app.registry.runners_for(sid)["temp"]
+        with runner.lock:
+            runner._step(int(runner.challenge["t_end"]
+                             - runner.challenge["t_start"]) + 1)
+        assert client.get("/state?loop=temp").status_code == 200
+    assert [r["period"] for r in logged] == ["P3", "P5"], (
+        "an attempt must land stamped with the class that played it")
+
+    # 2. The boards scope per viewer: a class sees itself, the
+    #    projector sees the school.
+    monkeypatch.setattr(vital_app, "ATTEMPTS",
+                        [dict(r, id=i + 1) for i, r in enumerate(logged)])
+    ja = a.get("/state?loop=temp").get_json()
+    assert ja["board_period"] == "P3"
+    assert {e["label"] for e in ja["leaderboard"]["cold_store"]} == \
+        {"Third Shift"}, "a P3 device's board is P3's alone"
+    jp = projector.get("/state?loop=temp").get_json()
+    assert jp["board_period"] is None
+    assert {e["label"] for e in jp["leaderboard"]["cold_store"]} == \
+        {"Third Shift", "Fifth Gear"}, "the projector shows everyone"
+
+    # 3. A blind case with the teacher watching: the student payload
+    #    leaks nothing (the M42 check, on the coupled loop), and the
+    #    dashboard names it by number, never by disease.
+    assert a.post("/control?loop=body",
+                  json={"action": "diagnose",
+                        "value": 1}).status_code == 200
+    state = a.get("/state?loop=body").get_json()
+    banned = sorted(k for k in state["now"]
+                    if k.endswith("_enabled") or k in ANSWER_KEY_FIELDS)
+    assert not banned and state["preset"] is None
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    page = teacher.get("/teacher").data.decode("utf-8")
+    assert "case 1 of" in page and "blind" in page
+    assert "mellitus" not in page.lower(), (
+        "a disease name reached the projected teacher page while the "
+        "body case is BLIND")
+    assert "P3" in page and "Third Shift" in page, (
+        "the row wears its class and team")
+
+    # 4. Worksheets still print for all four loops.
+    for loop in vital_app.WORKSHEETS:
+        assert vital_app.app.test_client().get(
+            f"/worksheet/{loop}").status_code == 200
+
+    # 5. A restart costs nothing: the server reborn (fresh registry),
+    #    the same cookies land the same class.
+    from sessions import SessionRegistry
+    monkeypatch.setattr(vital_app, "registry",
+                        SessionRegistry(vital_app._make_runners, 40, 1800))
+    assert a.get("/state?loop=temp").status_code == 200
+    assert vital_app.registry.identity("m47-a") == \
+        {"period": "P3", "team": "Third Shift"}, (
+        "after a restart the cookie re-presents everything - eviction "
+        "and reboots stay free")
+
+
+def test_the_cookieless_world_gained_only_the_scope_label(fresh_registry):
+    """(M47) verify.py, pytest and curl drive the same default session
+    they have since M7. Phase 11 added them exactly one /state key -
+    board_period, always None - and nothing else."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "STUCK_BLIND_S"):
+        pytest.skip("M43-M46 aren't all here yet - M47 is the close")
+    c = vital_app.app.test_client()
+    j = c.get("/state?loop=temp").get_json()
+    assert j["board_period"] is None
+    assert not ({"period", "team", "stuck"} & set(j)), (
+        "rooms-phase keys crept into the cookieless payload")
+    assert vital_app.registry.count() == 0, (
+        "a cookieless request seated a session - the default world "
+        "must stay the module-level runners")

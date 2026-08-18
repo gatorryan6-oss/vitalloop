@@ -1500,6 +1500,16 @@ def _viewer_period():
 _REQUEST_SCOPE = object()    # sentinel: "scope to the request's viewer"
 
 
+def _attempt_team():
+    """The label fallback (M46.5): a run with no card label inherits
+    the session's join-screen team name — "name your team once" is the
+    join screen's promise, and the scoreboard has to keep it. An
+    explicit card label always wins."""
+    if not has_request_context():
+        return None
+    return _cookie_team()
+
+
 def build_attempt(loop, name, report, score, label=None, mode="challenge",
                   events=None):
     """One finished run as a log record (Phase 8 kickoff SS5 fields).
@@ -1507,6 +1517,8 @@ def build_attempt(loop, name, report, score, label=None, mode="challenge",
     Wall-clock time is app-level and that's fine: a leaderboard needs a
     real timestamp to sort by, and the ENGINE still never reads the clock.
     """
+    if label is None:
+        label = _attempt_team()
     return {
         "id": None,               # assigned by the log on append
         "wall_time": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -2469,6 +2481,8 @@ def build_case_attempt(loop, case_id, grade, label=None):
 
     No medal: a diagnosis is right or it isn't, and medals are for play.
     """
+    if label is None:
+        label = _attempt_team()   # the join name, kept (M46.5)
     return {
         "id": None,
         "wall_time": datetime.datetime.now().isoformat(timespec="seconds"),

@@ -60,8 +60,19 @@ function renderPeriodBadge() {
     : "Unassigned";
 }
 
+/* M46.5: "name your team once." The join name pre-fills every empty
+   challenge/case label box (still editable per run), and the server
+   falls back to it when a run is started with the box blank. */
+function prefillTeamNames() {
+  const team = getCookie("vl_team");
+  if (!team) return;
+  document.querySelectorAll(".challenge-label, .case-label")
+    .forEach((el) => { if (!el.value) el.value = team; });
+}
+
 (function wireJoin() {
   renderPeriodBadge();
+  prefillTeamNames();
   const overlay = document.getElementById("joinOverlay");
   if (!overlay) return;                       // joining is off (M43)
   if (getCookie("vl_period") !== null) return;   // already answered
@@ -83,6 +94,7 @@ function renderPeriodBadge() {
               document.getElementById("joinTeam").value.trim());
     overlay.hidden = true;
     renderPeriodBadge();
+    prefillTeamNames();
   });
   document.getElementById("joinSkip").addEventListener("click", () => {
     setCookie("vl_period", "");

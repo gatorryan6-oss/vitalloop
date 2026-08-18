@@ -99,6 +99,23 @@ Entry format:
 
 ## Milestones
 
+## 2026-08-18 — M46.5: The join name reaches the scoreboard
+- Shipped: found by M47's room pass, patched as a decimal milestone
+  (working agreement): the join screen said "name your team once", but
+  attempts only carried names typed on the challenge/case cards — a
+  team that joined and never retyped landed on the board as "(no
+  team)". Now an attempt built with a BLANK label inherits the
+  session's join-screen team name (through `clean_label`, like every
+  name in the app); an explicit card label always wins; outside a
+  request nothing changed. The page also pre-fills every empty label
+  box from the cookie — visible, still editable per run. 1 new
+  invariant (188 pass).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: the fallback lives in `build_attempt`/`build_case_attempt`
+  (the two places a record is born), not in the routes — API callers
+  and future modes inherit the promise for free.
+
 ## 2026-08-18 — M46: Who's stuck
 - Shipped: the M46 contract (6 tests). Challenge and case stamps grew a
   wall-clock `wall_start`; Runner grew `tries` (per-challenge
