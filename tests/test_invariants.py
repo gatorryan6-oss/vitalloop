@@ -1233,7 +1233,9 @@ WATER_FIELDS = {
     "adh_override",     # grown at M31 (Phase 9): the SIADH knob — appended,
                         # like every record growth since M12
     "tubular_load",     # grown at M37 (Phase 10): mOsm/min arriving in the
-}                       # tubule from ANOTHER loop; 0.0 = uncoupled
+                        # tubule from ANOTHER loop; 0.0 = uncoupled
+    "foreign_osm",      # grown at M38: mOsm/L of PLASMA osmoles another
+}                       # loop owns (the sugar); 0.0 = uncoupled
 
 
 def _water():
@@ -3594,7 +3596,8 @@ BODY_FIELDS = {
     "insulin",
     "glucagon",
     "renal_loss",       # mg/dL/min spilling into the urine (the SOURCE)
-    "tubular_load",     # mOsm/min arriving in the tubule (the LINK)
+    "tubular_load",     # mOsm/min arriving in the tubule (LINK 1, M37)
+    "glucose_osm",      # mOsm/L the sugar adds to plasma (LINK 2, M38)
     "osmolarity",       # mOsm/L - the water loop's controlled variable
     "water_liters",
     "adh",
@@ -3646,7 +3649,7 @@ def test_water_phase9_record_unchanged_by_phase10():
     import json
     WaterSimulation = _water()
     records, _ = _scripted_water_run(WaterSimulation)
-    fields = sorted(set(records[0]) - {"tubular_load"})
+    fields = sorted(set(records[0]) - {"tubular_load", "foreign_osm"})
     subset = [{k: r[k] for k in fields} for r in records]
     digest = hashlib.sha256(
         json.dumps(subset, sort_keys=True).encode()).hexdigest()
@@ -3667,28 +3670,61 @@ def test_body_records_have_the_frozen_fields():
             f"{sorted(BODY_FIELDS)} (Phase 10 kickoff SS5)")
 
 
-def test_the_coupling_is_a_threshold_not_a_leak():
-    """(bbbb) A healthy body must not feel the link AT ALL. Its water loop
-    is compared tick-for-tick against a standalone one: identical, or the
-    coupling is leaking into normal physiology."""
+def test_the_spill_is_a_threshold_not_a_leak():
+    """(bbbb) LINK 1 has a threshold and must respect it absolutely: a
+    healthy body, meals included, spills exactly nothing. If normal
+    physiology loses sugar in its urine, the threshold is wrong."""
     Body = _body()
-    WaterSimulation = _water()
     b = _diabetic_day(Body, hours=6, meals=(1, 3), grams=75)   # healthy
     assert max(r["renal_loss"] for r in b.history()) == 0.0, (
         "a healthy body spilled sugar - normal glucose never crosses the "
         "180 mg/dL threshold, meals included")
-    assert max(r["tubular_load"] for r in b.history()) == 0.0
+    assert max(r["tubular_load"] for r in b.history()) == 0.0, (
+        "a healthy body sent solute into the tubule from the sugar loop")
 
+
+def test_a_body_at_the_set_point_is_exactly_the_standalone_loop():
+    """(bbbb) The structural check on BOTH links at once. With glucose
+    sitting at its set point neither link has anything to carry, and the
+    coupled water loop must then be tick-for-tick the loop Phase 6 built.
+
+    Note what this deliberately does NOT claim: that a FED healthy body
+    matches too. Link 2 has no threshold and should not have one — a real
+    post-meal glucose of 140 mg/dL really does add ~3 mOsm/L to plasma
+    osmolarity, and pretending otherwise to keep a test tidy would be
+    modelling the test instead of the body.
+    """
+    Body = _body()
+    WaterSimulation = _water()
+    b = Body()
+    b.step(6 * 3600)            # fasting: glucose parked at 90
     solo = WaterSimulation()
     solo.step(6 * 3600)
-    coupled = b.water.history()
-    fields = [k for k in solo.state() if k != "tubular_load"]
-    for i, (a, c) in enumerate(zip(solo.history(), coupled)):
+    fields = [k for k in solo.state()
+              if k not in ("tubular_load", "foreign_osm")]
+    for i, (a, c) in enumerate(zip(solo.history(), b.water.history())):
         for k in fields:
             assert a[k] == c[k], (
                 f"tick {i}: coupled water {k}={c[k]!r} but standalone "
-                f"{k}={a[k]!r} - a healthy body's water loop must be "
-                "byte-identical whether or not a sugar loop is attached")
+                f"{k}={a[k]!r} - with nothing to couple, the water loop "
+                "must be byte-identical to the one that has no sugar loop "
+                "attached at all")
+
+
+def test_a_healthy_fed_body_feels_only_a_whisper_of_the_sugar():
+    """(bbbb) Link 2's honest bound: real, but small enough that the
+    three single-loop lessons still hold. If an ordinary lunch moved
+    plasma osmolarity appreciably, the coupling would be too strong."""
+    Body = _body()
+    b = _diabetic_day(Body, hours=6, meals=(1, 3), grams=75)   # healthy
+    share = max(r["glucose_osm"] for r in b.history())
+    assert 0.0 < share < 5.0, (
+        f"a healthy fed body's sugar contributed {share:.1f} mOsm/L to "
+        "plasma osmolarity - it should be a whisper (a few mOsm/L), "
+        "neither absent nor loud")
+    assert max(r["osmolarity"] for r in b.history()) < 296.0, (
+        "an ordinary lunch pushed plasma osmolarity out of its normal "
+        "range - the sugar term must not dominate a healthy body")
 
 
 def test_untreated_mellitus_floods_with_sugar_loaded_urine():
@@ -3811,6 +3847,102 @@ def _scripted_body_run():
 def test_body_is_deterministic():
     assert _scripted_body_run() == _scripted_body_run(), (
         "Two identical coupled runs diverged (kickoff SS2)")
+
+
+# ---------------- M38: the second link, and the spiral ----------------
+# Sugar does not only leave — while it is still in the blood it is an
+# OSMOLE, and the osmoreceptors can feel it. That is the "hyperosmolar"
+# in hyperosmolar hyperglycemic state, and it is what makes an untreated
+# diabetic thirsty. Without it the M37 body passed extra urine and barely
+# asked for a drink, which is not the disease anybody recognises.
+
+def test_sugar_in_the_blood_is_an_osmole_the_receptors_feel():
+    """(eeee) The derived factor, and that it reaches the sensors."""
+    _body()
+    from engine import body
+    assert body.MGDL_TO_MOSM_L == pytest.approx(10.0 / body.GLUCOSE_MW)
+    assert body.MGDL_TO_MOSM_L == pytest.approx(1.0 / 18.0, abs=0.002), (
+        "a mg/dL of glucose should be about 1/18 of a mOsm/L - the "
+        "clinical formula's 'glucose over 18', which this must agree with")
+    Body = _body()
+    b = _diabetic_day(Body, hours=4, meals=(1,), grams=100,
+                      setup=lambda s: s.set_effector_enabled("beta", False))
+    h = b.history()
+    assert max(r["glucose_osm"] for r in h) > 5.0, (
+        "hyperglycemia added almost nothing to plasma osmolarity - the "
+        "second link is not connected")
+    peak = max(h, key=lambda r: r["glucose_osm"])
+    assert peak["glucose_osm"] == pytest.approx(
+        (peak["glucose"] - 90.0) * body.MGDL_TO_MOSM_L), (
+        "the sugar's osmolar share must be the EXCESS above the normal "
+        "fasting level, not the whole of it - the water loop's 290 "
+        "baseline already has ordinary sugar dissolved in it")
+
+
+def test_untreated_mellitus_is_thirsty():
+    """(eeee) Polydipsia, the third leg of the classic triad. The measure
+    is how often the body reaches for a glass by itself - thirst itself
+    is a sawtooth capped by the drinking threshold (M20), so the DRINKING
+    is the signal, not the thirst number."""
+    Body = _body()
+    mellitus = _diabetic_day(Body, setup=lambda s:
+                             s.set_effector_enabled("beta", False))
+    healthy = _diabetic_day(Body)
+    m_l = sum(d["ml"] for d in mellitus.drinks()) / 1000.0
+    h_l = sum(d["ml"] for d in healthy.drinks()) / 1000.0
+    assert m_l > 2.0 * h_l, (
+        f"the diabetic body drank {m_l:.2f} L against the healthy body's "
+        f"{h_l:.2f} L - polydipsia must be unmistakable, not marginal")
+
+
+def test_the_loop_compensates_until_it_cannot():
+    """(eeee) The spiral, and the fact that it is a spiral ONLY when the
+    behavioral arm is cut. With a bottle in reach the loop defends
+    osmolarity and pays for it in liters; take the bottle away and the
+    same body runs past the dehydration line."""
+    Body = _body()
+    coping = _diabetic_day(Body, setup=lambda s:
+                           s.set_effector_enabled("beta", False))
+    stranded = _diabetic_day(Body, setup=lambda s: (
+        s.set_effector_enabled("beta", False),
+        s.set_effector_enabled("access", False)))
+
+    coping_peak = max(r["osmolarity"] for r in coping.history())
+    assert coping_peak < 300.0, (
+        f"a diabetic body WITH water peaked at {coping_peak:.1f} mOsm/L - "
+        "while it can still drink, the loop is supposed to hold the line "
+        "(and the cost shows up as liters, not as osmolarity)")
+
+    h = stranded.history()
+    stranded_peak = max(r["osmolarity"] for r in h)
+    assert stranded_peak > DEHYDRATION_LINE, (
+        f"a diabetic body with NO water only reached {stranded_peak:.1f} "
+        "mOsm/L - the spiral must actually cross 305")
+    assert max(r["thirst"] for r in h) == pytest.approx(1.0), (
+        "a body this dry must be maximally thirsty - the alarm works, it "
+        "just has nothing to reach for")
+    # And it is one-way: the last hour is drier than the first.
+    early = [r["osmolarity"] for r in h[:3600]]
+    late = [r["osmolarity"] for r in h[-3600:]]
+    assert min(late) > max(early), (
+        "the stranded body's osmolarity must climb monotonically enough "
+        "that its last hour is drier than its first - a spiral, not a "
+        "wobble")
+
+
+def test_foreign_osmoles_reject_nonsense():
+    """(eeee)"""
+    WaterSimulation = _water()
+    sim = WaterSimulation()
+    with pytest.raises(ValueError):
+        sim.set_foreign_osmoles(-1.0)
+    sim.set_foreign_osmoles(0.0)
+    sim.set_foreign_osmoles(13.8)
+    sim.step(1)
+    assert sim.state()["foreign_osm"] == 13.8
+    assert sim.state()["osmolarity"] > 300.0, (
+        "foreign osmoles must show up in the osmolarity this loop "
+        "reports - they are part of the real number, not an annotation")
 
 
 def test_neither_engine_imports_the_other():

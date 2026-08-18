@@ -89,6 +89,38 @@ def main():
     print("this whole story is a THRESHOLD being crossed, not a leak.")
 
     print("\n" + "=" * 66)
+    print("The triad, and what happens when the bottle is taken away")
+    print("=" * 66)
+    stranded = _run("stranded", lambda s: (
+        s.set_effector_enabled("beta", False),
+        s.set_effector_enabled("access", False)))
+    sh = stranded.history()
+    healthy_drank = sum(d["ml"] for d in healthy.drinks()) / 1000.0
+    print(f"{'':26} {'urine':>8} {'drank':>8} {'peak osm':>10} "
+          f"{'thirst':>8}")
+    for name, body, drank in (("healthy", healthy, healthy_drank),
+                              ("mellitus, water in reach", b, drank_l),
+                              ("mellitus, NO water", stranded, 0.0)):
+        hh = body.history()
+        print(f"{name:26} "
+              f"{sum(r['urine_rate'] for r in hh)/60/1000:>6.2f} L "
+              f"{drank:>6.2f} L "
+              f"{max(r['osmolarity'] for r in hh):>10.1f} "
+              f"{max(r['thirst'] for r in hh):>8.2f}")
+    print()
+    print("Polyuria and polydipsia, both there: the diabetic body passes")
+    print("about twice the urine and drinks nearly three times the water.")
+    print("And notice its osmolarity is NORMAL while it can still drink.")
+    print("That is not the disease being mild - that is the loop WORKING,")
+    print("and the four liters are what the work costs.")
+    print()
+    print(f"Take the bottle away and the same body runs to "
+          f"{max(r['osmolarity'] for r in sh):.1f} mOsm/L with thirst")
+    print("pinned at maximum and nothing to reach for. The alarm is fine.")
+    print("The effector is a behavior, and a behavior needs a world to")
+    print("act on. That is the whole reason this loop is different.")
+
+    print("\n" + "=" * 66)
     print("The two siphons, side by side")
     print("=" * 66)
     ins = _run("insipidus",

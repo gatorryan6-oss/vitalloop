@@ -2264,8 +2264,8 @@ CSV_FIELDS = {
               "sensor_enabled",
               # grown at M31 with the Phase 9 SIADH knob, same rule
               "adh_override",
-              # grown at M37 with the Phase 10 coupling term, same rule
-              "tubular_load"],
+              # grown at M37/M38 with the Phase 10 coupling terms
+              "tubular_load", "foreign_osm"],
 }
 
 

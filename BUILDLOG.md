@@ -24,9 +24,8 @@ Entry format:
   to Phase 11). All three kickoff-interview questions were answered:
   a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
   only. The loops now meet.
-- **Next up:** M38 — the return leg (dehydration feeding back on the
-  sugar), sweep-first and deferrable if the sweep says it doesn't
-  teach. Then M39 tab, M40 diagram, M41 game layer, M42 close.
+- **Next up:** M39 — the Whole body tab. Then M40 diagram, M41 game
+  layer, M42 close.
 - **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
   `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
   device on the room's wifi gets its own three loops (M33) through the
@@ -62,6 +61,65 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M38: The second link — sugar is an osmole, and the spiral
+- Shipped: `set_foreign_osmoles()` on the water loop (plasma osmoles
+  another loop owns, added to reported AND sensed osmolarity), wired in
+  `Body` as `(glucose − 90) × MGDL_TO_MOSM_L`; `foreign_osm` appended to
+  the water record and CSV, `glucose_osm` to the body record. M38
+  contract — 7 tests: the factor derived and agreeing with the clinical
+  "glucose over 18"; the share is the EXCESS not the whole; polydipsia
+  (the diabetic body must drink more than twice the healthy one); the
+  loop compensates with water available (peak osm < 300) and crosses 305
+  with thirst pinned at 1.00 without; the stranded body's last hour
+  drier than its first; validation. 153 invariants + verify pass.
+- Deferred: **hemoconcentration — measured, then deliberately left
+  out** (see decision 1). Logged here so it is not silently forgotten:
+  it is real, it is just below the resolution of a class period.
+- Open bugs: none.
+- Decisions:
+  1. **SPEC AMENDMENT, logged not silent (the M24/M29 pattern): the
+     return leg the kickoff named is too weak to teach, and a different
+     link matters more.** The kickoff specced M38 as hemoconcentration —
+     falling body water concentrating the remaining sugar. Measured it
+     before building it: over 12 h the diabetic body loses 1.3 % of its
+     water with a bottle in reach and 4.0 % without, which would raise
+     glucose by **+3 and +9 mg/dL**. Real, and invisible; the clinical
+     version of that spiral takes days, and this app teaches in
+     periods. Built the honest alternative instead — **glucose as a
+     plasma osmole**, worth **+13.8 mOsm/L at the sugar peak**, which
+     is the literal "hyperosmolar" of hyperosmolar hyperglycemic state.
+  2. **It is what the M37 body was visibly missing.** After M37 the
+     untreated body passed extra urine and hardly asked for a drink
+     (thirst peaking at 0.11) — polyuria without polydipsia, which is
+     not a disease any clinician would recognise. With the sugar
+     feeding the osmoreceptors: **drinks 4.00 L against a healthy
+     1.50 L**, urine 2.46 L against 1.24 L. The triad is now all
+     three legs.
+  3. **The compensating body's osmolarity reads NORMAL, and that is the
+     lesson, not a failure.** Mellitus-with-water peaks at 294.2
+     mOsm/L — identical to healthy — while drinking four liters to get
+     there. The disease is not visible in the controlled variable; it is
+     visible in the EFFORT. Take the bottle away and the same body runs
+     to 313.8 with thirst pinned at 1.00. Pinned both ways round.
+  4. **LINK 2 HAS NO THRESHOLD, AND MUST NOT.** The M37 invariant said
+     "the coupling is a threshold, not a leak" and a healthy FED body
+     now fails that as written, because a real post-meal 140 mg/dL
+     genuinely does add ~3 mOsm/L to plasma osmolarity. Rather than
+     invent a threshold to keep a test tidy, the invariant was split
+     into what is actually true: link 1 (the renal spill) is absolute —
+     a healthy body spills exactly zero; the byte-identical comparison
+     against a standalone water loop now runs on a FASTING body, where
+     neither link has anything to carry; and a fed healthy body is
+     bounded instead (0 < sugar's share < 5 mOsm/L, total osm < 296).
+     Modelling the body, not the test.
+  5. Emergent and worth a mention in class: with water freely available
+     the compensating body ends slightly water-LOADED (40.0 → 41.2 L),
+     so its salt is diluted while total osmolarity reads normal. That is
+     translocational hyponatremia — the real reason clinicians "correct"
+     sodium for glucose. Nothing models it; it falls out. (This model
+     lumps all non-glucose solute into one pool, so it is the right
+     phenomenon, not a sodium number to quote.)
 
 ## 2026-08-17 — M37: The loops meet (Phase 10 starts)
 - Shipped: Phase 10 kickoff (`vital_loop_phase10_kickoff.md`) and

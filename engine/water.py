@@ -82,6 +82,8 @@ class WaterSimulation:
         self._adh_override = None        # SIADH knob (M31), None = healthy
         self._tubular_load = 0.0         # mOsm/min arriving from ANOTHER
                                          # loop (M37); 0.0 = uncoupled
+        self._foreign_osm = 0.0          # mOsm/L of PLASMA osmoles owned by
+                                         # another loop (M38); 0.0 = uncoupled
         self._drinks = []                # {"t", "ml", "auto"}
         self._t = 0.0
         self._history = []
@@ -159,6 +161,29 @@ class WaterSimulation:
                 "cannot be negative")
         self._tubular_load = mosm_per_min
 
+    def set_foreign_osmoles(self, mosm_per_l):
+        """Plasma osmoles this loop does not own (M38).
+
+        Phase 10's second coupling term. Plasma osmolarity is not just
+        salt: it is 2 x sodium PLUS glucose PLUS urea, and in
+        hyperglycemia the sugar term is large — that is the
+        "hyperosmolar" in hyperosmolar hyperglycemic state. Glucose
+        without insulin stays outside the cells, so it is an EFFECTIVE
+        osmole: the osmoreceptors feel it, and thirst answers it. This
+        is why an untreated diabetic is desperately thirsty even before
+        losing much water.
+
+        Added to the osmolarity this loop reports AND to what its
+        receptors sense, because they are the same number. 0.0 (the
+        default) means uncoupled.
+        """
+        mosm_per_l = float(mosm_per_l)
+        if mosm_per_l < 0.0:
+            raise ValueError(
+                "foreign osmoles are a contribution to plasma "
+                "osmolarity, so they cannot be negative")
+        self._foreign_osm = mosm_per_l
+
     def drinks(self):
         """The intake event log, oldest first — a data product, like
         doses(). Auto-drinks are marked: the class can SEE the loop
@@ -171,7 +196,9 @@ class WaterSimulation:
         """Advance n ticks. Each tick: sense -> decide -> act -> record."""
         minutes = self.DT / 60.0
         for _ in range(int(n)):
-            osm = self._solutes / self._water
+            # Total plasma osmolarity: this loop's own solutes plus
+            # any owned by another loop (M38). Zero when uncoupled.
+            osm = self._solutes / self._water + self._foreign_osm
             sensed = osm if self._sensor_enabled else self.SET_POINT
             error = sensed - self.SET_POINT
 
@@ -244,7 +271,8 @@ class WaterSimulation:
     def _append_record(self, error, adh, thirst, urine_rate, urine_osm):
         self._history.append({
             "t": self._t,
-            "osmolarity": self._solutes / self._water,
+            "osmolarity": self._solutes / self._water
+                          + self._foreign_osm,
             "water_liters": self._water,
             "gut_water": self._gut_water,
             "exercise": self._exercise,
@@ -259,6 +287,7 @@ class WaterSimulation:
             "sensor_enabled": self._sensor_enabled,
             "adh_override": self._adh_override,
             "tubular_load": self._tubular_load,
+            "foreign_osm": self._foreign_osm,
         })
 
     def history(self):

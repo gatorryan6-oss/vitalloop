@@ -50,6 +50,13 @@ GLUCOSE_MW = 180.16                        # mg per mmol
 GLUCOSE_SPACE_DL = 1000.0 / CARB_TO_MGDL   # ~180 dL
 MGDL_MIN_TO_MOSM_MIN = GLUCOSE_SPACE_DL / GLUCOSE_MW    # ~0.998
 
+# ---- The second link (M38): sugar is an osmole while it is still IN there --
+# Plasma osmolarity is 2 x sodium PLUS glucose PLUS urea. 1 mg/dL is
+# 10 mg/L, and glucose is ~180 mg/mmol, so 1 mg/dL of glucose is
+# 10/180 = ~0.056 mOsm/L — the familiar "glucose over 18" from the
+# clinical formula, derived here rather than typed.
+MGDL_TO_MOSM_L = 10.0 / GLUCOSE_MW                      # ~1/18
+
 # Which loop owns which breaker, for set_effector_enabled dispatch.
 _GLUCOSE_PARTS = ("beta", "alpha", "liver")
 _WATER_PARTS = ("adh", "kidney", "access")
@@ -136,8 +143,23 @@ class Body:
         tick's spill rather than last tick's."""
         for _ in range(int(n)):
             self.glucose.step(1)
-            spill = self.glucose.state()["renal_loss"]      # mg/dL/min
+            g = self.glucose.state()
+
+            # Link 1 (M37): sugar the kidney could not hold onto arrives
+            # in the tubule and drags water out with it.
+            spill = g["renal_loss"]                         # mg/dL/min
             self.water.set_tubular_load(spill * MGDL_MIN_TO_MOSM_MIN)
+
+            # Link 2 (M38): sugar still IN the blood is an osmole the
+            # osmoreceptors can feel. Only the EXCESS above the normal
+            # fasting level, because the water loop's 290 baseline
+            # already has an ordinary amount of sugar dissolved in it.
+            # Clamped at zero: a hypo body is not meaningfully
+            # hypo-osmolar, and a negative contribution would be a
+            # stranger claim than this model wants to make.
+            excess = max(0.0, g["glucose"] - self.glucose.SET_POINT)
+            self.water.set_foreign_osmoles(excess * MGDL_TO_MOSM_L)
+
             self.water.step(1)
             self._t += self.DT
             self._append_record()
@@ -154,8 +176,9 @@ class Body:
             "insulin": g["insulin"],
             "glucagon": g["glucagon"],
             "renal_loss": g["renal_loss"],
-            # the link
+            # the two links
             "tubular_load": w["tubular_load"],
+            "glucose_osm": w["foreign_osm"],
             # the water loop
             "osmolarity": w["osmolarity"],
             "water_liters": w["water_liters"],
