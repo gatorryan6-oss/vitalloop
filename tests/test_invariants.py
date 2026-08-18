@@ -4156,6 +4156,111 @@ def test_neither_engine_imports_the_other():
                     "stay independent; engine/body.py is what joins them")
 
 
+# ================= M42: the full pass, four loops ==========================
+# Phase 10 closes the way 8 and 9 did — the whole promise, checkable. The
+# new claim this phase has to answer for is the one the kickoff put in
+# capitals: a coupled model must never quietly rewrite an uncoupled
+# lesson. So the pass drives all FOUR loops and then goes back and looks
+# at the three that were here before.
+
+def test_the_whole_period_on_four_loops(lab):
+    """(hhhh) Every loop, every mode, one room — and the three
+    single-loop lessons still exactly as Phase 9 left them."""
+    vital_app, logged = lab
+    client = vital_app.app.test_client()
+
+    # 1. Every loop teaches every verb (M30's grammar, now four wide).
+    for loop in vital_app.runners:
+        assert loop in vital_app.PRESETS and "healthy" in vital_app.PRESETS[loop]
+        entries = vital_app.CHALLENGES[loop]
+        assert any(not e.get("events") for e in entries.values())
+        assert any(e.get("events") for e in entries.values())
+        assert len(vital_app.CASES[loop]) >= 2
+        assert vital_app.CSV_FIELDS[loop] and vital_app.ANSWER_OPTIONS[loop]
+        assert loop in vital_app.WORKSHEETS
+
+    # 2. Disturb, break, name, diagnose — driven through the routes.
+    for loop in vital_app.runners:
+        disease = next(k for k in vital_app.PRESETS[loop] if k != "healthy")
+        assert client.post(f"/control?loop={loop}",
+                           json={"action": "preset",
+                                 "value": disease}).status_code == 200
+        assert client.get(f"/state?loop={loop}").get_json()["preset"]
+        n_cases = len(vital_app.CASES[loop])
+        for n in range(1, n_cases + 1):
+            assert client.post(f"/control?loop={loop}",
+                               json={"action": "diagnose",
+                                     "value": n}).status_code == 200
+            j = client.get(f"/state?loop={loop}").get_json()
+            banned = sorted(k for k in j["now"]
+                            if k.endswith("_enabled") or k in ANSWER_KEY_FIELDS)
+            assert not banned, f"{loop} case {n} leaked {banned}"
+            assert client.get(f"/export.csv?loop={loop}").status_code == 409
+            truth = list(vital_app.CASES[loop].values())[n - 1]["answer"]
+            assert client.post(f"/control?loop={loop}",
+                               json={"action": "answer", **truth}
+                               ).status_code == 200
+            j = client.get(f"/state?loop={loop}").get_json()
+            assert j["case"]["grade"]["verdict"] == "correct"
+        client.post(f"/control?loop={loop}", json={"action": "reset"})
+        assert client.get(f"/export.csv?loop={loop}").status_code == 200
+
+    # 3. And every loop hands back a gameless sandbox.
+    for loop in vital_app.runners:
+        j = client.get(f"/state?loop={loop}").get_json()
+        assert "challenge" not in j and "case" not in j
+        assert j["preset"] is None
+        assert any(k.endswith("_enabled") for k in j["now"])
+
+
+def test_phases_1_to_9_are_untouched():
+    """(hhhh) The kickoff's capitalised promise, as a check. Both engine
+    hashes are asserted elsewhere; this is the APP-level half — the three
+    single-loop pages still offer exactly what they offered."""
+    vital_app = _game()
+    client = vital_app.app.test_client()
+    page = client.get("/").data.decode("utf-8")
+    for marker in ('data-loop="temp"', 'data-loop="glucose"',
+                   'data-loop="water"', 'data-preset="fever"',
+                   'data-preset="type1"', 'data-preset="central_di"',
+                   'data-preset="siadh"', 'id="page-temp"',
+                   'id="page-glucose"', 'id="page-water"'):
+        assert marker in page, (
+            f"{marker} vanished from the page - Phase 10 was supposed to "
+            "ADD a loop, not edit the three that were already teaching")
+    # The three original loops' challenges and cases are all still there.
+    assert len(vital_app.CASES["temp"]) == 4
+    assert len(vital_app.CASES["glucose"]) == 4
+    assert len(vital_app.CASES["water"]) == 5
+    for loop, names in (("temp", {"cold_store", "blast_freezer"}),
+                        ("glucose", {"t1_shift", "crisis_shift"}),
+                        ("water", {"aid_station", "race_day"})):
+        assert set(vital_app.CHALLENGES[loop]) == names, (
+            f"the {loop} loop's challenges changed in Phase 10")
+
+
+def test_a_coupled_run_is_still_deterministic_through_the_routes(lab):
+    """(hhhh) The promise the whole game layer rests on, extended to the
+    loop that has two engines in it: same challenge, same play, byte-
+    identical history — no matter what the sandbox was doing first."""
+    vital_app, _ = lab
+    runs = []
+    for lead_in in (lambda r: None,
+                    lambda r: (r.sim.eat(80, 1.0), r.sim.step(900))):
+        runner = vital_app.registry.runners_for("determinism-probe")["body"]
+        runner.sim.reset()
+        lead_in(runner)
+        vital_app.start_challenge(runner, "body", "ward_round", None)
+        with runner.lock:
+            runner._step(1800)
+        runs.append(runner.sim.history())
+    assert runs[0] == runs[1], (
+        "the same ward round produced different physiology depending on "
+        "what the tab had been doing beforehand - two teams' report "
+        "cards are only comparable if the run starts the same way")
+    assert runs[0][0]["t"] == 0.0
+
+
 WEB_MODULES = {"flask", "jinja2", "werkzeug"}
 
 

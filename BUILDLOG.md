@@ -18,13 +18,29 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M37 — Phase 10 underway. Spec:
-  `vital_loop_phase10_kickoff.md` (scope picked 2026-08-17:
-  **cross-loop coupling only**; teacher dashboard and period codes move
-  to Phase 11). All three kickoff-interview questions were answered:
-  a coupled `Body` in `engine/`, a fourth "Whole body" tab, coupling
-  only. The loops now meet.
-- **Next up:** M42 — the full pass and the phase close.
+- **Committed:** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
+  `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
+  180 mg/dL spills into the urine and drags water out with it, and the
+  sugar still in the blood pulls on the osmoreceptors directly. A
+  fourth "Whole body" loop carries the full lesson grammar — sandbox,
+  disease, diagram, two challenges, three blind cases, worksheet, CSV.
+  Phases 1–9 are byte-identical, pinned by two engine hashes recorded
+  before the coupling was written and by an app-level check that the
+  three original pages still offer what they offered.
+  Remote: https://github.com/gatorryan6-oss/vitalloop
+- **Next up:** STOPPED for confirmation before Phase 11. Candidates:
+  1. **Teacher dashboard** — a live who's-stuck view of the room's
+     sessions (deferred from Phase 10's scope choice).
+  2. **Period codes / join screen** — grouping sessions by class period
+     so the leaderboard can be scoped to one period.
+  3. **The concentrating ceiling on the water loop's OWN solute.** M20
+     knowingly left `urine_osm` un-ceilinged after a salt bolus, and
+     M37 deliberately did NOT fix it (Phase 6 is not Phase 10's to
+     rewrite). It is a real physiological wrinkle and a small, honest
+     piece of work whenever it is wanted.
+  4. **Hemoconcentration**, measured and deliberately deferred at M38:
+     worth +3 to +9 mg/dL over a class period, which is real and
+     invisible. Would matter only if a multi-day scenario ever arrives.
 - **Phase 9 (for reference):** M36 — **PHASE 9 COMPLETE** (M0–M36). Spec:
   `vital_loop_phase9_kickoff.md`. The sandbox is now a LAB: every
   device on the room's wifi gets its own three loops (M33) through the
@@ -60,6 +76,40 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-17 — M42: The full pass, and Phase 10 closes
+- Shipped: the M42 contract (3 tests). **The full pass, four loops
+  wide** — every loop proved to carry the whole grammar (preset,
+  plain challenge, crisis, ≥2 cases, CSV columns, answer vocabulary,
+  worksheet), then driven through the production routes: a disease
+  named on each, every one of its blind cases started, checked for
+  leaks (no `*_enabled`, no answer-key field), CSV refused at 409 while
+  blind, answered with the truth and graded correct, CSV released, and
+  a gameless sandbox handed back. **Phases 1–9 untouched**, as an
+  app-level check to sit beside the two engine hashes: the three
+  original pages, their preset buttons (fever / type 1 / central DI /
+  SIADH), their exact case counts (4 / 4 / 5) and their exact challenge
+  sets are all still there. **Determinism through the routes on a
+  two-engine loop**: the same ward round after two different lead-ins
+  produces byte-identical history. 162 invariants + verify pass; all
+  seven console demos run.
+- Deferred: Phase 11 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. The M30/M36 pass checked "every loop"; this one checks "every loop
+     AND the loops that were already here". A coupling phase's real risk
+     is not that the new thing fails — it is that the old things change
+     quietly, so the close is half regression check by design.
+  2. VERIFIED LIVE in the browser: all four tabs render complete —
+     temp 3 charts / glucose 4 / water 4 / body 5, two challenge cards
+     and a diagnose card on every one of them, a live diagram on every
+     one, four worksheet links in the footer, and the room counter
+     reading "1 device playing". The console's connection-refused burst
+     is the poll riding out a verify.py restart (documented at M33), not
+     an app error. As at M39/M40 the preview pane could not composite in
+     this session, so this was read out of the live DOM rather than
+     photographed — **a human should still spend one minute looking at
+     the Whole body tab before teaching from it.**
 
 ## 2026-08-17 — M41: The coupled body joins the lesson grammar
 - Shipped: the fourth loop now teaches every verb. A preset (**Untreated
