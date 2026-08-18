@@ -18,32 +18,33 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M46 (see Milestones; earlier summaries kept below) —
-  Phase 11 underway. The dashboard has judgment: every row carries
-  time-in-mode and runs-so-far, and a stuck flag — blind case past
-  5 min, two zero-medal runs of one challenge, or a device quiet past
-  3 min — sorts flagged teams to the top of a self-refreshing table.
-  Thresholds are swept, named, pinned policy.
-- **M45 (for reference):** `/teacher` exists: launch-minted PIN printed
-  in the console (VL_TEACHER_PIN pins it for rehearsal), cookie once
-  per device, wrong PIN refused in words, and behind it a read-only
-  room table — period, team, tab, doing, last-seen — built on
-  `registry.room()`, which sweeps but never seats, touches or steps.
-  Blind cases show BY NUMBER ONLY: the page is safe to project.
-- **M44 (for reference):** Phase 11 underway (spec:
-  `vital_loop_phase11_kickoff.md`, scoped 2026-08-18: period codes /
-  join screen + teacher dashboard). M43 gave devices periods
-  (`periods.txt`, skippable join screen, cookies, badge); M44 made the
-  boards mean "us": every attempt is stamped with its class's `period`
-  at build time, each device's leaderboard and best-so-far line scope
-  to its own class, and the Unassigned viewer — which is exactly what
-  the projector is, having skipped the join screen — sees everyone.
-  Pre-M44 records (no period key) read as Unassigned and keep
-  displaying. The board names its scope on screen.
-- **Next up:** M47 — the full pass and the phase close (join / skip /
-  rejoin across periods, scoped boards, the dashboard through a blind
-  case, leak checks extended, engine hashes + cookieless world
-  byte-identical, M42 grammar intact, worksheets print).
+- **Committed:** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
+  `vital_loop_phase11_kickoff.md` (scoped 2026-08-18: period codes /
+  join screen + teacher dashboard — all three interview picks taken:
+  skippable join screen, `periods.txt`, teacher PIN). The room is
+  visible now: a device joins its class once (skippable, badge-worn,
+  `periods.txt` the single source, missing file = quietly off), every
+  attempt lands stamped with its class, each device's boards mean
+  "us" while the projector — Unassigned by design — shows everyone,
+  the join name reaches the scoreboard without retyping (M46.5), and
+  `/teacher` (launch-minted PIN, printed beside the LAN address) gives
+  a read-only, safe-to-project, self-refreshing who's-stuck view:
+  blind-case/zero-medal/gone-quiet flags on swept, pinned thresholds.
+  The cookieless world gained exactly one key (`board_period`, always
+  None); engines untouched all phase — both regression hashes stood
+  the whole time. 188 invariants + verify + all seven console demos.
+- **Next up:** STOPPED for confirmation before Phase 12. Candidates:
+  1. **The concentrating ceiling on the water loop's OWN solute** —
+     deferred at M20, again at M37, again at the Phase 11 scoping.
+     Small, honest, requires the human's blessing to touch Phase 6.
+  2. **Hemoconcentration** (measured and deferred at M38): matters
+     only if a multi-day scenario ever arrives.
+  3. **Per-period paper**: a printable class report reading the same
+     attempts log and room accessor the dashboard reads — periods
+     exist now, so "P3's day, on one page" is cheap and real.
+- **User checkpoint outstanding (M34, extended by M45):** a REAL phone
+  on the room's wifi — the student address AND `/teacher` with the
+  console PIN. Everything short of that is verified.
 - **Phase 10 (for reference):** M42 — **PHASE 10 COMPLETE** (M0–M42). Spec:
   `vital_loop_phase10_kickoff.md`. Two loops now talk: sugar above
   180 mg/dL spills into the urine and drags water out with it, and the
@@ -98,6 +99,35 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-18 — M47: The full pass, and Phase 11 closes
+- Shipped: the M47 contract (2 tests). **The room pass**: two classes
+  and a projector through production routes — challenges played to the
+  buzzer land stamped P3/P5 with the join names as labels, each class's
+  board is its own, the projector's is everyone's, a blind body case
+  leaks nothing into the student payload while the signed-in teacher
+  page names it by number (and never says "mellitus"), worksheets
+  print, and a server restart (fresh registry) costs a device nothing
+  because the cookies re-present everything. **The cookieless world
+  gained exactly one key**: `board_period`, always None — no period,
+  team, or stuck anywhere in it, no session seated by it. Engines
+  untouched all phase (the two regression hashes are the proof and ran
+  green throughout). 188 invariants + verify + seven demos.
+- Deferred: Phase 12 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. Like M42, the close is half regression check on purpose: a rooms
+     phase's real risk is the old worlds changing quietly underneath.
+  2. VERIFIED LIVE in the browser (DOM-read, M39–M42 style): all four
+     tabs complete (SVG counts 4/5/5/6 — the M42 numbers exactly),
+     two challenge cards + diagnose card per tab, four worksheet
+     links, badge "P3 — Test Rig" holding, overlay staying away, and
+     all 12 label boxes pre-filled "Test Rig" (M46.5 visible). The
+     dashboard's live behavior was verified at M45/M46 with real
+     wall-clock flags.
+  3. The preview pane never composited this whole session (M39–M42
+     note continues) — a human should glance at the join screen and
+     /teacher on real screens before teaching from them.
 
 ## 2026-08-18 — M46.5: The join name reaches the scoreboard
 - Shipped: found by M47's room pass, patched as a decimal milestone
