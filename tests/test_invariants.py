@@ -5307,3 +5307,91 @@ def test_report_py_is_a_served_source():
     verification by name, not hand back a green PASS (the M43 rule)."""
     import verify
     assert "report.py" in verify.SERVED_SOURCES
+
+
+# ================= M50: the debrief =========================================
+# The bottom half of the sheet: what to reteach tomorrow, in the
+# curriculum's own words. Every line must be readable off the log - and
+# a day with two answers in it must not be dressed up as a class trend.
+
+def _debrief_client(vital_app, log, monkeypatch, periods=("P3",)):
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", list(periods))
+    monkeypatch.setattr(vital_app, "ATTEMPTS", log)
+    c = vital_app.app.test_client()
+    c.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    return c
+
+
+def test_the_debrief_names_the_case_and_quotes_the_real_answer(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    cid = list(vital_app.CASES["temp"])[2]            # case 3
+    log = [_ranswer(1, "Kestrel", "P3", today, name=cid, correct=False),
+           _ranswer(2, "Row 4", "P3", today, name=cid, correct=False),
+           _ranswer(3, "Mongooses", "P3", today, name=cid, correct=True)]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "What the class found hard" in body
+    assert "2 of 3" in body and "Temperature case 3" in body, (
+        "the debrief must say how many teams missed it on their FIRST "
+        "answer, and name the case the way the class met it")
+    truth = vital_app.CASES["temp"][cid]["answer"]
+    line = vital_app._truth_line(truth, vital_app.ANSWER_OPTIONS["temp"])[2]
+    assert line.split(" ")[0] in body, (
+        "the right answer must appear in the curriculum's own words - "
+        "the same sentence the class saw at the reveal")
+
+
+def test_a_medal_less_challenge_is_named_as_something_to_reteach(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [
+        _rrun(1, "A", "P3", today, name="cold_store", points=88,
+              medal="gold"),
+        _rrun(2, "B", "P3", today, name="blast_freezer", points=30),
+        _rrun(3, "A", "P3", today, name="blast_freezer", points=22),
+    ]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "No team earned a medal on" in body
+    assert vital_app.CHALLENGES["temp"]["blast_freezer"]["title"] in body
+    assert "set point" in body, (
+        "the reteach line must speak the curriculum's vocabulary - a "
+        "medal-less challenge is a loop nobody held near its set point")
+    # ...and the challenge somebody DID medal is not on the reteach list.
+    reteach = body.split("What the class found hard")[1]
+    assert vital_app.CHALLENGES["temp"]["cold_store"]["title"] not in reteach
+
+
+def test_a_thin_day_is_labelled_an_anecdote_on_the_page(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "A", "P3", today, points=40),
+           _ranswer(2, "A", "P3", today, correct=False)]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "anecdotes, not as a class trend" in body, (
+        "one team having a bad afternoon must not read as a finding")
+
+
+def test_a_clean_day_says_there_is_nothing_to_reteach(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "A", "P3", today, points=91, medal="gold"),
+           _ranswer(2, "A", "P3", today, correct=True)]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "nothing on this page needs" in body, (
+        "a class that got everything right deserves to be told so, not "
+        "handed an empty heading")
+    assert "1 of 1" in body, "the reach line still reports"
+
+
+def test_the_debrief_is_absent_when_nobody_played(monkeypatch):
+    vital_app = _paper_app()
+    body = _debrief_client(vital_app, [],
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "What the class found hard" not in body, (
+        "an empty day gets the 'nobody played' line, not a debrief "
+        "heading with nothing under it")

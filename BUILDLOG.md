@@ -18,7 +18,7 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M49 — Phase 12 underway (spec:
+- **Committed:** M50 — Phase 12 underway (spec:
   `vital_loop_phase12_kickoff.md`, scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
   `report.py` turns the attempts log into "P3's day" as plain data:
@@ -26,7 +26,9 @@ Entry format:
   the date are arguments, no clock, no Flask — so the paper is
   reproducible from a crafted log. `python -m report_demo` prints it.
   M49 put it on paper: `/report/<period>` behind the teacher PIN, one
-  printable sheet per class per day, linked from `/teacher`.
+  printable sheet per class per day, linked from `/teacher`. M50 added
+  the bottom half — what to reteach tomorrow, in the curriculum's own
+  words, honest about thin samples.
 - **Phase 11 (for reference):** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
   `vital_loop_phase11_kickoff.md` (scoped 2026-08-18: period codes /
   join screen + teacher dashboard — all three interview picks taken:
@@ -108,6 +110,35 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M50: The debrief
+- Shipped: the bottom half of the sheet, rendered from the aggregate
+  M48 already computed — no new analysis, just the phrasing. Three
+  kinds of line: how many teams missed each case ON THEIR FIRST ANSWER
+  with the right answer quoted in the curriculum's words (the same
+  sentence the reveal showed, via the shared `_truth_line`), which
+  challenges nobody medaled ("nobody held the controlled variable close
+  enough to its set point"), and how many teams got as far as
+  diagnosing at all. A day under `THIN_SAMPLE` answers is labelled
+  anecdotes-not-a-trend on the page; a day with nothing wrong says so
+  in words instead of printing an empty heading; a day nobody played
+  gets no debrief section at all. 5 new invariants (211 pass) + verify.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **No new analysis at M50.** The temptation was to group missed
+     cases by ROLE ("this class cannot spot an effector"), which is a
+     genuinely interesting number — and not what the spec asked for.
+     Logged here as a Phase 13 candidate rather than smuggled in.
+  2. The report quotes the CASE's real answer from the catalog, never
+     the answer a team submitted — checked live with a seeded log whose
+     submitted answers deliberately differed from the truth.
+  3. VERIFIED LIVE (server restarted first: Flask caches templates
+     outside debug mode, so an edited template needs the restart):
+     "2 of 3 teams got Temperature case 3 wrong on their first answer
+     — it was Control center — Hypothalamus", "No team earned a medal
+     on The blast freezer (2 teams, 2 runs, best 30/100)", "3 of 3
+     teams got as far as diagnosing a case".
 
 ## 2026-08-19 — M49: The scorecard, printable
 - Shipped: `/report/<period>` — PIN-gated (refused in words, and the

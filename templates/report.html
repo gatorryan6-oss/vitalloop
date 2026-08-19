@@ -40,6 +40,9 @@
   .right { color: #1f5c3d; }
   .score { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .empty { padding: 1rem 0; font-style: italic; }
+  .debrief { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+  .debrief li { margin-bottom: 0.35rem; }
+  .clean { font-style: italic; }
   .print-hint { text-align: center; color: #666; font-size: 0.85rem;
                 margin-top: 1.4rem; }
   @media print {
@@ -106,6 +109,38 @@
   </tr>
   {% endfor %}
 </table>
+{% endif %}
+
+{% if rep.teams %}
+{% set agg = rep.aggregate %}
+<h2>What the class found hard</h2>
+{% if agg.thin %}
+<p class="limit">Only {{ rep.answer_count }} diagnosis answer{{ '' if rep.answer_count == 1 else 's' }} today
+  — read the lines below as anecdotes, not as a class trend.</p>
+{% endif %}
+<ul class="debrief">
+  {% for row in agg.hardest_cases %}
+  <li><strong>{{ row.wrong }} of {{ row.teams }}</strong>
+    team{{ '' if row.teams == 1 else 's' }} got <strong>{{ row.title }}</strong>
+    wrong on their first answer{% if row.answer_line %} — it was
+    <em>{{ row.answer_line }}</em>{% endif %}.</li>
+  {% endfor %}
+  {% for row in agg.medal_less %}
+  <li>No team earned a medal on <strong>{{ row.title }}</strong>
+    ({{ row.teams }} team{{ '' if row.teams == 1 else 's' }},
+    {{ row.runs }} run{{ '' if row.runs == 1 else 's' }},
+    best {{ row.best_points }}/100) — nobody held the controlled
+    variable close enough to its set point.</li>
+  {% endfor %}
+  <li>{{ agg.teams_reaching_a_case }} of {{ rep.team_count }}
+    team{{ '' if rep.team_count == 1 else 's' }} got as far as
+    diagnosing a case.</li>
+</ul>
+{% if not agg.hardest_cases and not agg.medal_less %}
+<p class="clean">Every case answered right the first time, and every
+  challenge played earned a medal — nothing on this page needs
+  reteaching.</p>
+{% endif %}
 {% endif %}
 
 <p class="print-hint">Print this page from your browser (Ctrl+P).</p>
