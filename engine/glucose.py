@@ -56,6 +56,14 @@ EXERCISE_UPTAKE = 2.5            # working muscles, insulin-independent
 RENAL_COEF = 2.0                 # kidney spill: 2.0 * (G - 180)/100 above 180
 RENAL_THRESHOLD = 180.0
 
+# ---- The pool the sugar is dissolved in (M53) ----------------------------
+# Dehydration concentrates a fixed sugar mass into less water. The bounds
+# are sanity rails, not physiology: a body does not lose or gain a third
+# of its water in a class period, and a runaway scale would be a bug
+# amplifier rather than a lesson.
+MIN_POOL_SCALE = 0.7
+MAX_POOL_SCALE = 1.3
+
 LIVER_BASE = 0.5                 # hepatic output with no hormonal input
 GLUCAGON_BOOST = 3.8             # + per unit glucagon
 INSULIN_SUPPRESS = 3.0           # - per unit insulin
@@ -104,6 +112,7 @@ class GlucoseSimulation:
         """Fresh start: fasted, resting, everything working, no insulin
         on board and no basal running."""
         self._glucose = self.SET_POINT
+        self._pool_scale = 1.0   # body water, relative to normal (M53)
         self._gut_carbs = 0.0
         self._absorb_rate = 1.0          # g/min; set by the last meal
         self._exercise = False
@@ -183,6 +192,25 @@ class GlucoseSimulation:
             raise ValueError(
                 "insulin sensitivity must be in (0, 1] - 1.0 is healthy")
         self._insulin_sensitivity = s
+
+    def set_pool_scale(self, scale):
+        """How much of its normal water this sugar is dissolved in (M53).
+
+        1.0 is normal. Dehydration shrinks the pool, so the SAME sugar
+        mass reads higher — hemoconcentration, the last leg of the M38
+        spiral; drinking past normal dilutes it the other way. Mass is
+        conserved across the change: the concentration is rescaled
+        exactly once, and every rate law then runs on the new number.
+
+        Only the coupled Body calls this, and only because it is the
+        one thing here that knows how much water is left. Never called
+        → the scale stays 1.0 → an uncoupled glucose loop is
+        byte-identical to every phase before this one.
+        """
+        scale = _clamp(float(scale), MIN_POOL_SCALE, MAX_POOL_SCALE)
+        if scale != self._pool_scale:
+            self._glucose *= self._pool_scale / scale
+            self._pool_scale = scale
 
     def set_pump_enabled(self, on):
         """The closed-loop pump. While it runs, ITS rate feeds the depot

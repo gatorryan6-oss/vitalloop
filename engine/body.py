@@ -58,6 +58,15 @@ MGDL_MIN_TO_MOSM_MIN = GLUCOSE_SPACE_DL / GLUCOSE_MW    # ~0.998
 MGDL_TO_MOSM_L = 10.0 / GLUCOSE_MW                      # ~1/18
 
 # Which loop owns which breaker, for set_effector_enabled dispatch.
+# ---- The third link (M53): the water the sugar is dissolved in ----------
+# Dehydration concentrates a fixed sugar mass, which spills more, which
+# takes more water - the last leg of the M38 spiral, measured there at
+# +3 to +9 mg/dL and deferred until Phase 13 was chartered to close it.
+# The glucose pool (~18 L) and total body water (~40 L) are different
+# compartments; treating them as shrinking together is this model's
+# simplification, stated here rather than hidden.
+BASELINE_WATER_L = 40.0                    # WaterSimulation's own start
+
 _GLUCOSE_PARTS = ("beta", "alpha", "liver")
 _WATER_PARTS = ("adh", "kidney", "access")
 
@@ -142,6 +151,13 @@ class Body:
         """Advance n ticks, glucose first so the water loop sees THIS
         tick's spill rather than last tick's."""
         for _ in range(int(n)):
+            # Link 3 (M53): the sugar is dissolved in whatever water is
+            # LEFT. Set before the sugar loop steps, from last tick's
+            # water level - a one-tick lag, which keeps the two loops in
+            # a line instead of in a circle.
+            self.glucose.set_pool_scale(
+                self.water.state()["water_liters"] / BASELINE_WATER_L)
+
             self.glucose.step(1)
             g = self.glucose.state()
 
@@ -179,6 +195,9 @@ class Body:
             # the two links
             "tubular_load": w["tubular_load"],
             "glucose_osm": w["foreign_osm"],
+            # appended at M53: the water the sugar is dissolved in,
+            # relative to normal. Below 1.0 the reading is concentrated.
+            "pool_scale": w["water_liters"] / BASELINE_WATER_L,
             # the water loop
             "osmolarity": w["osmolarity"],
             "water_liters": w["water_liters"],

@@ -2975,7 +2975,9 @@ CSV_FIELDS = {
              # grown at M41 with the breaker flags, appended as always
              "beta_enabled", "alpha_enabled", "liver_enabled",
              "adh_enabled", "kidney_enabled", "water_access",
-             "sensor_enabled"],
+             "sensor_enabled",
+             # appended at M53, at the end of the frozen order
+             "pool_scale"],
 }
 
 

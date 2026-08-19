@@ -18,7 +18,7 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M52 — Phase 13 underway (spec:
+- **Committed:** M53 — Phase 13 underway (spec:
   `vital_loop_phase13_kickoff.md`, scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV). **The kidney is
   repaired.** One law for every solute: urine flow is whatever ADH
@@ -28,6 +28,11 @@ Entry format:
   own water out, which is osmotic diuresis and the same lesson as
   mellitus. Everyday runs are untouched. Both water hashes re-recorded
   deliberately; the superseded values are preserved in the test file.
+  M53 closed the last leg of the M38 spiral (sugar dissolved in the
+  water that is actually left) and MEASURED it at +0.7 mg/dL, not the
+  +3 to +9 M38 estimated by naive arithmetic — the physiology debt is
+  now clear, and one of the two items turned out to be much smaller
+  than its own estimate.
 - **Phase 12 (for reference):** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
   `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
@@ -130,6 +135,49 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M53: Hemoconcentration, measured honestly
+- Shipped: link 3 of the coupled body — the sugar is dissolved in
+  whatever water is left. `GlucoseSimulation.set_pool_scale(scale)`
+  rescales the concentration ONCE, conserving mass (0.95 → +4.7 mg/dL,
+  reversible), bounded 0.7–1.3 as a sanity rail; `Body.step` sets it
+  each tick from last tick's `water_liters / 40.0` (a one-tick lag, so
+  the loops stay in a line, not a circle). `pool_scale` appended to the
+  body's frozen record and to the END of its CSV columns; deliberately
+  NOT in `VISIBLE_DURING_CASE` (the allowlist fails closed, and how dry
+  a patient is would be a broad hint mid-case). Never called → scale
+  stays 1.0 → uncoupled glucose byte-identical, and the Phase 9 glucose
+  hash never moved. 6 new invariants (227 pass) + verify + demos.
+- **THE FINDING, and it overturns M38's own estimate.** Swept against
+  an identical body with link 3 switched off:
+  naive arithmetic (same mass, less water) predicts **+7.8 mg/dL**;
+  the true dynamic effect is **+0.74 mg/dL at its worst**, +0.36 mean,
+  +0.49 at the end of a 12 h withheld run. Glucose is a REGULATED
+  variable with a strong sink: concentrating it raises G, which raises
+  renal spill, which removes the excess. **The loop absorbs ~94% of the
+  arithmetic.** M38's "+3 to +9 mg/dL, real but invisible" was naive
+  arithmetic that ignored the loop's own response; the honest number is
+  smaller still. It is now pinned as an upper BOUND (< 2 mg/dL) as well
+  as a direction, so nobody can later tune it into visibility and call
+  that an improvement.
+- Deferred: nothing. The physiology debt list is empty.
+- Open bugs: none.
+- Decisions:
+  1. **Kept despite being invisible.** The model is more correct with
+     it, it costs one multiply per tick, and "the biology must be
+     right" is the top priority. What is retired is the CLAIM that a
+     class could see it — no chart, readout or lesson asserts it.
+  2. **A pin I wrote had to be rewritten, not the code.** I first
+     pinned a symmetry ("water available → the reading dilutes"). It
+     failed: after 12 h of regulation the residual is ±0.3 mg/dL and
+     its SIGN is not stable. The engine-level dilution (1.05 → −4.5%)
+     is real and is pinned there instead; the body-level test now pins
+     what is true — that the effect is regulated away in both
+     directions. Sweeping before pinning caught it; asserting it first
+     would have produced a test that lied.
+  3. The glucose pool (~18 L) and total body water (~40 L) are
+     different compartments. Treating them as shrinking together is
+     this model's simplification, stated in the code, not hidden.
 
 ## 2026-08-19 — M52: One kidney, one law
 - Shipped: Phase 13 opens with the repair the project has deferred four

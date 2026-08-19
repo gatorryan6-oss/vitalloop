@@ -3755,6 +3755,11 @@ BODY_FIELDS = {
     # withhold. Never in VISIBLE_DURING_CASE.
     "beta_enabled", "alpha_enabled", "liver_enabled",
     "adh_enabled", "kidney_enabled", "water_access", "sensor_enabled",
+    # -- grown at M53: the water this sugar is dissolved in, relative to
+    # normal. Below 1.0 the glucose reading is concentrated. Deliberately
+    # NOT in VISIBLE_DURING_CASE - the allowlist fails closed, and how
+    # dry a patient is would be a broad hint during a blind case.
+    "pool_scale",
 }
 
 
@@ -5692,3 +5697,152 @@ def test_the_repair_did_not_break_the_two_floods_apart():
         "LOADED, and that is what tells the two floods apart")
     assert max(r["adh"] for r in tail) > 0.3, (
         "the mellitus body's ADH must still be working while it floods")
+
+
+# ================= M53: hemoconcentration =================================
+# The last leg of the M38 spiral: a fixed sugar mass dissolved in whatever
+# water is left. It is REAL and it is SMALL - and the second half of that
+# sentence is the finding, not an apology. M38 estimated +3 to +9 mg/dL by
+# naive arithmetic (same mass, less water). Measured against an identical
+# body with the link switched off, the true effect is +0.7 mg/dL at its
+# worst, because glucose is a REGULATED variable: concentrating it raises
+# G, which immediately raises renal spill, which takes the excess away.
+# The loop absorbs about 94% of the arithmetic. Pinned as a BOUND as well
+# as a direction, so nobody can later tune it into visibility and call
+# that an improvement.
+
+def _mellitus_body(Body, link=True, access=False, hours=12):
+    b = Body()
+    if not link:                      # the M52-era body: link 3 disabled
+        b.glucose.set_pool_scale = lambda scale: None
+    b.set_effector_enabled("beta", False)
+    if not access:
+        b.set_effector_enabled("access", False)
+    meals = {int(h * 3600) for h in (2, 6, 10)}
+    for tick in range(hours * 3600):
+        if tick in meals:
+            b.eat(75, 1.0)
+        b.step(1)
+    return b.history()
+
+
+def test_the_pool_scale_conserves_sugar_mass():
+    """(dddd) The whole mechanism in one check: less water, same sugar,
+    proportionally higher reading - and reversible."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_pool_scale"):
+        pytest.skip("set_pool_scale doesn't exist yet - it arrives at M53")
+    sim = GlucoseSimulation()
+    sim.step(60)
+    before = sim.state()["glucose"]
+    sim.set_pool_scale(0.95)
+    sim.step(1)
+    concentrated = sim.state()["glucose"]
+    assert concentrated == pytest.approx(before / 0.95, rel=2e-3), (
+        "losing 5% of the water must raise the reading by 1/0.95 - that "
+        "is what conserving the sugar MASS means")
+    sim.set_pool_scale(1.0)
+    sim.step(1)
+    assert sim.state()["glucose"] == pytest.approx(before, rel=2e-3), (
+        "putting the water back must undo it; nothing is created or "
+        "destroyed by moving the water around")
+
+
+def test_an_uncoupled_glucose_loop_never_feels_the_pool():
+    """(dddd) Never called -> scale stays 1.0 -> Phase 2-9 untouched.
+    The Phase 9 glucose hash is the other half of this promise."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_pool_scale"):
+        pytest.skip("M53")
+    a, b = GlucoseSimulation(), GlucoseSimulation()
+    for sim in (a, b):
+        sim.eat(75, 1.0)
+        sim.step(3600)
+    b.set_pool_scale(1.0)             # the no-op value, explicitly
+    b.step(1)
+    a.step(1)
+    assert a.history() == b.history(), (
+        "setting the scale to its default changed a run - the coupling "
+        "must be invisible until the water actually moves")
+
+
+def test_dehydration_concentrates_the_sugar_but_only_just():
+    """(dddd) Direction AND size. The bound is the load-bearing half:
+    if a later edit makes this big, the model has stopped being a
+    regulated loop and the test should say so."""
+    Body = _body()
+    if not hasattr(Body(), "glucose") or not hasattr(
+            Body().glucose, "set_pool_scale"):
+        pytest.skip("M53")
+    on = _mellitus_body(Body, link=True)
+    off = _mellitus_body(Body, link=False)
+    diff = [a["glucose"] - b["glucose"] for a, b in zip(on, off)]
+    assert max(diff) > 0.1, (
+        "withholding water concentrated the sugar not at all - link 3 "
+        "is not connected")
+    assert max(diff) < 2.0, (
+        f"hemoconcentration moved glucose by {max(diff):.1f} mg/dL. "
+        "Measured at M53 it is +0.7 at worst, because the renal spill "
+        "regulates the excess away almost as fast as dehydration makes "
+        "it. A big number here means either the spill stopped working "
+        "or someone tuned this for visibility - neither is the model "
+        "we agreed to")
+    assert all(d >= -1e-9 for d in diff), (
+        "with water withheld the link may only ever concentrate")
+
+
+def test_the_pool_works_both_ways_at_the_engine():
+    """(dddd) It is water, not a fudge factor: MORE water dilutes by
+    exactly as much as less water concentrates."""
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_pool_scale"):
+        pytest.skip("M53")
+    sim = GlucoseSimulation()
+    sim.step(60)
+    before = sim.state()["glucose"]
+    sim.set_pool_scale(1.05)
+    sim.step(1)
+    assert sim.state()["glucose"] == pytest.approx(before / 1.05, rel=2e-3), (
+        "extra water aboard must bring the reading DOWN by 1/1.05")
+
+
+def test_a_body_that_can_drink_regulates_the_effect_away():
+    """(dddd) The honest version of the symmetry claim. A mellitus body
+    with water in reach over-drinks, so its pool ends ABOVE normal - but
+    after hours of regulation the residual in the glucose reading is
+    sub-mg/dL and its SIGN is not even stable, because the renal spill
+    is a far stronger lever than the water is. Measured at M53; stated
+    here so a later reader does not expect a dilution dip that the loop
+    will not let happen."""
+    Body = _body()
+    if not hasattr(Body().glucose, "set_pool_scale"):
+        pytest.skip("M53")
+    h = _mellitus_body(Body, link=True, access=True)
+    assert h[-1]["pool_scale"] > 1.0, (
+        "a body drinking to keep up with polyuria ends with MORE body "
+        "water than it started with - that is the compensation working")
+    off = _mellitus_body(Body, link=False, access=True)
+    residual = abs(h[-1]["glucose"] - off[-1]["glucose"])
+    assert residual < 2.0, (
+        f"the residual after a day of regulation was {residual:.2f} "
+        "mg/dL. Small is the expected answer here: if this grows, the "
+        "spill has stopped doing its job")
+
+
+def test_the_body_reports_the_water_its_sugar_sits_in():
+    """(dddd) A data product, not a hidden multiplier (kickoff SS5): the
+    CSV can show the class exactly how dry the patient got."""
+    Body = _body()
+    if not hasattr(Body().glucose, "set_pool_scale"):
+        pytest.skip("M53")
+    h = _mellitus_body(Body, link=True, hours=4)
+    assert "pool_scale" in h[0], "the readout must be in the record"
+    assert h[0]["pool_scale"] == pytest.approx(1.0)
+    scales = [r["pool_scale"] for r in h[::600]]
+    assert all(b <= a + 1e-12 for a, b in zip(scales, scales[1:])), (
+        "with water withheld the pool may only shrink - a body that "
+        "cannot drink does not spontaneously rehydrate")
+    import app as vital_app
+    if hasattr(vital_app, "CSV_FIELDS"):
+        assert vital_app.CSV_FIELDS["body"][-1] == "pool_scale", (
+            "appended fields go at the END of the frozen column order")
