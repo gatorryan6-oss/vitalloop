@@ -453,6 +453,13 @@ def state():
     # leaderboard/bests scoped themselves off this same request).
     # None = everyone — Unassigned viewers and the projector.
     out["board_period"] = _viewer_period()
+    # M58: the follow-up set, if this device's class has one. Redacted
+    # by construction - see student_assignment().
+    period = _cookie_period()
+    if period is not None:
+        assigned = student_assignment(period)
+        if assigned is not None:
+            out["assignment"] = assigned
     return jsonify(out)
 
 
@@ -592,6 +599,84 @@ def teacher():
                            rows=_room_rows(), periods=PERIODS)
 
 
+# --------------------------------------------------------------------------
+# Assignments (M58). The teacher's report says which BOX of the loop a
+# class cannot spot; this hands that class exactly those cases.
+#
+# THE RULE: an assignment exists BECAUSE every case in it has the same
+# answer, so naming the box to a student is handing over the answer key.
+# The teacher's side knows the role. The student's side gets a neutral
+# label, the case coordinates, and nothing else - `student_assignment`
+# is the one redaction, and no other code may build a student payload.
+#
+# Live-room state, like the session registry: it lives in memory and a
+# restart clears it, which is how every other in-class thing behaves.
+
+ASSIGNMENTS = {}                 # period -> {"role", "items", "count"}
+_assign_lock = threading.Lock()
+
+
+def cases_with_role(role):
+    """Every case in the app whose answer is `role`, as (loop, index)
+    pairs - the index is what the picker sends, so a student's device
+    starts one through the ordinary M28 flow with nothing new to learn."""
+    items = []
+    for loop, entries in CASES.items():
+        for n, (name, entry) in enumerate(entries.items(), start=1):
+            if entry["answer"]["role"] == role:
+                items.append({"loop": loop, "n": n})
+    return items
+
+
+def set_assignment(period, role):
+    """Give one period the cases for one box of the loop."""
+    items = cases_with_role(role)
+    entry = {"role": role, "items": items, "count": len(items)}
+    with _assign_lock:
+        ASSIGNMENTS[period] = entry
+    return entry
+
+
+def clear_assignment(period):
+    with _assign_lock:
+        return ASSIGNMENTS.pop(period, None)
+
+
+def student_assignment(period):
+    """THE REDACTION. What a device in this period is allowed to see:
+    how many cases and which ones, never why they were chosen."""
+    with _assign_lock:
+        entry = ASSIGNMENTS.get(period)
+        if entry is None:
+            return None
+        return {
+            "label": ("Follow-up set from your teacher: "
+                      f"{entry['count']} case"
+                      f"{'' if entry['count'] == 1 else 's'}"),
+            "count": entry["count"],
+            "items": [dict(i) for i in entry["items"]],
+        }
+
+
+@app.route("/teacher/assign", methods=["POST"])
+def teacher_assign():
+    """Assign (or clear) one period's follow-up set. PIN-gated."""
+    if not _teacher_ok():
+        return jsonify({"error": "the teacher PIN is missing or stale"}), 403
+    period = request.form.get("period", request.args.get("period", ""))
+    role = request.form.get("role", request.args.get("role", ""))
+    wanted = "" if period == UNASSIGNED_SLUG else period
+    if wanted and wanted not in PERIODS:
+        return jsonify({"error": f"no period {period!r} on the list"}), 400
+    if role == "clear":
+        clear_assignment(wanted)
+    else:
+        if not cases_with_role(role):
+            return jsonify({"error": f"no cases answer {role!r}"}), 400
+        set_assignment(wanted, role)
+    return redirect(f"/report/{period or UNASSIGNED_SLUG}")
+
+
 @app.route("/report.csv")
 def class_report_csv():
     """The gradebook export (M55): one class period's day, long format,
@@ -706,10 +791,18 @@ def class_report_page(period):
                 f"\"{period}\" on the teacher's list. periods.txt "
                 f"says: {listed}.</p>"), 400
     date = _today()
+    catalog = _report_catalog()
+    live = ASSIGNMENTS.get(wanted)
+    assigned = None
+    if live is not None:
+        # The TEACHER's view names the box; only this page ever does.
+        assigned = {**live,
+                    "role_label": _option_label(
+                        ANSWER_OPTIONS.get("temp"), "roles", live["role"])}
     return render_template(
         "report.html",
-        rep=report.class_report(ATTEMPTS, wanted, date,
-                                _report_catalog()),
+        rep=report.class_report(ATTEMPTS, wanted, date, catalog),
+        assigned=assigned,
         label=wanted or "Unassigned")
 
 

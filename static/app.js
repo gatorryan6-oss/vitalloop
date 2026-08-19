@@ -115,6 +115,50 @@ let speed = 1;
 
 /* ---------------- polling ---------------- */
 
+/* M58: the follow-up set. The payload carries a neutral label and the
+   case coordinates and NOTHING about why those cases - the reason is
+   the answer to every one of them. Buttons start a case through the
+   ordinary M28 flow, so nothing new has to be taught. */
+let assignmentSig = null;
+
+function renderAssignment(a) {
+  const bar = document.getElementById("assignmentBar");
+  if (!bar) return;
+  if (!a) { bar.hidden = true; assignmentSig = null; return; }
+  const sig = JSON.stringify(a);
+  bar.hidden = false;
+  if (sig === assignmentSig) return;        // don't fight a click
+  assignmentSig = sig;
+  document.getElementById("assignmentLabel").textContent = a.label;
+  const wrap = document.getElementById("assignmentCases");
+  wrap.textContent = "";
+  for (const item of a.items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "assignment-case";
+    btn.textContent = `${LOOP_TAB_NAMES[item.loop] || item.loop} case ${item.n}`;
+    btn.addEventListener("click", () => startAssignedCase(item));
+    wrap.appendChild(btn);
+  }
+}
+
+const LOOP_TAB_NAMES = { temp: "Temperature", glucose: "Glucose",
+                         water: "Water", body: "Whole body" };
+
+/* Drive the page the student would drive: click the real tab, set the
+   real picker, click the real start button. No second path to a case
+   means no second path to keep in step with M28. */
+function startAssignedCase(item) {
+  const tab = document.querySelector(`.loop-tab[data-loop="${item.loop}"]`);
+  if (tab) tab.click();
+  const card = document.querySelector(`#page-${item.loop} .diagnose-card`);
+  if (!card) return;
+  const pick = card.querySelector(".case-pick");
+  if (pick) pick.value = String(item.n);
+  const start = card.querySelector(".case-start");
+  if (start) start.click();
+}
+
 /* A server-level refusal (the room is full, M33) in the server's own
    words. Cleared the moment a poll succeeds again. */
 function roomNotice(text) {
@@ -139,6 +183,7 @@ async function poll() {
     return;
   }
   roomNotice(null);
+  renderAssignment(j.assignment);
   if (j.sessions !== undefined) {  // the room, arriving (M34)
     const el = document.getElementById("sessionCount");
     if (el) {

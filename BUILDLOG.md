@@ -18,14 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M57 — Phase 14 underway (spec:
+- **Committed:** M58 — Phase 14 underway (spec:
   `vital_loop_phase14_kickoff.md`, scoped 2026-08-19: assignment layer
   + three diseases). The glucose loop gained **insulinoma** (an
   effector STUCK ON — the app's first failure in that direction) and
   **reactive hypoglycemia** (a TIMING fault, nothing broken), and the
   coupled body gained **treated-but-poorly-controlled mellitus**. Two
   new engine knobs, both idle by default, so every glucose hash is
-  unchanged.
+  unchanged. M58 closed the teaching loop: one click on the report's
+  "this class cannot spot an effector" line hands every device in that
+  period exactly those cases — and never tells them why.
 - **Phase 13 (for reference):** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
   `vital_loop_phase13_kickoff.md` (scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV).
@@ -163,6 +165,50 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M58: Assignments, and the gate that makes them safe
+- Shipped: assignments broadcast to a PERIOD. `cases_with_role(role)`
+  collects every case in the app whose answer is that box, as (loop,
+  case-index) coordinates; `set_assignment` / `clear_assignment` hold
+  one per period in memory (live-room state, cleared by a restart like
+  the registry); `POST /teacher/assign` is PIN-gated and drives off a
+  button on the report's role line, with a "Clear" beside the banner it
+  raises. `/state` hands devices in that period the block from
+  `student_assignment()` — **the one redaction, and no other code may
+  build a student payload**. The page shows a banner listing
+  "Temperature case 4 / Glucose case 3 / Water case 1"; clicking one
+  drives the REAL tab button and the REAL case-start button, so there
+  is no second path to a case to keep in step with M28. 6 new
+  invariants (255 pass) + verify.
+- **The gate, pinned first and hardest**: the set exists BECAUSE every
+  case in it has the same answer, so naming the box to a student hands
+  over the answer key for all of them at once. Tests assert no `role`
+  key and no role WORD in the student payload, in `/state` as raw text,
+  and in the page — while the teacher's own sheet DOES name it, because
+  they are the one person who already knows.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **A known, accepted limit**: a student who has already answered one
+     case in the set knows its answer, and could infer the others share
+     it. That is inherent to assigning BY CATEGORY and cannot be closed
+     without abandoning the pedagogy; it is written down rather than
+     papered over.
+  2. Devices that skipped the join screen have no class, so they get no
+     assignment — the same rule as the scoped leaderboard. Cookieless
+     clients (verify, pytest, the projector) never see the key at all.
+  3. **Caught by checking instead of assuming**: my first draft called
+     `showLoop()` and `send()`, neither of which exists in this
+     codebase — the real helpers are the tab button's own handler and
+     `control()`. Driving the existing UI is also the better design.
+  4. VERIFIED LIVE: teacher assigned the effector set to P3 (302); a P3
+     phone's payload carried 3 cases with 'effector' / 'receptor' /
+     'control center' / 'role' ALL absent; a P5 phone got nothing; the
+     banner rendered the three cases; clicking Glucose case 3 switched
+     tab, started the blind case with the team name prefilled, and
+     showed its brief. The 35 role words on the page are all `<option>`
+     elements — the answer menu M28 always renders — and ZERO are in
+     the assignment bar.
 
 ## 2026-08-19 — M57: Three diseases, and a mechanism that had to change
 - Shipped: `engine/glucose.py` grew three knobs, ALL idle by default so

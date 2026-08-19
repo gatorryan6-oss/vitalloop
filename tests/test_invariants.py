@@ -6355,3 +6355,153 @@ def test_every_preset_has_a_button_a_class_can_click():
     assert not missing, (
         f"presets with no button on the page: {missing} - a disease a "
         "class cannot click is not in the lesson")
+
+
+# ================= M58: assignments, and the gate ==========================
+# The teacher's sheet says "this class cannot spot an effector" and one
+# click hands that class those cases. THE RISK IS THE OBVIOUS ONE: the set
+# exists BECAUSE every case in it has the same answer, so naming the box
+# to a student is handing over the answer key. The gate is pinned first
+# and hardest; the feature is only allowed to work afterwards.
+
+ROLE_WORDS = ("effector", "receptor", "control center", "control_center",
+              "controlcenter")
+
+
+def _assign_app():
+    import app as vital_app
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("assignments don't exist yet - they arrive at M58")
+    return vital_app
+
+
+def test_a_student_is_never_told_which_box_the_set_is_about(monkeypatch):
+    """(gggg) THE GATE. The payload may say how many cases and which
+    ones. It may never say why."""
+    import json
+    vital_app = _assign_app()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    vital_app.set_assignment("P3", "effector")
+    student = vital_app.student_assignment("P3")
+    blob = json.dumps(student).lower()
+    assert "role" not in blob, (
+        "the student payload carries a `role` key - that IS the answer "
+        "to every case in the set")
+    for word in ROLE_WORDS:
+        assert word not in blob, (
+            f"the word {word!r} reached a student's payload; the whole "
+            "set has that answer, so this ends the game for all of them")
+    assert student["count"] == len(vital_app.cases_with_role("effector"))
+    assert all(set(i) == {"loop", "n"} for i in student["items"]), (
+        "an assignment item is a coordinate (loop + case number) and "
+        "nothing else - no title, no brief, no answer")
+
+
+def test_the_gate_holds_through_the_real_state_route(fresh_registry,
+                                                     monkeypatch):
+    """(gggg) The same check where it actually matters: what a phone in
+    that period downloads, four times a second."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    vital_app.set_assignment("P3", "effector")
+    kid = vital_app.app.test_client()
+    kid.set_cookie("vl_sid", "assigned-kid")
+    kid.set_cookie("vl_period", "P3")
+    raw = kid.get("/state?loop=temp").data.decode("utf-8").lower()
+    for word in ROLE_WORDS:
+        assert word not in raw, (
+            f"{word!r} is in the /state payload a student can read in "
+            "devtools")
+    j = kid.get("/state?loop=temp").get_json()
+    assert j["assignment"]["count"] >= 1
+    assert "role" not in j["assignment"]
+    # ...and the page itself says nothing either.
+    page = kid.get("/").data.decode("utf-8").lower()
+    assert "assignmentbar" in page, "the banner must exist to be filled"
+    for word in ("effector case", "receptor case"):
+        assert word not in page
+
+
+def test_an_assignment_reaches_its_period_and_no_other(fresh_registry,
+                                                       monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    vital_app.set_assignment("P3", "effector")
+
+    def device(sid, period):
+        c = vital_app.app.test_client()
+        c.set_cookie("vl_sid", sid)
+        c.set_cookie("vl_period", period)
+        return c.get("/state?loop=temp").get_json()
+
+    assert device("in-p3", "P3").get("assignment") is not None
+    assert device("in-p5", "P5").get("assignment") is None, (
+        "P5 got P3's homework")
+    assert device("skipper", "").get("assignment") is None, (
+        "a device that skipped the join screen has no class to be "
+        "assigned to - the same rule as the scoped leaderboard")
+    cookieless = vital_app.app.test_client().get("/state?loop=temp").get_json()
+    assert "assignment" not in cookieless, (
+        "the projector and every cookieless client stay exactly as they "
+        "were before this feature existed")
+
+
+def test_the_teacher_assigns_and_clears_behind_the_pin(monkeypatch):
+    vital_app = _assign_app()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    nosy = vital_app.app.test_client()
+    assert nosy.post("/teacher/assign",
+                     data={"period": "P3",
+                           "role": "effector"}).status_code == 403, (
+        "a student who finds the route must not be able to assign, or "
+        "clear, anything")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    out = teacher.post("/teacher/assign",
+                       data={"period": "P3", "role": "effector"})
+    assert out.status_code == 302
+    assert vital_app.ASSIGNMENTS["P3"]["role"] == "effector"
+    assert teacher.post("/teacher/assign",
+                        data={"period": "P9",
+                              "role": "effector"}).status_code == 400
+    teacher.post("/teacher/assign", data={"period": "P3", "role": "clear"})
+    assert "P3" not in vital_app.ASSIGNMENTS, "Clear must actually clear"
+
+
+def test_the_set_is_exactly_the_cases_with_that_answer():
+    vital_app = _assign_app()
+    for role in ("effector", "receptor", "control"):
+        items = vital_app.cases_with_role(role)
+        for item in items:
+            entries = list(vital_app.CASES[item["loop"]].values())
+            assert entries[item["n"] - 1]["answer"]["role"] == role, (
+                "an assigned case does not have the answer the set was "
+                "built from - the index is off by one somewhere")
+        assert items, f"no cases at all answer {role!r}"
+
+
+def test_the_teacher_page_names_the_box_because_it_may(monkeypatch):
+    """(gggg) The other side of the gate: the teacher's own sheet SHOULD
+    say what was assigned, because they are the one person who already
+    knows."""
+    vital_app = _assign_app()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    vital_app.set_assignment("P3", "effector")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/report/P3").data.decode("utf-8")
+    assert "Assigned now" in body and "Effector" in body
+    assert "never which box" in body, (
+        "the sheet should remind the teacher that the students are not "
+        "told - it is the kind of thing worth saying out loud")
