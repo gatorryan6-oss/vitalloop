@@ -6168,3 +6168,190 @@ def test_the_four_loops_still_teach_every_verb(lab):
         assert len(vital_app.CASES[loop]) >= 2
         assert vital_app.CSV_FIELDS[loop] and vital_app.ANSWER_OPTIONS[loop]
         assert loop in vital_app.WORKSHEETS
+
+
+# ================= M57: the islet's own faults =============================
+# Three diseases, two new knobs, and the knobs are IDLE by default - which
+# is what keeps every glucose hash above unchanged. Values below were
+# chosen by sweep (M57), not guessed, and the sweep killed the mechanism
+# the kickoff had guessed for reactive hypoglycemia: gain alone cannot dig
+# a trough, because a proportional controller with more gain just tracks
+# harder. Lag can, because a controller acting on stale error overshoots.
+
+def _islet():
+    GlucoseSimulation = _glucose()
+    if not hasattr(GlucoseSimulation, "set_autonomous_insulin"):
+        pytest.skip("the islet knobs don't exist yet - they arrive at M57")
+    return GlucoseSimulation
+
+
+def test_the_new_knobs_are_idle_by_default():
+    """The load-bearing promise: never called -> Phases 2-13 untouched.
+    The glucose regression hashes are the other half of this proof."""
+    GlucoseSimulation = _islet()
+    a, b = GlucoseSimulation(), GlucoseSimulation()
+    b.set_autonomous_insulin(0.0)
+    b.set_insulin_gain(1.0)
+    b.set_insulin_lag(0.0)
+    for sim in (a, b):
+        sim.eat(75, 1.0)
+        sim.step(4 * 3600)
+    assert a.history() == b.history(), (
+        "setting the new knobs to their DEFAULTS changed a run - then "
+        "they are not idle, and every earlier phase's pinned behavior "
+        "is in question")
+
+
+def test_an_insulinoma_drives_hypoglycemia_the_sensor_cannot_argue_with():
+    """(ffff) The first STUCK-ON failure in the app. Every other disease
+    here is a part switched off; this one secretes anyway, and the loop
+    fails downward while every intact part fights it."""
+    GlucoseSimulation = _islet()
+    sim = GlucoseSimulation()
+    sim.set_autonomous_insulin(0.55)
+    sim.step(6 * 3600)
+    h = sim.history()
+    end = h[-1]
+    assert end["glucose"] < 70.0, (
+        f"the tumour left glucose at {end['glucose']:.1f} mg/dL - an "
+        "insulinoma that does not reach hypoglycemia is not teaching "
+        "the lesson")
+    assert end["glucose"] > 40.0, (
+        "swept at M57: 0.55 settles near 55 mg/dL. A crash to 30 is a "
+        "different (and less watchable) lesson - if this moves, the "
+        "preset was retuned and the banner's numbers are now wrong")
+    assert end["glucagon"] == pytest.approx(1.0), (
+        "glucagon must be PINNED AT MAXIMUM - the counter-regulation "
+        "working perfectly and losing is the whole teaching point")
+    assert end["sensor_enabled"] is True, (
+        "nothing is wrong with the sensing: the tumour simply is not "
+        "listening to it")
+
+
+def test_breaking_the_islet_does_not_break_the_tumour():
+    """(ffff) The discovery the preset's banner promises: a student who
+    switches the beta cells off finds the hypoglycemia unmoved."""
+    GlucoseSimulation = _islet()
+    on, off = GlucoseSimulation(), GlucoseSimulation()
+    for sim in (on, off):
+        sim.set_autonomous_insulin(0.55)
+    off.set_effector_enabled("beta", False)
+    for sim in (on, off):
+        sim.step(6 * 3600)
+    assert off.state()["glucose"] == pytest.approx(
+        on.state()["glucose"], rel=1e-6), (
+        "switching the normal islet off changed the tumour's result - "
+        "autonomous means autonomous")
+    assert off.state()["glucose"] < 70.0
+
+
+def test_gain_alone_cannot_dig_a_trough_but_lag_can():
+    """(ffff) The M57 sweep's finding, pinned so it cannot be quietly
+    forgotten: reactive hypoglycemia is a TIMING fault. More gain on an
+    instant proportional controller lowers the peak and never overshoots
+    downward; a lagged one overshoots because it is answering the rise
+    that has already passed."""
+    GlucoseSimulation = _islet()
+
+    def meal_run(gain=1.0, lag=0.0):
+        sim = GlucoseSimulation()
+        sim.set_insulin_gain(gain)
+        sim.set_insulin_lag(lag)
+        sim.step(1800)
+        sim.eat(75, 1.0)
+        sim.step(6 * 3600)
+        h = sim.history()
+        peak_i = max(range(len(h)), key=lambda i: h[i]["glucose"])
+        return (h[peak_i]["glucose"],
+                min(r["glucose"] for r in h[peak_i:]))
+
+    plain_peak, plain_trough = meal_run()
+    gain_peak, gain_trough = meal_run(gain=3.0)
+    assert gain_peak < plain_peak and gain_trough > 70.0, (
+        "more gain must LOWER the peak and dig no trough - if this ever "
+        "flips, the loop has gained a lag from somewhere and the M57 "
+        "finding needs redoing")
+    lag_peak, lag_trough = meal_run(gain=1.4, lag=1800.0)
+    assert lag_peak > plain_peak, (
+        "late insulin must let the peak run HIGHER - that is half the "
+        "clinical picture")
+    assert lag_trough < 70.0, (
+        f"the lagged islet troughed at {lag_trough:.1f} mg/dL - reactive "
+        "hypoglycemia has to actually reach hypoglycemia")
+
+
+def test_the_three_new_presets_are_on_the_menu():
+    """(ffff) The lesson grammar: a disease is a preset with a banner in
+    the app's own vocabulary, and Healthy is always the way back."""
+    vital_app = _game()
+    assert "insulinoma" in vital_app.PRESETS["glucose"]
+    assert "reactive_hypo" in vital_app.PRESETS["glucose"]
+    assert "treated_mellitus" in vital_app.PRESETS["body"]
+    for loop, key in (("glucose", "insulinoma"),
+                      ("glucose", "reactive_hypo"),
+                      ("body", "treated_mellitus")):
+        entry = vital_app.PRESETS[loop][key]
+        assert entry["label"] and entry["banner"]
+        assert "healthy" in vital_app.PRESETS[loop]
+
+
+def test_healthy_clears_an_islet_fault():
+    """(ffff) M31's no-stacking rule, extended: clicking Healthy after a
+    tumour must leave no tumour behind."""
+    vital_app = _game()
+    GlucoseSimulation = _islet()
+    sim = GlucoseSimulation()
+    vital_app._apply_preset(sim, vital_app.PRESETS["glucose"]["insulinoma"])
+    sim.step(600)
+    assert sim.state()["glucose"] < 85.0, "the tumour should be biting"
+    vital_app._apply_preset(sim, vital_app.PRESETS["glucose"]["healthy"])
+    sim.step(3 * 3600)
+    assert sim.state()["glucose"] > 80.0, (
+        "a click of Healthy left the autonomous insulin running - "
+        "diseases must never stack (the M31 rule)")
+
+
+def test_treatment_lands_between_untreated_and_healthy():
+    """(ffff) The coupled body's second disease, and its point: the
+    numbers really do improve, and it is still not control."""
+    vital_app = _game()
+    Body = _body()
+
+    def day(preset):
+        b = Body()
+        vital_app._apply_preset(b, vital_app.PRESETS["body"][preset])
+        meals = {int(h * 3600) for h in (2, 6, 10)}
+        for tick in range(12 * 3600):
+            if tick in meals:
+                b.eat(75, 1.0)
+            b.step(1)
+        g = [r["glucose"] for r in b.history()]
+        above = sum(1 for x in g if x > 180.0) / len(g)
+        return sum(g) / len(g), above
+
+    healthy, healthy_above = day("healthy")
+    untreated, untreated_above = day("untreated_mellitus")
+    treated, treated_above = day("treated_mellitus")
+    assert healthy < treated < untreated, (
+        f"treated ({treated:.0f}) must sit between healthy "
+        f"({healthy:.0f}) and untreated ({untreated:.0f})")
+    assert treated_above > 0.1, (
+        "a quarter of the day above the renal threshold is the point: "
+        "treated and STILL spilling sugar into the urine")
+    assert treated_above < untreated_above
+
+
+def test_every_preset_has_a_button_a_class_can_click():
+    """(ffff) Caught at M57: the presets are a server-side table but the
+    buttons are hand-written in the page, so a new disease can exist in
+    the engine with no way to reach it. Pinned here so the next phase
+    that adds one cannot repeat it."""
+    vital_app = _game()
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    missing = [f"{loop}/{key}"
+               for loop, entries in vital_app.PRESETS.items()
+               for key in entries
+               if f'data-preset="{key}"' not in page]
+    assert not missing, (
+        f"presets with no button on the page: {missing} - a disease a "
+        "class cannot click is not in the lesson")

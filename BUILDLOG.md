@@ -18,7 +18,15 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
+- **Committed:** M57 — Phase 14 underway (spec:
+  `vital_loop_phase14_kickoff.md`, scoped 2026-08-19: assignment layer
+  + three diseases). The glucose loop gained **insulinoma** (an
+  effector STUCK ON — the app's first failure in that direction) and
+  **reactive hypoglycemia** (a TIMING fault, nothing broken), and the
+  coupled body gained **treated-but-poorly-controlled mellitus**. Two
+  new engine knobs, both idle by default, so every glucose hash is
+  unchanged.
+- **Phase 13 (for reference):** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
   `vital_loop_phase13_kickoff.md` (scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV).
   **The physiology debt is empty.** One kidney, one law: urine flow is
@@ -155,6 +163,51 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M57: Three diseases, and a mechanism that had to change
+- Shipped: `engine/glucose.py` grew three knobs, ALL idle by default so
+  every glucose regression hash came back unchanged (the phase's own
+  rule): `set_autonomous_insulin` (a floor the sensor cannot argue
+  with), `set_insulin_gain`, and `set_insulin_lag`. The Body forwards
+  all three. Three presets, values chosen BY SWEEP:
+  **insulinoma** (autonomous 0.55 → settles 54.5 mg/dL with glucagon
+  pinned at 1.00, and switching the normal beta cells off changes
+  nothing), **reactive hypoglycemia** (lag 30 min + gain 1.4 → peak
+  178.9 at 100 min, trough 65.9 at 138 min, recovered by 6 h), and
+  **treated mellitus** (beta off + basal 0.5 U/hr → mean 138 vs
+  untreated 228 vs healthy 104, still 26% of the day above the renal
+  threshold). `python -m engine.islet_demo` tells all three stories.
+  8 new invariants (249 pass) + verify + nine demos.
+- **THE FINDING: the kickoff's guessed mechanism did not work.** The
+  spec said reactive hypoglycemia would be a secretion GAIN. Swept
+  before pinning: gain 1.0 → 4.0 LOWERS the post-meal peak (145 → 131)
+  and never digs a trough at all. Of course it doesn't — endogenous
+  insulin here is purely proportional to current glucose, and a
+  proportional controller with more gain tracks HARDER, it does not
+  overshoot. Real reactive hypoglycemia is MISTIMED insulin, so the
+  honest mechanism is a first-order secretion LAG (idle at 0 s). With
+  it the picture appears immediately: the peak runs higher (insulin
+  hasn't arrived), then the loop drives the sugar past the set point
+  into hypoglycemia two hours later. The negative result is pinned as
+  an invariant so it cannot be quietly forgotten.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **The tumour is applied AFTER the beta-cell breaker**, so
+     switching the normal islet off does not stop it. That is the
+     lesson, it is what "autonomous" means, and the banner promises it.
+  2. **The gain knob stayed** even though it cannot cause the disease
+     it was added for: it is physiologically meaningful on its own and
+     the reactive-hypo preset uses it to deepen the trough. Its
+     limitation is documented in the engine comment.
+  3. **A gap this milestone found and closed permanently**: preset
+     BUTTONS are hand-written in `index.html` while PRESETS is a
+     server-side table, so a new disease could exist in the engine with
+     no way for a class to click it — which is exactly what happened
+     here until I looked. There is now an invariant asserting every
+     preset in the table has a button on the page.
+  4. VERIFIED LIVE: all five glucose buttons and all three body buttons
+     render, and clicking Insulinoma raises its banner.
 
 ## 2026-08-19 — M56: The full pass, and Phase 13 closes
 - Shipped: the M56 contract (4 tests). **The repaired kidney holds

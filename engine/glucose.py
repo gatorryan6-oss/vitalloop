@@ -61,6 +61,13 @@ RENAL_THRESHOLD = 180.0
 # are sanity rails, not physiology: a body does not lose or gain a third
 # of its water in a class period, and a runaway scale would be a bug
 # amplifier rather than a lesson.
+# ---- The islet's own faults (M57) ---------------------------------------
+# A ceiling on the secretion gain: past this the beta cells are not
+# "brisk", they are a different organ, and the number stops teaching.
+MAX_INSULIN_GAIN = 5.0
+MAX_INSULIN_LAG_S = 7200.0                 # two hours: past this the
+                                           # islet is not slow, it is absent
+
 MIN_POOL_SCALE = 0.7
 MAX_POOL_SCALE = 1.3
 
@@ -113,6 +120,10 @@ class GlucoseSimulation:
         on board and no basal running."""
         self._glucose = self.SET_POINT
         self._pool_scale = 1.0   # body water, relative to normal (M53)
+        self._autonomous_insulin = 0.0   # insulinoma floor (M57)
+        self._insulin_gain = 1.0         # secretion gain (M57)
+        self._insulin_lag = 0.0          # secretion lag, s (M57)
+        self._insulin_endo = 0.0         # the lagged hormone itself
         self._gut_carbs = 0.0
         self._absorb_rate = 1.0          # g/min; set by the last meal
         self._exercise = False
@@ -212,6 +223,53 @@ class GlucoseSimulation:
             self._glucose *= self._pool_scale / scale
             self._pool_scale = scale
 
+    def set_autonomous_insulin(self, level):
+        """Insulin secreted no matter what the sensor says (M57).
+
+        An insulinoma is beta-cell tissue that has stopped listening: it
+        secretes at its own rate whatever the glucose is, so the body is
+        driven hypoglycemic and cannot talk it out of it. Every disease
+        in this app so far has been a part switched OFF or a signal
+        missing; this is the first one STUCK ON, and the loop fails in
+        the opposite direction.
+
+        0.0 (the default) means no tumour and changes nothing.
+        """
+        self._autonomous_insulin = _clamp(float(level), 0.0, 1.0)
+
+    def set_insulin_gain(self, gain):
+        """How hard the beta cells answer the same rise (M57).
+
+        1.0 is the healthy loop. Above 1.0 the islet over-secretes for a
+        given glucose, so a meal is met with too much insulin and the
+        sugar overshoots DOWNWARD hours later - reactive hypoglycemia,
+        which is a control-overshoot lesson rather than a broken part.
+        """
+        gain = float(gain)
+        if not 0.0 <= gain <= MAX_INSULIN_GAIN:
+            raise ValueError(
+                f"insulin gain must be in [0, {MAX_INSULIN_GAIN}] - 1.0 "
+                "is the healthy islet")
+        self._insulin_gain = gain
+
+    def set_insulin_lag(self, seconds):
+        """How long the beta cells take to catch up with the sugar (M57).
+
+        0.0 (the default) is the instantaneous islet every phase before
+        this one pinned. A positive lag makes the hormone chase the
+        glucose instead of matching it, so after a meal the insulin is
+        still high while the sugar is already coming down - and it
+        overshoots into hypoglycemia hours later. The disease is in the
+        TIMING, not in any broken part, which is why it belongs in this
+        app: the loop diagram stays entirely intact and the patient is
+        still ill.
+        """
+        seconds = float(seconds)
+        if not 0.0 <= seconds <= MAX_INSULIN_LAG_S:
+            raise ValueError(
+                f"insulin lag must be in [0, {MAX_INSULIN_LAG_S}] seconds")
+        self._insulin_lag = seconds
+
     def set_pump_enabled(self, on):
         """The closed-loop pump. While it runs, ITS rate feeds the depot
         and the manual basal is overridden (not erased). Switching on
@@ -231,11 +289,36 @@ class GlucoseSimulation:
         alpha cells' paracrine brake can't tell the insulins apart.
         `effective` is what the tissues actually HEAR: total scaled by
         insulin sensitivity (resistance deafens every action at once)."""
-        insulin = _clamp(
-            (sensed_glucose - INSULIN_START) / (INSULIN_FULL - INSULIN_START),
+        # The healthy islet response, times a SECRETION GAIN (M57). Gain
+        # 1.0 is the loop as it has always been; above 1.0 the beta cells
+        # over-answer the same rise, which is reactive hypoglycemia.
+        target = _clamp(
+            self._insulin_gain
+            * (sensed_glucose - INSULIN_START)
+            / (INSULIN_FULL - INSULIN_START),
             0.0, 1.0)
         if not self._enabled["beta"]:
-            insulin = 0.0
+            target = 0.0
+        # SECRETION LAG (M57). With lag 0 the hormone IS its target and
+        # the loop is every earlier phase's loop, exactly. With a lag the
+        # islet is still answering the last rise while the sugar is
+        # already falling - and a controller that acts on stale error
+        # OVERSHOOTS. That is reactive hypoglycemia: not a broken part,
+        # a mistimed one. (Swept at M57: gain alone cannot do this. More
+        # gain on an instant proportional controller just tracks harder
+        # and lowers the peak - it never digs a trough.)
+        if self._insulin_lag > 0.0:
+            self._insulin_endo += ((target - self._insulin_endo)
+                                   * min(1.0, self.DT / self._insulin_lag))
+        else:
+            self._insulin_endo = target
+        insulin = self._insulin_endo
+        # INSULINOMA (M57): a floor the sensor cannot argue with. Applied
+        # AFTER the breaker on purpose - the tumour is autonomous tissue,
+        # so switching the normal islet off does not switch IT off, and
+        # discovering that is the lesson. 0.0 by default, so a loop that
+        # never sees this knob is the loop every earlier phase pinned.
+        insulin = max(insulin, self._autonomous_insulin)
         total = _clamp(insulin + injected, 0.0, 1.0)
         effective = total * self._insulin_sensitivity
         drive = _clamp(

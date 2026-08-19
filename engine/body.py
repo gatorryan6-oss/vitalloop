@@ -106,6 +106,18 @@ class Body:
     def set_pump_enabled(self, on):
         self.glucose.set_pump_enabled(on)
 
+    def set_autonomous_insulin(self, level):
+        """An insulinoma in a coupled body (M57) - forwarded, like every
+        other glucose knob, so the sugar loop's diseases all exist here
+        too."""
+        self.glucose.set_autonomous_insulin(level)
+
+    def set_insulin_gain(self, gain):
+        self.glucose.set_insulin_gain(gain)
+
+    def set_insulin_lag(self, seconds):
+        self.glucose.set_insulin_lag(seconds)
+
     def set_insulin_sensitivity(self, s):
         self.glucose.set_insulin_sensitivity(s)
 

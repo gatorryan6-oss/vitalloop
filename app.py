@@ -884,7 +884,12 @@ HEALTHY_TEMP = {"fever": 0.0, "exercise": False, "sensor": True,
                 "effectors": {"sweat": True, "shiver": True, "vaso": True}}
 HEALTHY_GLUCOSE = {"sensitivity": 1.0, "exercise": False, "sensor": True,
                    "effectors": {"beta": True, "alpha": True, "liver": True},
-                   "pump": False, "basal": 0.0}
+                   "pump": False, "basal": 0.0,
+                   # M57 islet faults, at their idle values: every preset
+                   # clears them, so a tumour never survives a click of
+                   # Healthy (the M31 no-stacking rule).
+                   "autonomous_insulin": 0.0, "insulin_gain": 1.0,
+                   "insulin_lag": 0.0}
 HEALTHY_WATER = {"exercise": False, "sensor": True,
                  "effectors": {"adh": True, "kidney": True, "access": True},
                  "adh_override": None}   # M31 knob: every water preset
@@ -894,7 +899,9 @@ HEALTHY_BODY = {"exercise": False, "sensor": True,
                 "effectors": {"beta": True, "alpha": True, "liver": True,
                               "adh": True, "kidney": True, "access": True},
                 "sensitivity": 1.0, "pump": False, "basal": 0.0,
-                "adh_override": None}
+                "adh_override": None,
+                "autonomous_insulin": 0.0, "insulin_gain": 1.0,
+                "insulin_lag": 0.0}
 
 PRESETS = {
     "temp": {
@@ -938,6 +945,28 @@ PRESETS = {
                       "barely listen (target-tissue resistance). Both "
                       "numbers run high at once.",
             "speed": 16, **{**HEALTHY_GLUCOSE, "sensitivity": 0.05}},
+        "insulinoma": {
+            "label": "Insulinoma",
+            "banner": "a tumour of beta cells that stopped listening — "
+                      "insulin pours out whatever the sugar is, and the "
+                      "body is driven down to about 55 mg/dL and held "
+                      "there. Watch the glucagon: pinned at maximum and "
+                      "losing. Every other disease here is a part "
+                      "switched OFF; this one is STUCK ON. Switching the "
+                      "normal islet off does not stop it — the tumour is "
+                      "not the islet.",
+            "speed": 16, **{**HEALTHY_GLUCOSE,
+                            "autonomous_insulin": 0.55}},
+        "reactive_hypo": {
+            "label": "Reactive hypoglycemia",
+            "banner": "nothing is broken — the insulin is LATE. It "
+                      "arrives after the meal has already peaked, so the "
+                      "peak runs high and then the sugar overshoots "
+                      "DOWNWARD into hypoglycemia about two hours later. "
+                      "A timing fault, not a part fault: every box of "
+                      "the loop is intact and the patient is still ill.",
+            "speed": 16, **{**HEALTHY_GLUCOSE, "insulin_lag": 1800.0,
+                            "insulin_gain": 1.4}},
     },
     "water": {
         "healthy": {"label": "Healthy", "banner": None, "speed": 1,
@@ -991,6 +1020,20 @@ PRESETS = {
                       "carry the sugar.",
             "speed": 16,
             **{**HEALTHY_BODY,
+               "effectors": {"beta": False, "alpha": True, "liver": True,
+                             "adh": True, "kidney": True, "access": True}}},
+        "treated_mellitus": {
+            "label": "Treated mellitus, poorly controlled",
+            "banner": "insulin IS being given — a steady basal dose — "
+                      "and the numbers really are better: the sugar runs "
+                      "around 140 instead of 230. It is still not "
+                      "control. A quarter of the day sits above the "
+                      "kidney's threshold, so sugar is still going into "
+                      "the urine and still taking water with it. "
+                      "Treatment changed the curve; it did not fix the "
+                      "loop.",
+            "speed": 16,
+            **{**HEALTHY_BODY, "basal": 0.5,
                "effectors": {"beta": False, "alpha": True, "liver": True,
                              "adh": True, "kidney": True, "access": True}}},
     },
@@ -2686,6 +2729,12 @@ def _apply_preset(sim, p):
         sim.set_env_temp(p["env"])
     if "fever" in p:
         sim.set_fever(p["fever"])
+    if "autonomous_insulin" in p:
+        sim.set_autonomous_insulin(p["autonomous_insulin"])
+    if "insulin_gain" in p:
+        sim.set_insulin_gain(p["insulin_gain"])
+    if "insulin_lag" in p:
+        sim.set_insulin_lag(p["insulin_lag"])
     if "sensitivity" in p:
         sim.set_insulin_sensitivity(p["sensitivity"])
     if "pump" in p:
