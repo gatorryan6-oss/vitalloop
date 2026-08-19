@@ -404,6 +404,28 @@ The rooms API contract (built at M43, Phase 11):
     what they meant. Engines untouched all phase: the two regression
     hashes are the proof and are not repeated here.
 
+The class report API contract (built at M48, Phase 12):
+
+    import report
+    report.class_report(attempts, period, date, catalog=None)
+                                      # -> {"period","date","teams",
+                                      #     "team_count","run_count",
+                                      #     "answer_count","aggregate"}
+    report.attempts_for(attempts, period, date)   # the day's runs
+    report.TEAMLESS / report.THIN_SAMPLE
+
+    PURE: the log and the DATE arrive as arguments - no clock read, no
+    Flask, no app import - so the paper is reproducible from a crafted
+    log. period "" is the Unassigned pile, and a pre-M44 record (no
+    period key) belongs to it. An empty day is a VALID report, never an
+    error. A team row keeps its BEST run of a challenge; a case row
+    keeps both first_correct and ever_correct, because grading policy
+    is the teacher's. The debrief counts FIRST answers per team only.
+    `catalog` carries titles and right answers in from app.py (which
+    imports Flask), shape:
+      {"challenges": {(loop, name): title},
+       "cases": {(loop, name): {"title", "answer_line"}}}
+
 Tests whose inputs don't exist yet SKIP with a loud reason naming the
 milestone that arms them. Do not delete the skips; just build the milestones.
 
@@ -4956,3 +4978,187 @@ def test_the_cookieless_world_gained_only_the_scope_label(fresh_registry):
     assert vital_app.registry.count() == 0, (
         "a cookieless request seated a session - the default world "
         "must stay the module-level runners")
+
+
+# ================= M48: the class report, as data ==========================
+# Phase 12 opens: the attempts log becomes teacher paper. The report is a
+# DATA PRODUCT (kickoff SS5) - one pure function that the printable page
+# renders and a later gradebook export can read, so the paper can never
+# disagree with what the class saw on screen. Nothing here is inferred:
+# every number must come out of a stored attempt.
+
+def _report_module():
+    if not (ROOT / "report.py").exists():
+        pytest.skip("report.py doesn't exist yet - it arrives at M48")
+    import report
+    return report
+
+
+REPORT_TODAY = "2026-08-19"
+REPORT_YESTERDAY = "2026-08-18"
+
+
+def _rrun(rid, team, period, day, name="cold_store", points=50, medal=None,
+          at="09:00:00", loop="temp"):
+    """One finished challenge run. period=None writes NO period key at
+    all - a pre-M44 record, which the log is still full of."""
+    rec = {"id": rid, "wall_time": f"{day}T{at}", "loop": loop,
+           "mode": "challenge", "name": name, "label": team,
+           "points": points, "medal": medal, "met": True, "rows": []}
+    if period is not None:
+        rec["period"] = period
+    return rec
+
+
+def _ranswer(rid, team, period, day, name="case1", correct=True,
+             at="09:30:00", loop="temp"):
+    rec = {"id": rid, "wall_time": f"{day}T{at}", "loop": loop,
+           "mode": "diagnosis", "name": name, "label": team,
+           "points": 100 if correct else 0, "medal": None, "met": correct,
+           "rows": [], "correct": correct}
+    if period is not None:
+        rec["period"] = period
+    return rec
+
+
+def test_the_report_filters_by_period_and_by_date():
+    report = _report_module()
+    log = [
+        _rrun(1, "Mine", "P3", REPORT_TODAY),
+        _rrun(2, "Other Class", "P5", REPORT_TODAY),
+        _rrun(3, "Yesterday", "P3", REPORT_YESTERDAY),
+    ]
+    rep = report.class_report(log, "P3", REPORT_TODAY)
+    assert [t["team"] for t in rep["teams"]] == ["Mine"], (
+        "one sheet is ONE class on ONE day - another period's runs and "
+        "yesterday's runs must both stay off it")
+    assert rep["period"] == "P3" and rep["date"] == REPORT_TODAY
+    assert rep["run_count"] == 1
+
+
+def test_a_pre_m44_record_lands_in_unassigned_never_in_a_period():
+    """The log is full of records written before periods existed. They
+    belong to the Unassigned pile - and must never be quietly counted
+    as some class's work."""
+    report = _report_module()
+    log = [_rrun(1, "Before Periods", None, REPORT_TODAY)]
+    assert report.class_report(log, "P3", REPORT_TODAY)["teams"] == [], (
+        "a keyless record was counted as a period's run")
+    unassigned = report.class_report(log, "", REPORT_TODAY)
+    assert [t["team"] for t in unassigned["teams"]] == ["Before Periods"]
+
+
+def test_an_empty_period_is_a_valid_report_not_an_error():
+    report = _report_module()
+    rep = report.class_report([], "P7", REPORT_TODAY)
+    assert rep["teams"] == [] and rep["team_count"] == 0
+    assert rep["run_count"] == 0 and rep["answer_count"] == 0
+    assert rep["aggregate"]["hardest_cases"] == []
+    assert rep["aggregate"]["medal_less"] == [], (
+        "a period nobody played must print a page that says nobody "
+        "played - never raise on the teacher's laptop")
+
+
+def test_teams_sort_alphabetically_with_the_unnamed_team_last():
+    report = _report_module()
+    log = [
+        _rrun(1, "zebra squad", "P3", REPORT_TODAY),
+        _rrun(2, None, "P3", REPORT_TODAY),
+        _rrun(3, "Alpha", "P3", REPORT_TODAY),
+    ]
+    rep = report.class_report(log, "P3", REPORT_TODAY)
+    assert [t["team"] for t in rep["teams"]] == \
+        ["Alpha", "zebra squad", report.TEAMLESS], (
+        "a grading sheet is read by NAME - case-insensitive alphabetical, "
+        "with the unnamed team last")
+
+
+def test_a_team_row_keeps_the_best_run_not_the_last():
+    report = _report_module()
+    log = [
+        _rrun(1, "Kestrel", "P3", REPORT_TODAY, points=88, medal="gold",
+              at="09:05:00"),
+        _rrun(2, "Kestrel", "P3", REPORT_TODAY, points=41, at="09:20:00"),
+    ]
+    rep = report.class_report(log, "P3", REPORT_TODAY)
+    row = rep["teams"][0]["challenges"][0]
+    assert row["runs"] == 2
+    assert row["best_points"] == 88 and row["best_medal"] == "gold", (
+        "the scorecard reports a team's BEST run of a challenge, the way "
+        "the leaderboard always has - not whichever one happened last")
+
+
+def test_the_debrief_counts_first_answers_only():
+    """A team that gets there on the second try still got it wrong the
+    first time, and that is the number worth reteaching from."""
+    report = _report_module()
+    log = [
+        _ranswer(1, "Kestrel", "P3", REPORT_TODAY, correct=False,
+                 at="09:30:00"),
+        _ranswer(2, "Kestrel", "P3", REPORT_TODAY, correct=True,
+                 at="09:38:00"),
+        _ranswer(3, "Mongooses", "P3", REPORT_TODAY, correct=True,
+                 at="09:31:00"),
+    ]
+    rep = report.class_report(log, "P3", REPORT_TODAY)
+    hard = rep["aggregate"]["hardest_cases"]
+    assert len(hard) == 1 and hard[0]["wrong"] == 1 and hard[0]["teams"] == 2, (
+        "the debrief must count one wrong FIRST answer out of two teams - "
+        "a retry is not a second team, and a team is not counted twice")
+    kestrel = next(t for t in rep["teams"] if t["team"] == "Kestrel")
+    case = kestrel["cases"][0]
+    assert case["first_correct"] is False and case["ever_correct"] is True, (
+        "the scorecard keeps BOTH: what the team committed to, and "
+        "whether they got there in the end. Grading policy is the "
+        "teacher's, so the paper reports both rather than choosing")
+    assert rep["aggregate"]["teams_reaching_a_case"] == 2
+
+
+def test_medal_less_lists_only_the_challenges_nobody_medaled():
+    report = _report_module()
+    log = [
+        _rrun(1, "A", "P3", REPORT_TODAY, name="cold_store", points=88,
+              medal="gold"),
+        _rrun(2, "B", "P3", REPORT_TODAY, name="blast_freezer", points=30),
+        _rrun(3, "A", "P3", REPORT_TODAY, name="blast_freezer", points=22),
+    ]
+    agg = report.class_report(log, "P3", REPORT_TODAY)["aggregate"]
+    assert [r["name"] for r in agg["medal_less"]] == ["blast_freezer"], (
+        "a challenge somebody medaled is not something to reteach")
+    row = agg["medal_less"][0]
+    assert row["runs"] == 2 and row["teams"] == 2 and row["best_points"] == 30
+
+
+def test_a_thin_day_says_so_instead_of_claiming_a_trend():
+    report = _report_module()
+    log = [_ranswer(1, "A", "P3", REPORT_TODAY, correct=False)]
+    assert report.class_report(log, "P3", REPORT_TODAY)["aggregate"]["thin"]
+    many = [_ranswer(i, f"T{i}", "P3", REPORT_TODAY, correct=False)
+            for i in range(1, report.THIN_SAMPLE + 1)]
+    assert not report.class_report(many, "P3",
+                                   REPORT_TODAY)["aggregate"]["thin"], (
+        "one team having a bad afternoon is an anecdote; the page must "
+        "say which one it is showing")
+
+
+def test_the_report_is_pure_no_web_framework_and_no_clock():
+    """(kickoff SS2, Phase 12) The date arrives as an ARGUMENT. A report
+    that reads the clock cannot be tested against a crafted log, and
+    every claim on the paper stops being reproducible."""
+    if not (ROOT / "report.py").exists():
+        pytest.skip("report.py doesn't exist yet - it arrives at M48")
+    tree = ast.parse((ROOT / "report.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names = [node.module]
+        for name in names:
+            root = name.split(".")[0]
+            assert root not in WEB_MODULES, (
+                f"report.py imports {name} - the report must stay "
+                "testable with a crafted log and no server")
+            assert root not in {"app", "time", "datetime"}, (
+                f"report.py imports {name} - the log and the DATE are "
+                "arguments; only the route knows what today is")

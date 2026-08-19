@@ -18,7 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
+- **Committed:** M48 — Phase 12 underway (spec:
+  `vital_loop_phase12_kickoff.md`, scoped 2026-08-19: the per-period
+  paper — both halves on one page, today only, printable page only).
+  `report.py` turns the attempts log into "P3's day" as plain data:
+  per-team scorecard rows plus the class debrief. Pure — the log and
+  the date are arguments, no clock, no Flask — so the paper is
+  reproducible from a crafted log. `python -m report_demo` prints it.
+- **Phase 11 (for reference):** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
   `vital_loop_phase11_kickoff.md` (scoped 2026-08-18: period codes /
   join screen + teacher dashboard — all three interview picks taken:
   skippable join screen, `periods.txt`, teacher PIN). The room is
@@ -99,6 +106,40 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M48: The class report, as data
+- Shipped: Phase 12 opens (spec committed first; interview 2026-08-19
+  took all three recommendations — scorecard AND debrief on one page,
+  today only, printable page only, no CSV this phase). `report.py`:
+  `class_report(attempts, period, date, catalog=None)` → the whole
+  report as plain data (teams with best-run-per-challenge rows and
+  per-case first/ever correct, plus the aggregate half: hardest cases
+  by FIRST answers, medal-less challenges, teams reaching a case, and
+  a `thin` flag). `python -m report_demo` prints a seeded two-period
+  day. 9 new invariants (197 pass) + verify pass.
+- Deferred: nothing new. The urine_osm ceiling (M20/M37) and
+  hemoconcentration (M38) stay deferred, unchanged, by explicit scope
+  choice at the Phase 12 interview.
+- Open bugs: none.
+- Decisions:
+  1. **The `catalog` seam.** The debrief needs challenge titles and
+     right answers, which live in `app.py` — which imports Flask.
+     Rather than import it (and lose "testable with no server"),
+     `class_report` takes an optional catalog of titles/answers and
+     falls back to raw engine keys without one. Purity is pinned by an
+     AST check that also forbids `time`/`datetime`: the DATE is an
+     argument, so the paper is reproducible.
+  2. **First answer vs eventual answer.** A team that answers wrong
+     then right is a real thing that happened; the row keeps BOTH
+     (`first_correct`, `ever_correct`) rather than the module choosing
+     a grading policy for the teacher. The debrief counts first
+     answers only — that is the number worth reteaching from.
+  3. **Small samples say so.** `thin` (< 3 answers) is in the data, so
+     M50's page can call one team's bad afternoon an anecdote instead
+     of a class trend.
+  4. Printed demo strings are ASCII (water_demo's convention) — the
+     Windows console codepage turns em-dashes into mojibake, and this
+     one gets read off a teacher's screen.
 
 ## 2026-08-18 — M47: The full pass, and Phase 11 closes
 - Shipped: the M47 contract (2 tests). **The room pass**: two classes
