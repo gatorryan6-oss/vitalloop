@@ -18,18 +18,34 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M59 — Phase 14 underway (spec:
-  `vital_loop_phase14_kickoff.md`, scoped 2026-08-19: assignment layer
-  + three diseases). The glucose loop gained **insulinoma** (an
-  effector STUCK ON — the app's first failure in that direction) and
-  **reactive hypoglycemia** (a TIMING fault, nothing broken), and the
-  coupled body gained **treated-but-poorly-controlled mellitus**. Two
-  new engine knobs, both idle by default, so every glucose hash is
-  unchanged. M58 closed the teaching loop: one click on the report's
-  "this class cannot spot an effector" line hands every device in that
-  period exactly those cases — and never tells them why. M59 closed
-  the circle: both teacher surfaces now report whether the reteach
-  took, read from the attempts log.
+- **Committed:** M60 — **PHASE 14 COMPLETE** (M0–M60). Spec:
+  `vital_loop_phase14_kickoff.md` (scoped 2026-08-19: assignment layer
+  + three diseases).
+  **The teaching loop closes.** The report says which box of the loop a
+  class cannot spot (M54); one click now hands every device in that
+  period exactly those cases — without ever telling them why, because
+  the reason IS the answer to all of them — and both teacher surfaces
+  report whether the reteach took, read from the attempts log.
+  **Three new diseases**: insulinoma (an effector STUCK ON, the app's
+  first failure in that direction, settling at 54.5 mg/dL with glucagon
+  pinned at maximum), reactive hypoglycemia (a TIMING fault with every
+  box intact), and treated-but-poorly-controlled mellitus (better
+  numbers, same broken loop). Three new engine knobs, ALL idle by
+  default, so every glucose hash is unchanged.
+  265 invariants + verify + nine console demos.
+- **Next up:** STOPPED for confirmation before Phase 15. Candidates:
+  1. **A direction for the answer vocabulary.** M57 hit this: a case
+     cannot currently distinguish an effector switched OFF from one
+     STUCK ON — both answer "effector / beta cells". Insulinoma and
+     type 1 would be the same answer. Giving the vocabulary a direction
+     would make the three new diseases into CASES, which is the natural
+     next payoff and the reason they are presets-only today.
+  2. **Multi-day scenarios** (deferred twice): the only context where
+     M53's hemoconcentration compounds into something visible.
+  3. **The wide-format gradebook**, still speculative until the long
+     one is used in a real class.
+  4. **Assignments that survive a restart**, if in-class use shows the
+     in-memory choice chafing.
 - **Phase 13 (for reference):** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
   `vital_loop_phase13_kickoff.md` (scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV).
@@ -167,6 +183,34 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M60: The full pass, and Phase 14 closes
+- Shipped: the M60 contract (4 tests). **The three diseases reach a
+  class through the production routes** — clicked as presets, banner
+  named in words, body actually changed (insulinoma below 70 mg/dL
+  after four hours), Healthy always the way back. **Two periods, two
+  different sets, no crossover**, and the role word absent from both
+  students' payloads while the teacher's own sheet names them. **Phases
+  11–13 untouched**: join overlay, badge, four tabs, every earlier
+  preset, `board_period`, the cookieless payload (which gained NO key,
+  assignment included), the dashboard's three swept thresholds, the
+  gradebook CSV, worksheets, the exact case counts, and Phase 13's
+  1200 mOsm/L ceiling. **The grammar holds** with three diseases added:
+  the coupled body is no longer a one-disease loop and glucose now has
+  four. 265 invariants + verify + nine demos.
+- Deferred: Phase 15 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. Two of my own tests were wrong this milestone and the CODE was
+     right both times: `/state`'s preset is a `{name, label, banner}`
+     block, not a bare string, and a rendered phrase spans a Jinja line
+     break. Both were fixed in the tests — worth noting because the
+     reflex to "fix" the code instead is exactly how a suite starts
+     lying.
+  2. The close checks the assignment gate a third time, at the pass
+     level, because it is the one thing in this phase that fails
+     silently: a leak does not crash, it just quietly ends the game for
+     a whole class.
 
 ## 2026-08-19 — M59: Did the reteach take?
 - Shipped: `report.assignment_progress(attempts, period, items, since,

@@ -6660,3 +6660,132 @@ def test_progress_never_reaches_a_student(fresh_registry, monkeypatch):
     assert all(set(i) == {"loop", "n"} for i in j["assignment"]["items"]), (
         "case NAMES reached a student payload - M28's rule is that the "
         "wire carries an index and nothing else")
+
+
+# ================= M60: the full pass, and Phase 14 closes =================
+# Two halves to answer for: three diseases that must reach a classroom
+# through the real routes, and an assignment layer whose whole risk is
+# that it hands out the answer. Plus the standing regression half.
+
+def test_the_new_diseases_reach_a_class_through_the_routes(lab):
+    """(hhhh) A preset is only real if a device can click it and the
+    body actually changes."""
+    vital_app, _ = lab
+    client = vital_app.app.test_client()
+    client.set_cookie("vl_sid", "m60-disease")
+    for loop, preset, check in (
+            ("glucose", "insulinoma",
+             lambda r: r["glucose"] < 70.0),
+            ("glucose", "reactive_hypo",
+             lambda r: r["glucose"] > 0),          # just has to run
+            ("body", "treated_mellitus",
+             lambda r: r["glucose"] > 0)):
+        assert client.post(f"/control?loop={loop}",
+                           json={"action": "preset",
+                                 "value": preset}).status_code == 200
+        j = client.get(f"/state?loop={loop}").get_json()
+        # /state's preset block is {name, label, banner} (M18), not a
+        # bare key - the page needs the words, not just the id.
+        assert j["preset"]["name"] == preset, (
+            "the banner must name what is on")
+        assert j["preset"]["label"] and j["preset"]["banner"]
+        runner = vital_app.registry.runners_for("m60-disease")[loop]
+        with runner.lock:
+            runner.sim.step(4 * 3600)
+            record = runner.sim.history()[-1]
+        assert check(record), f"{preset} did not bite through the routes"
+        # ...and Healthy is always the way back (the M31 no-stack rule).
+        assert client.post(f"/control?loop={loop}",
+                           json={"action": "preset",
+                                 "value": "healthy"}).status_code == 200
+
+
+def test_two_periods_get_different_sets_and_neither_leaks(fresh_registry,
+                                                          monkeypatch):
+    """(hhhh) The assignment pass: two classes, two boxes, no crossover,
+    and the answer nowhere a student can read it."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    teacher.post("/teacher/assign", data={"period": "P3",
+                                          "role": "effector"})
+    teacher.post("/teacher/assign", data={"period": "P5",
+                                          "role": "receptor"})
+
+    def payload(sid, period):
+        c = vital_app.app.test_client()
+        c.set_cookie("vl_sid", sid)
+        c.set_cookie("vl_period", period)
+        return c.get("/state?loop=temp")
+
+    p3 = payload("m60-p3", "P3")
+    p5 = payload("m60-p5", "P5")
+    p3_items = p3.get_json()["assignment"]["items"]
+    p5_items = p5.get_json()["assignment"]["items"]
+    assert p3_items != p5_items, "two classes got the same homework"
+    for resp in (p3, p5):
+        raw = resp.data.decode("utf-8").lower()
+        for word in ROLE_WORDS:
+            assert word not in raw, f"{word!r} leaked to a student"
+    # The teacher's own pages may name both, and do.
+    body = teacher.get("/report/P3").data.decode("utf-8")
+    assert "Effector" in body and "Assigned now" in body
+
+
+def test_phases_11_to_13_are_untouched(fresh_registry, monkeypatch):
+    """(hhhh) Phase 14 added diseases and a layer on top. Everything it
+    was built on must be exactly as M56 left it."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    for marker in ('id="joinOverlay"', 'id="periodBadge"',
+                   'data-loop="temp"', 'data-loop="glucose"',
+                   'data-loop="water"', 'data-loop="body"',
+                   'data-preset="fever"', 'data-preset="type1"',
+                   'data-preset="central_di"', 'data-preset="siadh"',
+                   'data-preset="untreated_mellitus"'):
+        assert marker in page, f"{marker} vanished in Phase 14"
+    j = vital_app.app.test_client().get("/state?loop=temp").get_json()
+    assert j["board_period"] is None
+    assert not ({"period", "team", "stuck", "assignment"} & set(j)), (
+        "the cookieless world gained a key in Phase 14")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/teacher/room.json").status_code == 200
+    assert teacher.get("/report.csv?period=P3").status_code == 200
+    assert (vital_app.STUCK_BLIND_S, vital_app.STUCK_QUIET_S,
+            vital_app.STUCK_ZEROES) == (300, 180, 2)
+    # Phase 13's repaired kidney, still capped.
+    from engine.water import MAX_URINE_OSM
+    assert MAX_URINE_OSM == 1200.0
+    for loop in vital_app.runners:
+        assert vital_app.app.test_client().get(
+            f"/worksheet/{loop}").status_code == 200
+    assert len(vital_app.CASES["temp"]) == 4
+    assert len(vital_app.CASES["glucose"]) == 4
+    assert len(vital_app.CASES["water"]) == 5
+
+
+def test_every_loop_still_teaches_every_verb(lab):
+    """(hhhh) M30's grammar, with three diseases added to it."""
+    vital_app, _ = lab
+    for loop in vital_app.runners:
+        entries = vital_app.CHALLENGES[loop]
+        assert "healthy" in vital_app.PRESETS[loop]
+        assert len(vital_app.PRESETS[loop]) >= 2
+        assert any(not e.get("events") for e in entries.values())
+        assert any(e.get("events") for e in entries.values())
+        assert len(vital_app.CASES[loop]) >= 2
+        assert vital_app.CSV_FIELDS[loop] and vital_app.ANSWER_OPTIONS[loop]
+        assert loop in vital_app.WORKSHEETS
+    # And the coupled body is no longer a one-disease loop.
+    assert len(vital_app.PRESETS["body"]) >= 3
+    assert len(vital_app.PRESETS["glucose"]) >= 5
