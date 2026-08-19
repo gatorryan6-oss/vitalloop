@@ -114,7 +114,7 @@
 {% if rep.teams %}
 {% set agg = rep.aggregate %}
 <h2>What the class found hard</h2>
-{% if agg.thin %}
+{% if agg.thin and rep.answer_count %}
 <p class="limit">Only {{ rep.answer_count }} diagnosis answer{{ '' if rep.answer_count == 1 else 's' }} today
   — read the lines below as anecdotes, not as a class trend.</p>
 {% endif %}
@@ -132,11 +132,17 @@
     best {{ row.best_points }}/100) — nobody held the controlled
     variable close enough to its set point.</li>
   {% endfor %}
+  {% if rep.answer_count %}
   <li>{{ agg.teams_reaching_a_case }} of {{ rep.team_count }}
     team{{ '' if rep.team_count == 1 else 's' }} got as far as
     diagnosing a case.</li>
+  {% else %}
+  <li>No team answered a case today — the diagnosis half of the
+    lesson did not get played, so there is nothing here about reading
+    a broken loop.</li>
+  {% endif %}
 </ul>
-{% if not agg.hardest_cases and not agg.medal_less %}
+{% if rep.answer_count and not agg.hardest_cases and not agg.medal_less %}
 <p class="clean">Every case answered right the first time, and every
   challenge played earned a medal — nothing on this page needs
   reteaching.</p>

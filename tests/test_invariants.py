@@ -5395,3 +5395,172 @@ def test_the_debrief_is_absent_when_nobody_played(monkeypatch):
     assert "What the class found hard" not in body, (
         "an empty day gets the 'nobody played' line, not a debrief "
         "heading with nothing under it")
+
+
+# ================= M51: the full pass, and Phase 12 closes =================
+# Like M42 and M47, the close is half regression check by design. A paper
+# phase's risk is not that the sheet fails - it is that the app the sheet
+# reports on changes underneath it, or that an ANSWER KEY leaks somewhere
+# a student can read.
+
+def test_the_paper_pass_a_whole_teaching_day(monkeypatch):
+    """(M51) Four sheets off one log: two classes, the Unassigned pile,
+    and a period nobody played - with yesterday's runs staying on
+    yesterday's sheet."""
+    vital_app = _paper_app()
+    today, yesterday = "2026-08-19", "2026-08-18"
+    monkeypatch.setattr(vital_app, "_today", lambda: today)
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5", "P7"])
+    cid = list(vital_app.CASES["temp"])[2]
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        _rrun(1, "Third Shift", "P3", today, points=88, medal="gold"),
+        _ranswer(2, "Third Shift", "P3", today, name=cid, correct=False),
+        _rrun(3, "Fifth Gear", "P5", today, points=95, medal="gold"),
+        _rrun(4, "Before Periods", None, today, points=70, medal="silver"),
+        _rrun(5, "Yesterday's Team", "P3", yesterday, points=99,
+              medal="gold"),
+    ])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+
+    p3 = teacher.get("/report/P3").data.decode("utf-8")
+    assert "Third Shift" in p3
+    assert "Fifth Gear" not in p3, "P5's team reached P3's sheet"
+    assert "Before Periods" not in p3, "the Unassigned pile reached P3"
+    assert "Yesterday's Team" not in p3, (
+        "yesterday's run printed on today's sheet - one sheet is ONE "
+        "class on ONE day")
+    assert today in p3 and "What the class found hard" in p3
+
+    p5 = teacher.get("/report/P5").data.decode("utf-8")
+    assert "Fifth Gear" in p5 and "Third Shift" not in p5
+
+    pile = teacher.get(
+        f"/report/{vital_app.UNASSIGNED_SLUG}").data.decode("utf-8")
+    assert "Before Periods" in pile, (
+        "a pre-M44 record must still be printable - the Unassigned pile "
+        "is where the projector and every join-skipper land")
+
+    quiet = teacher.get("/report/P7").data.decode("utf-8")
+    assert "No team finished a run" in quiet
+    assert "What the class found hard" not in quiet
+
+
+def test_the_answer_key_reaches_no_student_surface(fresh_registry,
+                                                   monkeypatch):
+    """(M51) The report NAMES diagnoses. It is the one page in the app
+    that is not safe to project, so nothing about it may reach a student
+    payload - especially while a case is blind."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "_report_catalog"):
+        pytest.skip("the report page doesn't exist yet - it arrives at M49")
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    kid = _device(vital_app, "paper-kid")
+    assert kid.post("/control?loop=temp",
+                    json={"action": "diagnose", "value": 3}).status_code == 200
+    page = kid.get("/").data.decode("utf-8")
+    state = kid.get("/state?loop=temp").data.decode("utf-8")
+    for surface, what in ((page, "the student page"),
+                          (state, "the /state payload")):
+        assert "/report" not in surface, f"{what} advertises the answer key"
+        assert "PIN-SENTINEL-XYZ" not in surface
+    # And the sheet itself still refuses a student who guesses the URL.
+    assert kid.get("/report/P3").status_code == 403
+    banned = sorted(k for k in kid.get("/state?loop=temp").get_json()["now"]
+                    if k.endswith("_enabled") or k in ANSWER_KEY_FIELDS)
+    assert not banned, "the M28 gate must still hold with paper in the app"
+
+
+def test_phase_11_is_untouched(fresh_registry, monkeypatch):
+    """(M51) The app-level half of "Phase 12 adds paper, it does not
+    edit the room" - the engine hashes are asserted elsewhere."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "_report_catalog"):
+        pytest.skip("the report page doesn't exist yet - it arrives at M49")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    # The join screen, the badge and the four tabs.
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    for marker in ('id="joinOverlay"', 'data-period="P3"',
+                   'id="periodBadge"', 'data-loop="temp"',
+                   'data-loop="glucose"', 'data-loop="water"',
+                   'data-loop="body"', 'data-preset="fever"',
+                   'data-preset="type1"', 'data-preset="central_di"',
+                   'data-preset="siadh"'):
+        assert marker in page, f"{marker} vanished - Phase 12 was ADDITIVE"
+    # The scoped boards (M44) and the cookieless world (M47).
+    j = vital_app.app.test_client().get("/state?loop=temp").get_json()
+    assert j["board_period"] is None
+    assert not ({"period", "team", "stuck"} & set(j))
+    # The dashboard (M45/M46), still read-only and still PIN-gated.
+    teacher = vital_app.app.test_client()
+    assert teacher.get("/teacher").status_code == 200      # the PIN form
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/teacher/room.json").status_code == 200
+    assert (vital_app.STUCK_BLIND_S, vital_app.STUCK_QUIET_S,
+            vital_app.STUCK_ZEROES) == (300, 180, 2)
+    # The four loops still teach every verb, and worksheets still print.
+    for loop in vital_app.runners:
+        assert loop in vital_app.PRESETS and loop in vital_app.CHALLENGES
+        assert len(vital_app.CASES[loop]) >= 2
+        assert vital_app.app.test_client().get(
+            f"/worksheet/{loop}").status_code == 200
+    assert len(vital_app.CASES["temp"]) == 4
+    assert len(vital_app.CASES["glucose"]) == 4
+    assert len(vital_app.CASES["water"]) == 5
+
+
+def test_the_report_never_writes_anything(monkeypatch):
+    """(M51) Printing is a READ. The log the class earned must come out
+    of a report byte-identical - no ids reassigned, no records touched."""
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "A", "P3", today, points=88, medal="gold"),
+           _ranswer(2, "A", "P3", today, correct=True)]
+    import copy
+    before = copy.deepcopy(log)
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ATTEMPTS", log)
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/report/P3").status_code == 200
+    assert log == before, (
+        "rendering a report mutated the attempts log - the paper is a "
+        "read of the day, never an edit of it")
+
+
+# ============ M50.5: a day with no answers claims nothing ==================
+# Found by M51's live pass on the REAL log: a period that played
+# challenges but never answered a case printed "every case answered right
+# the first time" - a claim about work that did not happen, which is
+# exactly what this phase's "nothing invented" clause forbids.
+
+def test_a_day_with_no_answers_makes_no_claim_about_cases(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "A", "P3", today, points=91, medal="gold"),
+           _rrun(2, "B", "P3", today, points=88, medal="gold")]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "Every case answered right" not in body, (
+        "the sheet claimed every case was answered right on a day when "
+        "NO case was answered at all")
+    assert "No team answered a case today" in body, (
+        "zero answers is a fact about the day and belongs on the page - "
+        "the diagnosis half simply did not get played")
+    assert "anecdotes" not in body, (
+        '"only 0 answers - read as anecdotes" is noise, not a caveat')
+
+
+def test_the_clean_line_still_fires_on_a_day_that_earned_it(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "A", "P3", today, points=91, medal="gold"),
+           _ranswer(2, "A", "P3", today, correct=True)]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    assert "nothing on this page needs" in body
+    assert "No team answered a case today" not in body

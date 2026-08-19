@@ -18,17 +18,19 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M50 — Phase 12 underway (spec:
-  `vital_loop_phase12_kickoff.md`, scoped 2026-08-19: the per-period
+- **Committed:** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
+  `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
-  `report.py` turns the attempts log into "P3's day" as plain data:
-  per-team scorecard rows plus the class debrief. Pure — the log and
-  the date are arguments, no clock, no Flask — so the paper is
-  reproducible from a crafted log. `python -m report_demo` prints it.
-  M49 put it on paper: `/report/<period>` behind the teacher PIN, one
-  printable sheet per class per day, linked from `/teacher`. M50 added
-  the bottom half — what to reteach tomorrow, in the curriculum's own
-  words, honest about thin samples.
+  The room now leaves a record: `report.py` turns the attempts log into
+  "P3's day" as plain data (pure — the log and the DATE are arguments,
+  no clock, no Flask), `/report/<period>` prints it behind the teacher
+  PIN with a team scorecard on top and a reteach debrief underneath in
+  the curriculum's own words, linked one-per-period from `/teacher`,
+  and the Unassigned pile gets a sheet too. The paper reports FINISHED
+  WORK and says so; it claims nothing about work that did not happen
+  (M50.5); printing never writes. Phase 11 and the four loops are
+  untouched — no engine file changed all phase. 217 invariants +
+  verify + eight console demos.
 - **Phase 11 (for reference):** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
   `vital_loop_phase11_kickoff.md` (scoped 2026-08-18: period codes /
   join screen + teacher dashboard — all three interview picks taken:
@@ -44,15 +46,23 @@ Entry format:
   The cookieless world gained exactly one key (`board_period`, always
   None); engines untouched all phase — both regression hashes stood
   the whole time. 188 invariants + verify + all seven console demos.
-- **Next up:** STOPPED for confirmation before Phase 12. Candidates:
+- **Next up:** STOPPED for confirmation before Phase 13. Candidates:
   1. **The concentrating ceiling on the water loop's OWN solute** —
-     deferred at M20, again at M37, again at the Phase 11 scoping.
-     Small, honest, requires the human's blessing to touch Phase 6.
-  2. **Hemoconcentration** (measured and deferred at M38): matters
-     only if a multi-day scenario ever arrives.
-  3. **Per-period paper**: a printable class report reading the same
-     attempts log and room accessor the dashboard reads — periods
-     exist now, so "P3's day, on one page" is cheap and real.
+     deferred at M20, at M37, and at BOTH the Phase 11 and Phase 12
+     scopings. The one place the model is knowingly wrong, which puts
+     it above features on this project's own priority order. Small;
+     needs the human's blessing to touch Phase 6 engine code, and
+     fresh regression hashes recorded BEFORE the edit.
+  2. **Which part of the loop the class cannot spot** — M50 noticed
+     that missed cases can be grouped by ROLE (receptor / control
+     center / effector) and deliberately did not add it, because the
+     spec did not ask for it. It is the most teaching-useful number
+     the log can still yield.
+  3. **Gradebook CSV** — the report was built as a data product
+     precisely so this is cheap: `class_report()` already returns
+     everything, and `/export.csv` is the pattern to copy.
+  4. **Hemoconcentration** (M38): still only matters if a multi-day
+     scenario ever arrives.
 - **User checkpoint outstanding (M34, extended by M45):** a REAL phone
   on the room's wifi — the student address AND `/teacher` with the
   console PIN. Everything short of that is verified.
@@ -110,6 +120,57 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M51: The full pass, and Phase 12 closes
+- Shipped: the M51 contract (4 tests). **A whole teaching day off one
+  log**: two classes and the Unassigned pile each printing their own
+  sheet, a period nobody played printing the nobody-played line with no
+  debrief heading, and YESTERDAY's run staying on yesterday's sheet
+  (the date boundary driven through the route with `_today` pinned).
+  **The answer key reaches no student surface**: with a case blind on a
+  student's device, neither the page nor `/state` mentions `/report` or
+  the PIN, a student who guesses the URL gets 403, and the M28
+  redaction still holds. **Printing is a READ** — a rendered report
+  leaves the attempts log byte-identical. **Phase 11 untouched**, as an
+  app-level check beside the engine hashes: join overlay, period badge,
+  the four tabs and their presets, `board_period`, the cookieless
+  payload, the PIN-gated dashboard and its three swept thresholds
+  (300/180/2), the exact case counts (4/4/5), and worksheets for all
+  four loops. 217 invariants + verify + all eight console demos.
+- Deferred: Phase 13 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. Like M42 and M47, the close is half regression check by design.
+  2. **The live pass found a real defect on REAL data** (M50.5, logged
+     as its own decimal milestone below) — which is the argument for
+     doing the pass against the teacher's own log and not only against
+     seeded fixtures.
+  3. Worth knowing for the next session: the app loads `ATTEMPTS` into
+     memory at launch and reloads it only after an append, so a report
+     reflects the log the RUNNING server holds. Swapping the file on
+     disk under a live server changes nothing until it restarts — that
+     bit me mid-verification and is now written down.
+  4. VERIFIED LIVE end to end: the teacher page rendering all eight
+     report links (P1–P7 + Unassigned), a click landing on P3's sheet,
+     and the real Unassigned sheet reading "1 team, 48 finished runs, 0
+     diagnosis answers — The ward round 87/100 gold (48 runs)".
+
+## 2026-08-19 — M50.5: A day with no answers claims nothing
+- Shipped: found by M51's live pass against the real log. A period that
+  played challenges but never answered a case printed **"Every case
+  answered right the first time"** — a confident claim about work that
+  never happened — plus a nonsense "Only 0 diagnosis answers today —
+  read as anecdotes" caveat. Both are exactly what this phase's
+  "nothing invented" clause forbids. Now: the anecdote caveat needs a
+  THIN sample, not an empty one; zero answers prints its own honest
+  line ("the diagnosis half of the lesson did not get played"); and the
+  nothing-to-reteach line may only be said about a day that actually
+  answered something. 2 new invariants (217 pass).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions: the bug was invisible in every seeded fixture, because
+  every fixture I wrote had answers in it. The real log did not. Log
+  fixtures should include a challenges-only day from now on.
 
 ## 2026-08-19 — M50: The debrief
 - Shipped: the bottom half of the sheet, rendered from the aggregate
