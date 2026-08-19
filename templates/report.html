@@ -125,6 +125,15 @@
     wrong on their first answer{% if row.answer_line %} — it was
     <em>{{ row.answer_line }}</em>{% endif %}.</li>
   {% endfor %}
+  {% for row in agg.hard_roles %}
+  <li>Of the cases whose answer was <strong>{{ row.label }}</strong>,
+    <strong>{{ row.wrong }} of {{ row.answers }}</strong> first
+    answer{{ '' if row.answers == 1 else 's' }}
+    {{ 'was' if row.answers == 1 else 'were' }} wrong
+    ({{ row.cases }} case{{ '' if row.cases == 1 else 's' }},
+    {{ row.teams }} team{{ '' if row.teams == 1 else 's' }}) — that box
+    of the loop is the one to reteach.</li>
+  {% endfor %}
   {% for row in agg.medal_less %}
   <li>No team earned a medal on <strong>{{ row.title }}</strong>
     ({{ row.teams }} team{{ '' if row.teams == 1 else 's' }},

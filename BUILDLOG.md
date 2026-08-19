@@ -18,7 +18,7 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M53 — Phase 13 underway (spec:
+- **Committed:** M54 — Phase 13 underway (spec:
   `vital_loop_phase13_kickoff.md`, scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV). **The kidney is
   repaired.** One law for every solute: urine flow is whatever ADH
@@ -32,7 +32,9 @@ Entry format:
   water that is actually left) and MEASURED it at +0.7 mg/dL, not the
   +3 to +9 M38 estimated by naive arithmetic — the physiology debt is
   now clear, and one of the two items turned out to be much smaller
-  than its own estimate.
+  than its own estimate. M54 made the paper sharper: the debrief now
+  groups missed cases by WHICH BOX of the loop they were in, so the
+  sheet can say "this class cannot spot a broken effector".
 - **Phase 12 (for reference):** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
   `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
@@ -135,6 +137,33 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M54: Which box of the loop the class cannot spot
+- Shipped: the same first answers, asked a better question. The M48
+  catalog seam now carries each case's `role` and `role_label`
+  (straight off `CASES[loop][cid]["answer"]["role"]` and the answer
+  vocabulary), and `report.py` groups first answers by that box:
+  wrong / answers / cases / teams per role, sorted worst first, silent
+  when a box was answered correctly and silent when there is no
+  catalog at all. The sheet prints "Of the cases whose answer was
+  Effector, 2 of 3 first answers were wrong (1 case, 3 teams) — that
+  box of the loop is the one to reteach." `report_demo` shows it too.
+  5 new invariants (232 pass).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **Retries still never double-count** (the M50 rule, extended):
+     a team's FIRST answer per case is the diagnosis they committed
+     to, so answering twice makes them one data point in the role
+     tally, not two. Pinned directly.
+  2. **`report.py` stayed pure.** Roles arrive through the catalog like
+     titles and answers do; with no catalog the module knows no roles
+     and prints nothing rather than guessing.
+  3. One pin is really a curriculum check: the app must have at least
+     one case for receptor, control centre AND effector. It passes
+     today, and if a future edit ever leaves a box with no case, the
+     debrief would silently under-count it — so the suite says so
+     instead.
 
 ## 2026-08-19 — M53: Hemoconcentration, measured honestly
 - Shipped: link 3 of the coupled body — the sugar is dissolved in

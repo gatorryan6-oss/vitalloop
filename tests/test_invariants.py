@@ -5846,3 +5846,104 @@ def test_the_body_reports_the_water_its_sugar_sits_in():
     if hasattr(vital_app, "CSV_FIELDS"):
         assert vital_app.CSV_FIELDS["body"][-1] == "pool_scale", (
             "appended fields go at the END of the frozen column order")
+
+
+# ============ M54: which box of the loop the class cannot spot ============
+# The same first answers, asked a better question. "Case 3 was hard" tells
+# a teacher to re-run case 3; "this class cannot spot a broken effector"
+# tells them what to reteach. The role comes through the M48 catalog seam,
+# so report.py still imports nothing.
+
+def test_misses_group_by_the_box_of_the_loop_they_were_in():
+    report = _report_module()
+    catalog = {"cases": {
+        ("temp", "c1"): {"title": "Temperature case 1", "role": "effector",
+                         "role_label": "Effector"},
+        ("temp", "c2"): {"title": "Temperature case 2", "role": "effector",
+                         "role_label": "Effector"},
+        ("temp", "c3"): {"title": "Temperature case 3", "role": "control",
+                         "role_label": "Control center"},
+    }}
+    log = [
+        _ranswer(1, "A", "P3", REPORT_TODAY, name="c1", correct=False),
+        _ranswer(2, "B", "P3", REPORT_TODAY, name="c1", correct=False),
+        _ranswer(3, "A", "P3", REPORT_TODAY, name="c2", correct=False),
+        _ranswer(4, "B", "P3", REPORT_TODAY, name="c2", correct=True),
+        _ranswer(5, "A", "P3", REPORT_TODAY, name="c3", correct=True),
+        _ranswer(6, "B", "P3", REPORT_TODAY, name="c3", correct=True),
+    ]
+    agg = report.class_report(log, "P3", REPORT_TODAY, catalog)["aggregate"]
+    assert [r["role"] for r in agg["hard_roles"]] == ["effector"], (
+        "the control-center cases were all answered right, so that box "
+        "is not something to reteach and must not be listed")
+    row = agg["hard_roles"][0]
+    assert row["wrong"] == 3 and row["answers"] == 4, (
+        "three of the four effector first-answers were wrong - counted "
+        "across BOTH effector cases, which is the whole point")
+    assert row["cases"] == 2 and row["teams"] == 2
+    assert row["label"] == "Effector", "the class's own vocabulary"
+
+
+def test_a_retry_never_becomes_a_second_data_point():
+    """The M50 rule, extended to roles: a team's FIRST answer is the
+    diagnosis they committed to, and answering twice must not make them
+    count twice."""
+    report = _report_module()
+    catalog = {"cases": {("temp", "c1"): {"title": "T1", "role": "effector",
+                                          "role_label": "Effector"}}}
+    log = [
+        _ranswer(1, "A", "P3", REPORT_TODAY, name="c1", correct=False,
+                 at="09:00:00"),
+        _ranswer(2, "A", "P3", REPORT_TODAY, name="c1", correct=True,
+                 at="09:10:00"),
+    ]
+    agg = report.class_report(log, "P3", REPORT_TODAY, catalog)["aggregate"]
+    row = agg["hard_roles"][0]
+    assert (row["wrong"], row["answers"], row["teams"]) == (1, 1, 1), (
+        "one team, one case, one committed answer - the retry is not a "
+        "second team and not a second attempt at the box")
+
+
+def test_the_role_line_is_silent_without_a_catalog():
+    """report.py stays pure and usable on its own: with no catalog it
+    knows no roles, and says nothing rather than guessing."""
+    report = _report_module()
+    log = [_ranswer(1, "A", "P3", REPORT_TODAY, correct=False)]
+    agg = report.class_report(log, "P3", REPORT_TODAY)["aggregate"]
+    assert agg["hard_roles"] == [], (
+        "with no catalog there are no role labels, so there is nothing "
+        "honest to print")
+
+
+def test_the_sheet_names_the_box_to_reteach(monkeypatch):
+    vital_app = _paper_app()
+    today = vital_app._today()
+    # Find a real case whose answer is an effector, and miss it twice.
+    catalog = vital_app._report_catalog()
+    target = next(((loop, cid) for (loop, cid), e in catalog["cases"].items()
+                   if e["role"] == "effector"), None)
+    if target is None:
+        pytest.skip("no effector case in the app's own tables")
+    loop, cid = target
+    log = [_ranswer(1, "A", "P3", today, name=cid, correct=False, loop=loop),
+           _ranswer(2, "B", "P3", today, name=cid, correct=False, loop=loop),
+           _ranswer(3, "C", "P3", today, name=cid, correct=True, loop=loop)]
+    body = _debrief_client(vital_app, log,
+                           monkeypatch).get("/report/P3").data.decode("utf-8")
+    label = catalog["cases"][target]["role_label"]
+    assert label in body and "2 of 3" in body, (
+        "the sheet must name the box of the loop and how badly it went")
+    assert "one to reteach" in body
+
+
+def test_the_catalog_gives_every_case_a_role():
+    """Every case in the app has an answer, so every case has a box -
+    if one ever does not, the debrief would silently under-count."""
+    vital_app = _paper_app()
+    catalog = vital_app._report_catalog()
+    missing = [k for k, e in catalog["cases"].items() if not e.get("role")]
+    assert not missing, f"cases with no loop role: {missing}"
+    roles = {e["role"] for e in catalog["cases"].values()}
+    assert {"receptor", "control", "effector"} <= roles, (
+        "the app should be teaching all three boxes of the loop; if one "
+        "has no case at all, that is a curriculum gap worth knowing")

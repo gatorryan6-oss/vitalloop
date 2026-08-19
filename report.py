@@ -74,6 +74,17 @@ def _answer_line(catalog, loop, name):
     return entry.get("answer_line") if isinstance(entry, dict) else None
 
 
+def _case_role(catalog, loop, name):
+    """(role key, role label) for one case - WHICH BOX of the loop it was
+    broken in (M54), or (None, None) without a catalog."""
+    if not catalog:
+        return None, None
+    entry = catalog.get("cases", {}).get((loop, name))
+    if not isinstance(entry, dict):
+        return None, None
+    return entry.get("role"), entry.get("role_label")
+
+
 def _team_challenges(runs, catalog):
     """One row per challenge this team finished, best run first."""
     by_key = {}
@@ -147,6 +158,31 @@ def _aggregate(day, teams, catalog):
     hardest = sorted((r for r in wrong.values() if r["wrong"]),
                      key=lambda r: (-r["wrong"], -r["teams"], r["title"]))
 
+    # M54: the same first answers, asked a different question - not
+    # "which case was hard" but "which BOX of the loop can this class
+    # not spot". A class that misses every effector case has a specific
+    # gap, and it is not the same gap as missing every receptor case.
+    by_role = {}
+    for (team, loop, name), a in first_by.items():
+        key, label = _case_role(catalog, loop, name)
+        if key is None:
+            continue                      # no catalog: nothing to say
+        row = by_role.setdefault(key, {
+            "role": key, "label": label, "answers": 0, "wrong": 0,
+            "teams": set(), "cases": set(),
+        })
+        row["answers"] += 1
+        row["teams"].add(team)
+        row["cases"].add((loop, name))
+        if not a.get("correct"):
+            row["wrong"] += 1
+    for row in by_role.values():
+        row["teams"] = len(row["teams"])
+        row["cases"] = len(row["cases"])
+    hard_roles = sorted((r for r in by_role.values() if r["wrong"]),
+                        key=lambda r: (-r["wrong"], -r["answers"],
+                                       r["label"] or ""))
+
     # Challenges the class played and NOBODY medaled — the other half of
     # "what to reteach": not a wrong answer, a loop they could not hold.
     played = {}
@@ -170,6 +206,7 @@ def _aggregate(day, teams, catalog):
     reached = sum(1 for t in teams if t["cases"])
     return {
         "hardest_cases": hardest,
+        "hard_roles": hard_roles,
         "medal_less": medal_less,
         "challenges_played": sorted(played.values(),
                                     key=lambda r: (-r["runs"], r["title"])),

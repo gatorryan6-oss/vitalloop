@@ -629,11 +629,17 @@ def _report_catalog():
     for loop, entries in CASES.items():
         options = ANSWER_OPTIONS.get(loop)
         for n, (name, entry) in enumerate(entries.items(), start=1):
+            role_key = entry["answer"]["role"]
             cases[(loop, name)] = {
                 # "Temperature case 3" - the way the class met it
                 # ("case 3 of 4"), never the internal id.
                 "title": f"{LOOP_LABELS.get(loop, loop)} case {n}",
                 "answer_line": _truth_line(entry["answer"], options)[2],
+                # M54: WHICH BOX of the loop this case was broken in, so
+                # the debrief can say "this class cannot spot an
+                # effector" instead of only naming individual cases.
+                "role": role_key,
+                "role_label": _option_label(options, "roles", role_key),
             }
     return {"challenges": challenges, "cases": cases}
 

@@ -23,10 +23,13 @@ CATALOG = {
     },
     "cases": {
         ("temp", "case1"): {"title": "Case 1",
-                            "answer_line": "the effector (shivering)"},
+                            "answer_line": "the effector (shivering)",
+                            "role": "effector", "role_label": "Effector"},
         ("temp", "case3"): {"title": "Case 3",
                             "answer_line": "the control center "
-                                           "(hypothalamus)"},
+                                           "(hypothalamus)",
+                            "role": "control",
+                            "role_label": "Control center"},
     },
 }
 
@@ -112,6 +115,10 @@ def _print_report(rep):
         if row["answer_line"]:
             line += f" - it was {row['answer_line']}"
         print(line)
+    for row in agg.get("hard_roles", ()):
+        print(f"  {row['label']} cases: {row['wrong']} of {row['answers']} "
+              f"first answers wrong ({row['cases']} case(s), "
+              f"{row['teams']} team(s))")
     for row in agg["medal_less"]:
         print(f"  No medal on {row['title']}: {row['teams']} team(s), "
               f"{row['runs']} run(s), best {row['best_points']}/100")
