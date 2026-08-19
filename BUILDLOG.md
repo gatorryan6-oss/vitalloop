@@ -18,7 +18,17 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
+- **Committed:** M52 — Phase 13 underway (spec:
+  `vital_loop_phase13_kickoff.md`, scoped 2026-08-19: clear the
+  physiology debt + role analysis + gradebook CSV). **The kidney is
+  repaired.** One law for every solute: urine flow is whatever ADH
+  allows OR whatever the solute load obligates, whichever is greater.
+  A salt bolus used to concentrate urine to 3900 mOsm/L (5x the human
+  maximum in the worst case); it is now pinned at 1200 and drags its
+  own water out, which is osmotic diuresis and the same lesson as
+  mellitus. Everyday runs are untouched. Both water hashes re-recorded
+  deliberately; the superseded values are preserved in the test file.
+- **Phase 12 (for reference):** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
   `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
   The room now leaves a record: `report.py` turns the attempts log into
@@ -120,6 +130,52 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M52: One kidney, one law
+- Shipped: Phase 13 opens with the repair the project has deferred four
+  times (M20, M37, and both later scopings). Hashes recorded from
+  COMMITTED code first, then a six-scenario sweep, then the edit, then
+  the sweep again — in that order, on purpose.
+  **The defect**: `engine/water.py` obligated flow from `_tubular_load`
+  (sugar from another loop) alone and never from its own `excretion`,
+  so with ADH high a salt bolus concentrated urine past anything a
+  nephron can do. **The fix**: `total_solute = excretion + tubular_load;
+  urine_rate = max(what ADH allows, total_solute / 1200 * 1000)`, with
+  `urine_osm` falling out of it — which is exactly the law the Phase 10
+  kickoff wrote down, now applied to every solute instead of one.
+  4 new invariants (221 pass) + verify + all seven engine demos.
+- **The sweep, before → after** (peak urine_osm, mOsm/L):
+  rest day 784 → 784 (identical), salty snack 300 **3900 → 1200**,
+  salt 600 with no water **6000 → 1200** (and the body ends drier:
+  39.72 → 39.41 L, correctly, because the salt took water with it),
+  desert run 613 → 613, central DI 37 → 37, SIADH 900 → 900,
+  mellitus body 1125 → 1200. Only the salt scenarios and the coupled
+  body moved, exactly as the arithmetic predicted.
+- **Hashes re-recorded** (old values kept in the test file's comments):
+  water Phase 6 subset `d884ef86…` → `10a2ec03…`;
+  water Phase 9 full `edb2469f…` → `43d97564…`.
+  The GLUCOSE Phase 9 hash is UNCHANGED — no glucose code was touched.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **No behavior pin conflicted.** The only two failures in the whole
+     suite were the two hashes; every physiological assertion (SIADH,
+     DI, the mellitus signature, the M38 spiral) passed untouched. That
+     is the evidence that the repair is scoped to what was wrong.
+  2. **Everyday runs provably do not move**, and it is pinned as an
+     inequality rather than a hope: resting waste obligates 0.38 mL/min
+     while ADH's tightest setting already allows 0.5, so `allowed` wins
+     until a real solute load arrives. If a future edit ever inverts
+     that, the test says so in those words.
+  3. **Honest phrasing of the teaching point.** "A salty meal makes you
+     pee more" is true against WHAT ADH WOULD HAVE ALLOWED (+26% in the
+     first hour, 1.23 → 1.56 mL/min), not against the pre-meal
+     baseline — ADH correctly rises after the salt, so absolute flow
+     falls. The lesson is the mellitus lesson: the loop is working
+     perfectly and the water leaves anyway.
+  4. The M37 comment block that documented this deferral is replaced by
+     one that documents the law — the code no longer explains why it is
+     wrong.
 
 ## 2026-08-19 — M51: The full pass, and Phase 12 closes
 - Shipped: the M51 contract (4 tests). **A whole teaching day off one

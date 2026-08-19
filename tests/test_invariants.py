@@ -3082,13 +3082,19 @@ def test_nothing_wedges(period):
 
 # (aaa) sha256 of json.dumps of the PHASE 6 FIELD SUBSET of
 # _scripted_water_run's records, recorded 2026-08-17 with M30 committed —
-# the last Phase 6-era state of engine/water.py.
+# the last Phase 6-era state of engine/water.py. RE-RECORDED
+# 2026-08-19 at M52, when the concentrating ceiling was applied to
+# this loop's OWN solute and the scripted run's salt bolus stopped
+# producing physically impossible urine. Superseded value:
+#   d884ef86eed5de7f60225ec7226541efb905bc1545a87c1efe0438e0c509137e
+# Kept on purpose: it is the evidence that the behavior change was
+# deliberate and approved, never an accident (Phase 13 SS5).
 PHASE6_WATER_FIELDS = [
     "t", "osmolarity", "water_liters", "gut_water", "exercise", "error",
     "adh", "thirst", "urine_rate", "urine_osm", "adh_enabled",
     "kidney_enabled", "water_access", "sensor_enabled"]
 WATER_PHASE6_HASH = \
-    "d884ef86eed5de7f60225ec7226541efb905bc1545a87c1efe0438e0c509137e"
+    "10a2ec03a2367597bed5e574f07ab3573dc311750fb7759c3afc69b54500e34d"
 
 
 def _siadh():
@@ -3110,8 +3116,10 @@ def test_water_phase6_subset_unchanged_by_phase9():
     digest = hashlib.sha256(
         json.dumps(subset, sort_keys=True).encode()).hexdigest()
     assert digest == WATER_PHASE6_HASH, (
-        "The Phase 6 subset of the scripted water run changed - Phase 9 "
-        "may only APPEND to the record, never alter recorded behavior")
+        "The Phase 6 subset of the scripted water run changed. Since "
+        "M52 this pins the REPAIRED kidney: if you did not mean to "
+        "change the physiology, something drifted - and if you did, "
+        "sweep first and re-record it the way M52 did")
 
 
 def test_siadh_dilutes_a_body_that_drinks_normally():
@@ -3717,11 +3725,15 @@ def test_siadh_is_in_the_diagnosis_game():
 
 # (aaaa) sha256 of json.dumps of the FULL Phase 9 record of
 # _scripted_dosing_run / _scripted_water_run, both recorded 2026-08-17
-# with M36 committed — the last state before the loops met.
+# with M36 committed — the last state before the loops met. The
+# GLUCOSE hash still IS that recording: Phase 13 changed no glucose
+# code. The WATER hash was re-recorded 2026-08-19 at M52 for the
+# concentrating ceiling; superseded value:
+#   edb2469f464dc41dfc858816f35e6a33ab78cf7c5cbb2370d34f6398ad53bdc6
 GLUCOSE_PHASE9_HASH = \
     "58b550b44b95fc620f7f88f5fb70d2ff1f1ae8e267ef14fc7488cf1a4075330d"
 WATER_PHASE9_HASH = \
-    "edb2469f464dc41dfc858816f35e6a33ab78cf7c5cbb2370d34f6398ad53bdc6"
+    "43d97564bedcc25a0a7cbeca0785e25f481112039c368c35284a60a115eb8538"
 
 # Kickoff Phase 10 SS5: the frozen coupled-body record shape.
 BODY_FIELDS = {
@@ -3793,8 +3805,9 @@ def test_water_phase9_record_unchanged_by_phase10():
     digest = hashlib.sha256(
         json.dumps(subset, sort_keys=True).encode()).hexdigest()
     assert digest == WATER_PHASE9_HASH, (
-        "the Phase 9 water record changed - an uncoupled water loop must "
-        "behave exactly as it did before Phase 10 existed")
+        "the uncoupled water record changed - since M52 this pins the "
+        "repaired kidney (one law for every solute), and a coupling "
+        "must still add nothing an uncoupled loop can feel")
 
 
 def test_body_records_have_the_frozen_fields():
@@ -5564,3 +5577,118 @@ def test_the_clean_line_still_fires_on_a_day_that_earned_it(monkeypatch):
                            monkeypatch).get("/report/P3").data.decode("utf-8")
     assert "nothing on this page needs" in body
     assert "No team answered a case today" not in body
+
+
+# ================= M52: one kidney, one law ================================
+# Phase 13's repair. A nephron cannot pack solute tighter than
+# MAX_URINE_OSM, so solute that must leave drags water out with it -
+# osmotic diuresis. M37 taught the app that law for sugar arriving from
+# another loop; M20 had knowingly left this loop's OWN salt un-ceilinged,
+# and a 300 mOsm bolus concentrated urine to 3900 mOsm/L, three times what
+# a kidney can do. One law now, whatever the solute is.
+
+def _salted(WaterSimulation, mosm=300, hours=4, access=True):
+    sim = WaterSimulation()
+    if not access:
+        sim.set_effector_enabled("access", False)
+    sim.step(1800)
+    sim.eat_salt(mosm)
+    sim.step(int(hours * 3600))
+    return sim.history()
+
+
+def test_urine_is_never_concentrated_past_the_ceiling():
+    """(cccc) The whole point, stated once: no scenario, coupled or not,
+    may produce urine a real kidney could not make."""
+    WaterSimulation = _water()
+    from engine.water import MAX_URINE_OSM
+    assert MAX_URINE_OSM == 1200.0, (
+        "the ceiling is the human maximum the curriculum teaches - "
+        "changing it changes what the class is told a kidney can do")
+    worst = {}
+    for label, records in (
+            ("salty snack", _salted(WaterSimulation, 300)),
+            ("salt, no water", _salted(WaterSimulation, 600, access=False)),
+            ("big salt load", _salted(WaterSimulation, 1200, hours=6)),
+    ):
+        worst[label] = max(r["urine_osm"] for r in records)
+    for label, peak in worst.items():
+        assert peak <= MAX_URINE_OSM + 1e-9, (
+            f"{label} concentrated urine to {peak:.0f} mOsm/L - above the "
+            f"{MAX_URINE_OSM:.0f} ceiling is not a kidney, it is a bug")
+
+
+def test_a_salt_load_obligates_water_it_could_not_force_before():
+    """(cccc) The teaching point, and the reason the fix is not cosmetic:
+    ADH is shouting CONSERVE and the water leaves anyway, because the
+    salt has to go and it cannot go dry. Same lesson as mellitus."""
+    WaterSimulation = _water()
+    from engine.water import (MAX_URINE_OSM, URINE_MIN_ML_MIN,
+                              URINE_MAX_ML_MIN)
+    records = [r for r in _salted(WaterSimulation, 300) if 1800 <= r["t"]]
+    hour = [r for r in records if r["t"] < 1800 + 3600]
+    # What ADH alone would have allowed over the same hour - the OLD law.
+    allowed = [URINE_MIN_ML_MIN + (URINE_MAX_ML_MIN - URINE_MIN_ML_MIN)
+               * (1.0 - r["adh"]) ** 2 for r in hour]
+    actual = [r["urine_rate"] for r in hour]
+    assert sum(actual) > sum(allowed) * 1.05, (
+        "the salt obligated no extra urine - then it is not being "
+        "excreted with water, and the ceiling is decorative")
+    assert max(r["adh"] for r in hour) > 0.6, (
+        "ADH must be HIGH while this happens - a loop working perfectly "
+        "and losing water anyway is the whole lesson")
+    assert max(r["urine_osm"] for r in hour) == pytest.approx(
+        MAX_URINE_OSM, rel=1e-6), (
+        "while the salt is clearing, the kidney should be pinned AT its "
+        "ceiling - that is what 'as concentrated as it can be' means")
+
+
+def test_an_ordinary_day_is_untouched_by_the_repair():
+    """(cccc) Swept before pinning: resting waste obligates 0.38 mL/min
+    against ADH's 0.5-12, so the ceiling never binds on a normal run and
+    twelve phases of everyday behavior stay exactly as they were."""
+    WaterSimulation = _water()
+    from engine.water import (MAX_URINE_OSM, URINE_MIN_ML_MIN,
+                              URINE_MAX_ML_MIN, WASTE_PRODUCTION)
+    assert WASTE_PRODUCTION / MAX_URINE_OSM * 1000.0 < URINE_MIN_ML_MIN, (
+        "resting waste now obligates more water than ADH's tightest "
+        "setting allows - every ordinary run in the app just changed")
+    sim = WaterSimulation()
+    sim.step(6 * 3600)
+    # t=0 is the seed record written at construction (urine 0.0, nothing
+    # computed yet), so the comparison starts at the first real tick.
+    records = [r for r in sim.history() if r["t"] > 0]
+    for r in records:
+        allowed = (URINE_MIN_ML_MIN + (URINE_MAX_ML_MIN - URINE_MIN_ML_MIN)
+                   * (1.0 - r["adh"]) ** 2)
+        assert r["urine_rate"] == pytest.approx(allowed, rel=1e-9), (
+            "on a rest day the flow must still be exactly what ADH says")
+
+
+def test_the_repair_did_not_break_the_two_floods_apart():
+    """(cccc) The M23 payoff has to survive the repair: insipidus floods
+    DILUTE (no signal), mellitus floods LOADED while ADH is maximal.
+    Same polyuria, opposite mechanism - and now both obey one law."""
+    WaterSimulation = _water()
+    Body = _body()
+    di = WaterSimulation()
+    di.set_effector_enabled("adh", False)
+    di.step(4 * 3600)
+    di_osm = sum(r["urine_osm"] for r in di.history()) / len(di.history())
+    b = Body()
+    b.set_effector_enabled("beta", False)
+    meals = {int(h * 3600) for h in (2, 6, 10)}
+    for tick in range(12 * 3600):
+        if tick in meals:
+            b.eat(75, 1.0)
+        b.step(1)
+    tail = [r for r in b.history() if r["t"] > 8 * 3600]
+    mel_osm = sum(r["urine_osm"] for r in tail) / len(tail)
+    assert di_osm < 200.0, (
+        f"insipidus urine averaged {di_osm:.0f} mOsm/L - it must be "
+        "nearly pure water")
+    assert mel_osm > 400.0, (
+        f"mellitus urine averaged {mel_osm:.0f} mOsm/L - it must be "
+        "LOADED, and that is what tells the two floods apart")
+    assert max(r["adh"] for r in tail) > 0.3, (
+        "the mellitus body's ADH must still be working while it floods")

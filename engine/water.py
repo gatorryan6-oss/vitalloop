@@ -224,29 +224,36 @@ class WaterSimulation:
 
             # The kidneys: a deaf kidney (nephrogenic DI) hears adh = 0.
             heard = adh if self._enabled["kidney"] else 0.0
-            urine_rate = (URINE_MIN_ML_MIN
-                          + (URINE_MAX_ML_MIN - URINE_MIN_ML_MIN)
-                          * (1.0 - heard) ** 2)
+            allowed = (URINE_MIN_ML_MIN
+                       + (URINE_MAX_ML_MIN - URINE_MIN_ML_MIN)
+                       * (1.0 - heard) ** 2)
             excretion = _clamp(
                 WASTE_PRODUCTION
                 + EXCRETION_GAIN * (self._solutes - SOLUTES_MOSM),
                 EXCRETION_FLOOR, EXCRETION_CAP)
-            # Solute arriving from ANOTHER loop (M37) drags its OWN water
-            # out on top of whatever ADH was already allowing: it cannot
-            # be packed tighter than MAX_URINE_OSM, so that much water
-            # goes with it whether the body can spare it or not. This is
-            # why osmotic diuresis floods while ADH is pinned at maximum —
-            # the exact opposite of insipidus.
+            # ONE KIDNEY, ONE LAW (M52). Urine flow is whatever ADH
+            # allows OR whatever the solute load obligates, whichever is
+            # GREATER — because a nephron cannot pack solute tighter
+            # than MAX_URINE_OSM, so solute that must leave drags at
+            # least that much water out with it whether the body can
+            # spare it or not. That is osmotic diuresis, and it is why a
+            # salty meal makes you pee MORE.
             #
-            # Deliberately ADDITIVE, and deliberately only about the
-            # foreign solute: applying the ceiling to this loop's own
-            # excretion too would change what a salt bolus does, and
-            # Phase 6 is not ours to rewrite (M20 decision 3 knowingly
-            # left urine_osm un-ceilinged there). With no load this line
-            # is exactly zero and the loop is the loop it always was.
-            urine_rate += self._tubular_load / MAX_URINE_OSM * 1000.0
-            urine_osm = ((excretion + self._tubular_load)
-                         / (urine_rate / 1000.0))
+            # Every solute obeys it: this loop's own excretion (salt,
+            # urea) and anything arriving from another loop (sugar, M37)
+            # go into the SAME total. M37 applied the law to the foreign
+            # solute alone, as an additive term, because Phase 6 was not
+            # Phase 10's to rewrite — which left a salt bolus
+            # concentrating urine to 3900 mOsm/L, three times what a
+            # kidney can do. Phase 13 was chartered to fix exactly that.
+            #
+            # Everyday runs do not move: resting waste (0.45 mOsm/min)
+            # obligates 0.38 mL/min while ADH already allows 0.5-12, so
+            # `allowed` wins until a real solute load arrives.
+            total_solute = excretion + self._tubular_load
+            obligated = total_solute / MAX_URINE_OSM * 1000.0
+            urine_rate = max(allowed, obligated)
+            urine_osm = total_solute / (urine_rate / 1000.0)
 
             # Water budget (mL/min -> L per tick).
             absorbed = min(GUT_ABSORB_ML_MIN * minutes, self._gut_water)
