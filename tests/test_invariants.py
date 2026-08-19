@@ -5162,3 +5162,148 @@ def test_the_report_is_pure_no_web_framework_and_no_clock():
             assert root not in {"app", "time", "datetime"}, (
                 f"report.py imports {name} - the log and the DATE are "
                 "arguments; only the route knows what today is")
+
+
+# ================= M49: the scorecard, printable ===========================
+# The report reaches paper. Same PIN as the dashboard - and unlike the
+# dashboard this page NAMES diagnoses, so it is an answer key and says so.
+
+def _paper_app():
+    import app as vital_app
+    if not hasattr(vital_app, "_report_catalog"):
+        pytest.skip("the report page doesn't exist yet - it arrives at M49")
+    return vital_app
+
+
+def test_the_report_page_needs_the_teacher_pin(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    nosy = vital_app.app.test_client()
+    refused = nosy.get("/report/P3")
+    assert refused.status_code == 403
+    body = refused.data.decode("utf-8")
+    assert "answer key" in body and 'name="pin"' in body, (
+        "the report must be refused in words, with the way in - and it "
+        "must say WHY it is gated: it names the diagnoses")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/report/P3").status_code == 200
+
+
+def test_an_unknown_period_is_plain_english_not_a_stack_trace(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    out = teacher.get("/report/P9")
+    assert out.status_code == 400
+    body = out.data.decode("utf-8")
+    assert "periods.txt" in body and "P3" in body, (
+        "a mistyped period must say what the list actually holds")
+    assert "Traceback" not in body
+
+
+def test_the_unassigned_pile_has_a_page_too(monkeypatch):
+    """The projector and everyone who skipped the join screen land in
+    "" - a real bucket in this app's model, so it gets a real sheet."""
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    page = teacher.get(f"/report/{vital_app.UNASSIGNED_SLUG}")
+    assert page.status_code == 200
+    assert "Unassigned" in page.data.decode("utf-8")
+
+
+def test_an_empty_day_prints_a_page_that_says_so(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/report/P3").data.decode("utf-8")
+    assert "No team finished a run" in body, (
+        "a period nobody played must print a sheet that says nobody "
+        "played - never a blank page, never an error")
+    assert "Answer key" in body, "the caution rides on every printing"
+
+
+def test_the_scorecard_carries_the_days_teams(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    today = vital_app._today()
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        _rrun(1, "The Mongooses", "P3", today, name="cold_store",
+              points=88, medal="gold"),
+        _rrun(2, "Other Class", "P5", today, name="cold_store", points=95,
+              medal="gold"),
+        _ranswer(3, "The Mongooses", "P3", today, name="case1",
+                 correct=False),
+    ])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/report/P3").data.decode("utf-8")
+    assert "The Mongooses" in body and "88/100" in body
+    assert "Other Class" not in body, (
+        "another period's team reached P3's sheet")
+    assert "wrong" in body, "a first answer that missed must read as missed"
+    assert "once they finish a run" in body, (
+        "the page must state its own limit: nothing here records "
+        "attendance, so a short roster is not a full one")
+
+
+def test_the_teacher_page_links_a_report_per_period(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/teacher").data.decode("utf-8")
+    for href in ('href="/report/P3"', 'href="/report/P5"',
+                 'href="/report/unassigned"'):
+        assert href in body, f"the teacher page is missing {href}"
+
+
+def test_the_catalog_titles_a_case_the_way_the_class_met_it():
+    """The paper must quote the sentence the class was shown when they
+    answered - one phrasing, two readers (M49's _truth_line)."""
+    vital_app = _paper_app()
+    catalog = vital_app._report_catalog()
+    loop, cid = "temp", list(vital_app.CASES["temp"])[2]     # case 3
+    entry = catalog["cases"][(loop, cid)]
+    assert entry["title"] == "Temperature case 3", (
+        "a case is titled the way the student met it (case 3 of 4), "
+        "never by its internal id")
+    truth = vital_app.CASES[loop][cid]["answer"]
+    graded = vital_app.grade_answer(vital_app.CASES[loop][cid], truth,
+                                    vital_app.ANSWER_OPTIONS[loop])
+    assert entry["answer_line"] == graded["truth"]["line"], (
+        "the report's answer line and the reveal the class saw must be "
+        "the SAME sentence, or the paper and the screen disagree")
+    key = ("temp", "cold_store")
+    assert catalog["challenges"][key] == \
+        vital_app.CHALLENGES["temp"]["cold_store"]["title"]
+
+
+def test_the_loop_labels_match_the_tabs_students_read():
+    """LOOP_LABELS names the loops for the paper; the page has named
+    them since M7. Pinned together so they cannot drift."""
+    vital_app = _paper_app()
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    for loop, label in vital_app.LOOP_LABELS.items():
+        assert f'data-loop="{loop}"' in page
+        assert label in page, (
+            f"the report calls the {loop} loop {label!r} but the page "
+            "does not use that word - the paper and the tabs must agree")
+
+
+def test_report_py_is_a_served_source():
+    """A stale server holding last edit's report code must fail
+    verification by name, not hand back a green PASS (the M43 rule)."""
+    import verify
+    assert "report.py" in verify.SERVED_SOURCES

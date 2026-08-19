@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vital Loop class report — {{ label }}, {{ rep.date }}</title>
+<style>
+  /* Self-contained on purpose, like the M35 worksheets: this page
+     prints from the browser and must look right with no app chrome. */
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1c1b18;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.2rem 1.5rem;
+    line-height: 1.45;
+  }
+  header { border-bottom: 3px double #1c1b18; padding-bottom: 0.4rem;
+           margin-bottom: 0.9rem; }
+  h1 { font-size: 1.35rem; margin: 0; }
+  .subtitle { font-style: italic; }
+  .idblock { display: flex; gap: 1.6rem; flex-wrap: wrap;
+             margin: 0.7rem 0 0; font-size: 0.95rem; }
+  h2 { font-size: 1.05rem; border-bottom: 1px solid #1c1b18;
+       padding-bottom: 0.15rem; margin: 1.2rem 0 0.5rem; }
+  .caution { background: #f6ecec; border-left: 4px solid #8d2c26;
+             padding: 0.45rem 0.7rem; font-size: 0.92rem;
+             margin: 0.8rem 0; }
+  .limit { font-size: 0.9rem; font-style: italic; color: #4a4843;
+           margin: 0.4rem 0 0.9rem; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #555; padding: 0.35rem 0.5rem;
+           vertical-align: top; text-align: left; font-size: 0.95rem; }
+  th { background: #f2efe8; }
+  .team-name { font-weight: bold; white-space: nowrap; }
+  .line { display: block; }
+  .line + .line { margin-top: 0.2rem; }
+  .medal { font-variant: small-caps; font-weight: bold; }
+  .wrong { color: #8d2c26; font-weight: bold; }
+  .right { color: #1f5c3d; }
+  .score { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .empty { padding: 1rem 0; font-style: italic; }
+  .print-hint { text-align: center; color: #666; font-size: 0.85rem;
+                margin-top: 1.4rem; }
+  @media print {
+    body { max-width: none; padding: 0; }
+    .print-hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Vital Loop — class report</h1>
+  <p class="subtitle">{{ label }} &middot; {{ rep.date }}</p>
+  <div class="idblock">
+    <span><strong>{{ rep.team_count }}</strong> team{{ '' if rep.team_count == 1 else 's' }}</span>
+    <span><strong>{{ rep.run_count }}</strong> finished run{{ '' if rep.run_count == 1 else 's' }}</span>
+    <span><strong>{{ rep.answer_count }}</strong> diagnosis answer{{ '' if rep.answer_count == 1 else 's' }}</span>
+  </div>
+</header>
+
+<p class="caution"><strong>Answer key.</strong> This page names the
+  diagnoses. Do not put it on the projector while a class still has a
+  case open.</p>
+
+{% if not rep.teams %}
+  <p class="empty">No team finished a run in {{ label }} on
+    {{ rep.date }}. Teams appear on this sheet once they complete a
+    challenge or answer a case.</p>
+{% else %}
+<h2>Teams</h2>
+<p class="limit">Teams appear here once they finish a run — a team that
+  joined and never completed a challenge or answered a case leaves no
+  record, so this is what the class <em>did</em>, not who was present.</p>
+<table>
+  <tr>
+    <th>Team</th>
+    <th>Challenges</th>
+    <th>Cases</th>
+  </tr>
+  {% for team in rep.teams %}
+  <tr>
+    <td class="team-name">{{ team.team }}</td>
+    <td>
+      {% for row in team.challenges %}
+      <span class="line">{{ row.title }} —
+        <span class="score">{{ row.best_points }}/100</span>
+        {%- if row.best_medal %} <span class="medal">{{ row.best_medal }}</span>{% endif %}
+        {%- if row.runs > 1 %} ({{ row.runs }} runs){% endif %}</span>
+      {% else %}
+      <span class="line">—</span>
+      {% endfor %}
+    </td>
+    <td>
+      {% for row in team.cases %}
+      <span class="line">{{ row.title }} —
+        {% if row.first_correct %}<span class="right">right</span>
+        {%- else %}<span class="wrong">wrong</span>
+          {%- if row.ever_correct %}, right on retry{% endif %}
+        {%- endif %}</span>
+      {% else %}
+      <span class="line">—</span>
+      {% endfor %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<p class="print-hint">Print this page from your browser (Ctrl+P).</p>
+
+</body>
+</html>

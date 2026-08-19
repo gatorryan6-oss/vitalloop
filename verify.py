@@ -72,10 +72,11 @@ SERVED_SOURCES = [                             # what the running app loads or
     "attempts.py",                             # edits can make a live server
     "sessions.py",                             # stale. NOT tests/ or verify.py
     "periods.py",                              # (they cannot change what a
-    "periods.txt",                             # page answers). periods.txt is
-    "engine/**/*.py",                          # read once at launch (M43), so
-    "templates/**/*",                          # an edited list NEEDS the
-    "static/**/*",                             # restart this check forces.
+    "report.py",                               # page answers). periods.txt is
+    "periods.txt",                             # read once at launch (M43), so
+    "engine/**/*.py",                          # an edited list NEEDS the
+    "templates/**/*",                          # restart this check forces.
+    "static/**/*",
 ]
 # ------------------------------------------------------------
 

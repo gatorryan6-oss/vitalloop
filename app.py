@@ -25,6 +25,7 @@ from flask import (Flask, Response, has_request_context, jsonify,
 
 import attempts
 import periods
+import report
 from engine.glucose import GlucoseSimulation
 from engine.sim import Simulation
 from engine.body import Body
@@ -601,6 +602,75 @@ def teacher_room():
                                  "reload /teacher and sign in again"}), 403
     rows = _room_rows()
     return jsonify({"rows": rows, "count": len(rows)})
+
+
+# --------------------------------------------------------------------------
+# The class report (M49): teacher paper. One printable page per period per
+# day, read from the ATTEMPTS LOG - by the time anyone prints, the live
+# room is long swept (M33) and the log is what survived the day.
+
+# The loop names students read on the tabs since M7. Named here so the
+# report can title a case the way the class saw it; an invariant pins
+# these against the page so the two can never drift apart.
+LOOP_LABELS = {"temp": "Temperature", "glucose": "Glucose",
+               "water": "Water", "body": "Whole body"}
+
+UNASSIGNED_SLUG = "unassigned"   # the URL for the ""-period pile: the
+                                 # projector, and anyone who skipped join
+
+
+def _report_catalog():
+    """Titles and right answers, handed TO report.py so it never has to
+    import this module (and Flask with it) - the M48 catalog seam."""
+    challenges = {(loop, name): entry["title"]
+                  for loop, entries in CHALLENGES.items()
+                  for name, entry in entries.items()}
+    cases = {}
+    for loop, entries in CASES.items():
+        options = ANSWER_OPTIONS.get(loop)
+        for n, (name, entry) in enumerate(entries.items(), start=1):
+            cases[(loop, name)] = {
+                # "Temperature case 3" - the way the class met it
+                # ("case 3 of 4"), never the internal id.
+                "title": f"{LOOP_LABELS.get(loop, loop)} case {n}",
+                "answer_line": _truth_line(entry["answer"], options)[2],
+            }
+    return {"challenges": challenges, "cases": cases}
+
+
+def _today():
+    """Today, as the report means it. A seam, not a flourish: the report
+    BUILDER takes its date as an argument (M48), and this is the one
+    place the app reads the calendar."""
+    return datetime.date.today().isoformat()
+
+
+@app.route("/report/<period>")
+def class_report_page(period):
+    """One class period's day, printable.
+
+    PIN-gated like the dashboard - and unlike the dashboard, this page
+    NAMES diagnoses in words. It is an answer key, it says so on itself,
+    and it is not for projecting while a case is live.
+    """
+    if not _teacher_ok():
+        return render_template(
+            "teacher.html", authed=False,
+            error="The class report is an answer key - it needs the "
+                  "teacher PIN. It is printed in the app's console "
+                  "window on the teaching machine."), 403
+    wanted = "" if period == UNASSIGNED_SLUG else period
+    if wanted and wanted not in PERIODS:
+        listed = ", ".join(PERIODS) or "(none - periods.txt is empty)"
+        return (f"<h1>Vital Loop</h1><p>There is no period "
+                f"\"{period}\" on the teacher's list. periods.txt "
+                f"says: {listed}.</p>"), 400
+    date = _today()
+    return render_template(
+        "report.html",
+        rep=report.class_report(ATTEMPTS, wanted, date,
+                                _report_catalog()),
+        label=wanted or "Unassigned")
 
 
 # Student worksheets (M35). Printable pages, NOT documents in the repo:
@@ -2421,6 +2491,22 @@ def _option_label(options, kind, key):
     return key
 
 
+def _truth_line(truth, options=None):
+    """One case's right answer as a sentence - "the control center -
+    the hypothalamus".
+
+    ONE phrasing, two readers (M49): the reveal a class gets when they
+    commit to a diagnosis (M28), and the class report's debrief, which
+    must quote the same sentence the class was shown or the paper and
+    the screen start disagreeing about what the answer was.
+    """
+    role_label = _option_label(options, "roles", truth["role"])
+    part_label = _option_label(options, "parts", truth["part"])
+    line = (role_label if truth["role"] == "none"
+            else f"{role_label} — {part_label}")
+    return role_label, part_label, line
+
+
 def grade_answer(case, answer, options=None):
     """PURE: one submitted answer against one case's truth.
 
@@ -2447,8 +2533,7 @@ def grade_answer(case, answer, options=None):
                 f'you said "{mine}" — it was '
                 f'"{_option_label(options, kind, theirs)}"')
 
-    role_label = _option_label(options, "roles", truth["role"])
-    part_label = _option_label(options, "parts", truth["part"])
+    role_label, part_label, truth_line = _truth_line(truth, options)
     return {
         "verdict": verdict,
         "correct": correct,
@@ -2458,8 +2543,7 @@ def grade_answer(case, answer, options=None):
         # intact case would otherwise read "Nothing is broken — the loop
         # is working, Nothing is broken".
         "truth": {"role": role_label, "part": part_label,
-                  "line": role_label if truth["role"] == "none"
-                          else f"{role_label} — {part_label}"},
+                  "line": truth_line},
         "note": case["note"],
         "rows": [
             {"key": "role", "label": "which part of the loop failed",

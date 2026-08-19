@@ -765,6 +765,19 @@ main {
 .room-loop { color: var(--ink-2); }
 .room-idle { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* M49: the class-report links under the room table. */
+.teacher-reports { margin-top: 1.6rem; }
+.report-links { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.report-links a {
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  padding: 0.35rem 0.9rem;
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+.report-links a:hover { background: #f1f0ec; }
+
 /* M46: the flag column, and the row that needs a teacher. */
 .room-flag { font-weight: 650; color: #b4231f; }
 .room-stuck td { background: #fdf0ef; }

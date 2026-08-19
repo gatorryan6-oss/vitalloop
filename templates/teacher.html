@@ -59,6 +59,17 @@
       safe to project.</p>
   </section>
 
+  <section class="teacher-reports">
+    <h2>Today's class reports</h2>
+    <p class="join-hint">One printable page per period: the team
+      scorecard and what the class found hard. These name the diagnoses
+      &mdash; answer keys, not for the projector while a case is open.</p>
+    <p class="report-links">
+      {% for p in periods %}<a href="/report/{{ p }}">{{ p }}</a>
+      {% endfor %}<a href="/report/unassigned">Unassigned</a>
+    </p>
+  </section>
+
   <script>
   /* M46: keep the room fresh. Same rows the server just rendered, from
      /teacher/room.json — names go in with textContent, never innerHTML

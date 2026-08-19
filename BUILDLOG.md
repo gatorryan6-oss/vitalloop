@@ -18,13 +18,15 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M48 — Phase 12 underway (spec:
+- **Committed:** M49 — Phase 12 underway (spec:
   `vital_loop_phase12_kickoff.md`, scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
   `report.py` turns the attempts log into "P3's day" as plain data:
   per-team scorecard rows plus the class debrief. Pure — the log and
   the date are arguments, no clock, no Flask — so the paper is
   reproducible from a crafted log. `python -m report_demo` prints it.
+  M49 put it on paper: `/report/<period>` behind the teacher PIN, one
+  printable sheet per class per day, linked from `/teacher`.
 - **Phase 11 (for reference):** M47 — **PHASE 11 COMPLETE** (M0–M47). Spec:
   `vital_loop_phase11_kickoff.md` (scoped 2026-08-18: period codes /
   join screen + teacher dashboard — all three interview picks taken:
@@ -106,6 +108,43 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M49: The scorecard, printable
+- Shipped: `/report/<period>` — PIN-gated (refused in words, and the
+  refusal says WHY it is gated: the page names diagnoses), an unknown
+  period answered as a plain-English 400 that lists what periods.txt
+  actually holds, and `/report/unassigned` for the ""-pile the
+  projector and every join-skipper land in. `templates/report.html` is
+  self-contained like the M35 worksheets (serif, `@media print`, a
+  Ctrl+P hint that does not print). One row per team: their best run of
+  each challenge with medal and run count, and each case they answered
+  with first-answer right/wrong. `_report_catalog()` feeds report.py
+  the titles and right answers across the M48 seam; `_truth_line()` was
+  EXTRACTED from `grade_answer` so the paper quotes the same sentence
+  the class saw at the reveal. `report.py` added to verify.py's
+  SERVED_SOURCES. The teacher page links one report per period plus
+  Unassigned. 9 new invariants (206 pass) + verify pass.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **No `?date=` on the route.** The interview said today only, so
+     the route reads `_today()` and nothing else; the BUILDER still
+     takes its date as an argument (M48), so a date picker is a
+     one-line change whenever it is wanted, and the M51 boundary test
+     drives the builder rather than a URL the teacher cannot type.
+  2. **Unassigned gets a sheet.** It is a real bucket in this app's
+     model (the projector, and anyone who skipped the join screen), so
+     leaving it unprintable would lose a class's whole day.
+  3. **LOOP_LABELS is pinned against the page.** The paper titles a
+     case "Temperature case 3" the way the student met it ("case 3 of
+     4"); an invariant asserts every label still appears on the page,
+     so the two namings cannot drift.
+  4. VERIFIED LIVE in the browser against a seeded day (real 893 KB
+     log backed up and restored around it): 403 unauthenticated, 400
+     naming P1-P7 for a bad period, and P3's sheet rendering 3 teams /
+     5 runs / 4 answers with "Cold-store lock-in — 88/100 gold",
+     "wrong, right on retry", entities resolved and medal/wrong styling
+     applied. Another period's team (Fifth Gear, P5) stayed off it.
 
 ## 2026-08-19 — M48: The class report, as data
 - Shipped: Phase 12 opens (spec committed first; interview 2026-08-19
