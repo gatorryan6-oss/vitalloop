@@ -5947,3 +5947,97 @@ def test_the_catalog_gives_every_case_a_role():
     assert {"receptor", "control", "effector"} <= roles, (
         "the app should be teaching all three boxes of the loop; if one "
         "has no case at all, that is a curriculum gap worth knowing")
+
+
+# ================= M55: the gradebook CSV =================================
+# The report was built as a data product (M48) precisely so this could be
+# a VIEW of it rather than a second computation. If the spreadsheet and
+# the printed sheet ever disagree, one of them is lying to a gradebook.
+
+def test_the_gradebook_columns_are_frozen_and_long_format():
+    report = _report_module()
+    assert report.GRADEBOOK_FIELDS == [
+        "period", "date", "team", "kind", "loop", "item",
+        "best_points", "medal", "attempts", "first_correct"], (
+        "the column ORDER is frozen - a teacher's saved spreadsheet "
+        "template reads these positions, so append, never reorder")
+
+
+def test_a_row_per_team_per_thing_they_did():
+    report = _report_module()
+    catalog = {"challenges": {("temp", "cold_store"): "Cold store"},
+               "cases": {("temp", "c1"): {"title": "T case 1",
+                                          "role": "effector",
+                                          "role_label": "Effector"}}}
+    log = [
+        _rrun(1, "Kestrel", "P3", REPORT_TODAY, points=41, at="09:00:00"),
+        _rrun(2, "Kestrel", "P3", REPORT_TODAY, points=88, medal="gold",
+              at="09:20:00"),
+        _ranswer(3, "Kestrel", "P3", REPORT_TODAY, name="c1", correct=False),
+    ]
+    rep = report.class_report(log, "P3", REPORT_TODAY, catalog)
+    rows = report.gradebook_rows(rep)
+    assert len(rows) == 2, (
+        "two runs of ONE challenge is one row (the best), plus one row "
+        "for the case - long format is per team per THING, not per run")
+    ch = next(r for r in rows if r["kind"] == "challenge")
+    assert (ch["team"], ch["period"], ch["date"]) == ("Kestrel", "P3",
+                                                     REPORT_TODAY)
+    assert ch["item"] == "Cold store" and ch["best_points"] == 88
+    assert ch["medal"] == "gold" and ch["attempts"] == 2
+    assert ch["first_correct"] == "", (
+        "a challenge has no first answer - an empty cell is honest, a 0 "
+        "would read as a score")
+    case = next(r for r in rows if r["kind"] == "case")
+    assert case["item"] == "T case 1" and case["first_correct"] == 0
+    assert case["medal"] == "", "diagnoses do not earn medals"
+
+
+def test_the_spreadsheet_agrees_with_the_sheet(monkeypatch):
+    """The promise that makes the CSV safe: same numbers, one source."""
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_rrun(1, "The Mongooses", "P3", today, points=88, medal="gold"),
+           _rrun(2, "The Mongooses", "P3", today, points=30,
+                 name="blast_freezer")]
+    client = _debrief_client(vital_app, log, monkeypatch)
+    page = client.get("/report/P3").data.decode("utf-8")
+    csv_text = client.get("/report.csv?period=P3").data.decode("utf-8")
+    assert client.get("/report.csv?period=P3").status_code == 200
+    for needle in ("The Mongooses", "88"):
+        assert needle in page and needle in csv_text, (
+            f"{needle!r} is on the sheet but not in the spreadsheet")
+    lines = [l for l in csv_text.splitlines() if l.strip()]
+    assert lines[0] == ",".join(vital_app.report.GRADEBOOK_FIELDS)
+    assert len(lines) == 3, "a header and one row per challenge played"
+
+
+def test_the_gradebook_needs_the_pin_and_a_real_period(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    nosy = vital_app.app.test_client()
+    assert nosy.get("/report.csv?period=P3").status_code == 403, (
+        "the spreadsheet is the answer key in a column - same gate as "
+        "the page it comes from")
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    bad = teacher.get("/report.csv?period=P9")
+    assert bad.status_code == 400 and "periods.txt" in bad.data.decode()
+    assert teacher.get("/report.csv?period=unassigned").status_code == 200
+
+
+def test_an_empty_day_still_exports_a_usable_file(monkeypatch):
+    vital_app = _paper_app()
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    out = teacher.get("/report.csv?period=P3")
+    assert out.status_code == 200
+    lines = [l for l in out.data.decode("utf-8").splitlines() if l.strip()]
+    assert len(lines) == 1, (
+        "a period nobody played exports a header and no rows - a file "
+        "that opens cleanly in Excel and says nothing happened")
+    assert "attachment; filename=" in out.headers["Content-Disposition"]

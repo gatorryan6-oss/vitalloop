@@ -592,6 +592,40 @@ def teacher():
                            rows=_room_rows(), periods=PERIODS)
 
 
+@app.route("/report.csv")
+def class_report_csv():
+    """The gradebook export (M55): one class period's day, long format,
+    one row per team per thing they did.
+
+    Same PIN as the sheet, same query-param shape as /export.csv, and
+    the same numbers - it is a VIEW of `class_report()`, so a teacher
+    comparing the paper to the spreadsheet can never find them
+    disagreeing.
+    """
+    if not _teacher_ok():
+        return jsonify({"error": "the class report is an answer key and "
+                                 "needs the teacher PIN - open /teacher "
+                                 "and sign in first"}), 403
+    period = request.args.get("period", "")
+    wanted = "" if period in ("", UNASSIGNED_SLUG) else period
+    if wanted and wanted not in PERIODS:
+        listed = ", ".join(PERIODS) or "(none - periods.txt is empty)"
+        return jsonify({"error": f"there is no period {period!r} on the "
+                                 f"teacher's list. periods.txt says: "
+                                 f"{listed}"}), 400
+    date = _today()
+    rep = report.class_report(ATTEMPTS, wanted, date, _report_catalog())
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=report.GRADEBOOK_FIELDS)
+    writer.writeheader()
+    for row in report.gradebook_rows(rep):
+        writer.writerow(row)
+    label = wanted or "unassigned"
+    return Response(buf.getvalue(), mimetype="text/csv", headers={
+        "Content-Disposition":
+            f"attachment; filename=vital_loop_{label}_{date}.csv"})
+
+
 @app.route("/teacher/room.json")
 def teacher_room():
     """The room as data, for the dashboard's auto-refresh (M46). Same

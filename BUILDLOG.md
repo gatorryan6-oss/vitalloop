@@ -18,7 +18,7 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M54 — Phase 13 underway (spec:
+- **Committed:** M55 — Phase 13 underway (spec:
   `vital_loop_phase13_kickoff.md`, scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV). **The kidney is
   repaired.** One law for every solute: urine flow is whatever ADH
@@ -34,7 +34,9 @@ Entry format:
   now clear, and one of the two items turned out to be much smaller
   than its own estimate. M54 made the paper sharper: the debrief now
   groups missed cases by WHICH BOX of the loop they were in, so the
-  sheet can say "this class cannot spot a broken effector".
+  sheet can say "this class cannot spot a broken effector". M55 added
+  the gradebook CSV — `/report.csv?period=P3`, long format, a VIEW of
+  the same `class_report()` the sheet renders.
 - **Phase 12 (for reference):** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
   `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
@@ -137,6 +139,32 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M55: The gradebook CSV
+- Shipped: `/report.csv?period=P3` behind the same teacher PIN as the
+  sheet, in the same query-param shape as `/export.csv` (M5's pattern,
+  not a new one). `report.gradebook_rows(report)` is a VIEW of
+  `class_report()` — never a second computation — so the spreadsheet
+  and the paper cannot disagree. Long format, frozen column order:
+  period, date, team, kind, loop, item, best_points, medal, attempts,
+  first_correct. One row per team per THING (two runs of one challenge
+  is one row carrying the best score and attempts=2), blank cells where
+  a column does not apply (a challenge has no first answer; a diagnosis
+  earns no medal) because an empty cell is honest and a 0 would read as
+  a score. The printed sheet links the download. A period nobody played
+  exports a header and no rows. 5 new invariants (237 pass).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. Bools export as 1/0 (the M5 CSV convention) and the filename
+     carries period and date, so a folder of these sorts itself.
+  2. VERIFIED LIVE (M54 and M55 together, against a day seeded from the
+     app's OWN case tables): the sheet read "Of the cases whose answer
+     was Effector, 3 of 4 first answers were wrong (2 cases, 3 teams)"
+     — aggregating a TEMPERATURE effector case and a GLUCOSE effector
+     case into one finding, which is exactly the point of grouping by
+     box rather than by case — and the CSV came back with six clean
+     rows, correct blanks, and entities rendering properly in the DOM.
 
 ## 2026-08-19 — M54: Which box of the loop the class cannot spot
 - Shipped: the same first answers, asked a better question. The M48

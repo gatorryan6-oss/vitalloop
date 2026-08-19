@@ -217,6 +217,47 @@ def _aggregate(day, teams, catalog):
     }
 
 
+# The gradebook's frozen column order (M55). Long format: one row per
+# team per thing they did, so a team that played three challenges never
+# produces ragged columns. Appended to, never reordered - a teacher's
+# saved spreadsheet template reads these positions.
+GRADEBOOK_FIELDS = ["period", "date", "team", "kind", "loop", "item",
+                    "best_points", "medal", "attempts", "first_correct"]
+
+
+def gradebook_rows(report):
+    """One report -> the rows of its gradebook CSV (M55).
+
+    A VIEW of `class_report()`, never a second computation: every value
+    here was already on the printed sheet, so the spreadsheet and the
+    paper can never disagree. Blank (not zero) where a column does not
+    apply to that kind of row - an empty cell is honest, a 0 would be a
+    score.
+    """
+    rows = []
+    for team in report["teams"]:
+        for row in team["challenges"]:
+            rows.append({
+                "period": report["period"], "date": report["date"],
+                "team": team["team"], "kind": "challenge",
+                "loop": row["loop"], "item": row["title"],
+                "best_points": row["best_points"],
+                "medal": row["medal"] if "medal" in row
+                         else row["best_medal"] or "",
+                "attempts": row["runs"], "first_correct": "",
+            })
+        for row in team["cases"]:
+            rows.append({
+                "period": report["period"], "date": report["date"],
+                "team": team["team"], "kind": "case",
+                "loop": row["loop"], "item": row["title"],
+                "best_points": row["points"], "medal": "",
+                "attempts": row["answers"],
+                "first_correct": 1 if row["first_correct"] else 0,
+            })
+    return rows
+
+
 def class_report(attempts, period, date, catalog=None):
     """One class period's day, as plain data.
 
