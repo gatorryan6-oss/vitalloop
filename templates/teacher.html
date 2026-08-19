@@ -38,7 +38,7 @@
       <thead>
       <tr>
         <th>Needs you</th><th>Period</th><th>Team</th><th>Tab</th>
-        <th>Doing</th><th>Last seen</th>
+        <th>Doing</th><th>Assigned set</th><th>Last seen</th>
       </tr>
       </thead>
       <tbody id="roomRows">
@@ -49,6 +49,7 @@
         <td class="room-team">{{ r.team }}</td>
         <td class="room-loop">{{ r.loop }}</td>
         <td class="room-doing">{{ r.doing }}</td>
+        <td class="room-assigned">{{ r.assigned }}</td>
         <td class="room-idle">{{ r.idle }}</td>
       </tr>
       {% endfor %}
@@ -99,6 +100,7 @@
           [row.team, "room-team"],
           [row.loop, "room-loop"],
           [row.doing, "room-doing"],
+          [row.assigned || "", "room-assigned"],
           [row.idle, "room-idle"],
         ];
         for (const [text, cls] of cells) {

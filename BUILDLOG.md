@@ -18,7 +18,7 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M58 — Phase 14 underway (spec:
+- **Committed:** M59 — Phase 14 underway (spec:
   `vital_loop_phase14_kickoff.md`, scoped 2026-08-19: assignment layer
   + three diseases). The glucose loop gained **insulinoma** (an
   effector STUCK ON — the app's first failure in that direction) and
@@ -27,7 +27,9 @@ Entry format:
   new engine knobs, both idle by default, so every glucose hash is
   unchanged. M58 closed the teaching loop: one click on the report's
   "this class cannot spot an effector" line hands every device in that
-  period exactly those cases — and never tells them why.
+  period exactly those cases — and never tells them why. M59 closed
+  the circle: both teacher surfaces now report whether the reteach
+  took, read from the attempts log.
 - **Phase 13 (for reference):** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
   `vital_loop_phase13_kickoff.md` (scoped 2026-08-19: clear the
   physiology debt + role analysis + gradebook CSV).
@@ -165,6 +167,40 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M59: Did the reteach take?
+- Shipped: `report.assignment_progress(attempts, period, items, since,
+  catalog)` — pure, and computed entirely from the attempts log, which
+  already stamps period, case and correctness. An assignment now
+  records `created`, so "answered AFTER we talked about it" is a real
+  question the log can answer; answers from before the reteach are
+  excluded, because they are not evidence it worked. Per case: how many
+  teams have answered since and how many got it right. Per team: how
+  far through the set. The report's assigned banner shows both ("Since
+  you assigned it: 1 of 1 first answers right · Temperature case 4: 1/1
+  · Row 4 1/3"), and the dashboard grew an **Assigned set** column
+  ("set 1/3, 1 right"). 6 new invariants (261 pass).
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **First answer per case still counts, everywhere.** A retry after
+     the reteach is not a second team and not a second attempt — the
+     M50 rule, now applied to progress too.
+  2. **Progress is per TEAM, not per device**, because the log records
+     team labels and never device ids (the M27 no-student-names rule).
+     Two phones using the same team name therefore show the same
+     progress, which is correct rather than a bug — written down here
+     because it looks like one at first glance in the room view.
+  3. **The student payload's SHAPE is now pinned**
+     (`{label, count, items}`, items `{loop, n}`): case names went into
+     the server-side assignment so the log could be matched, and the
+     redaction had to be tightened to project them out. Every addition
+     to that block is a chance to leak the answer, so its shape is a
+     test now, not a habit.
+  4. VERIFIED LIVE end to end: assign (302) → student starts the
+     assigned case (200) → answers effector/sweat → verdict correct →
+     dashboard "set 1/3, 1 right" and the sheet "1 of 1 first answers
+     right". Measure, reteach, re-measure.
 
 ## 2026-08-19 — M58: Assignments, and the gate that makes them safe
 - Shipped: assignments broadcast to a PERIOD. `cases_with_role(role)`

@@ -217,6 +217,63 @@ def _aggregate(day, teams, catalog):
     }
 
 
+def assignment_progress(attempts, period, items, since=None,
+                        catalog=None):
+    """Did the reteach take? (M59)
+
+    `items` are the assigned cases as (loop, name) dicts; `since` is the
+    ISO stamp the assignment was set at, so "answered AFTER we talked
+    about it" is answerable. Everything comes out of the attempts log -
+    the one source of truth about who answered what - and nothing is
+    tracked separately.
+
+    Per case: how many teams have answered it since, and how many got it
+    right. Per team: how many of the set they have finished. A team that
+    answered a case BEFORE the assignment has not done the follow-up,
+    which is why `since` is not optional in spirit even though the
+    signature tolerates None.
+    """
+    wanted = {(i["loop"], i["name"]) for i in items}
+    answers = [a for a in attempts
+               if a.get("mode") == "diagnosis"
+               and a.get("period", "") == period
+               and (a.get("loop"), a.get("name")) in wanted
+               and (since is None or (a.get("wall_time") or "") >= since)]
+    # First answer per (team, case) since the assignment - a retry is
+    # not a second team, the M50 rule.
+    first = {}
+    for a in sorted(answers, key=lambda a: (a.get("wall_time") or "",
+                                            a.get("id") or 0)):
+        first.setdefault((_team_of(a), a.get("loop"), a.get("name")), a)
+
+    cases = []
+    for item in items:
+        key = (item["loop"], item["name"])
+        mine = [a for (t, l, n), a in first.items() if (l, n) == key]
+        cases.append({
+            "loop": item["loop"], "name": item["name"],
+            "n": item.get("n"),
+            "title": _title(catalog, "cases", key[0], key[1]),
+            "answers": len(mine),
+            "correct": sum(1 for a in mine if a.get("correct")),
+        })
+    teams = {}
+    for (team, loop, name), a in first.items():
+        row = teams.setdefault(team, {"team": team, "done": 0,
+                                      "correct": 0, "of": len(wanted)})
+        row["done"] += 1
+        if a.get("correct"):
+            row["correct"] += 1
+    total = sum(c["answers"] for c in cases)
+    return {
+        "cases": cases,
+        "teams": sorted(teams.values(), key=lambda r: r["team"].lower()),
+        "answers": total,
+        "correct": sum(c["correct"] for c in cases),
+        "of": len(wanted),
+    }
+
+
 # The gradebook's frozen column order (M55). Long format: one row per
 # team per thing they did, so a team that played three challenges never
 # produces ragged columns. Appended to, never reordered - a teacher's

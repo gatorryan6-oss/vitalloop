@@ -6505,3 +6505,158 @@ def test_the_teacher_page_names_the_box_because_it_may(monkeypatch):
     assert "never which box" in body, (
         "the sheet should remind the teacher that the students are not "
         "told - it is the kind of thing worth saying out loud")
+
+
+# ================= M59: did the reteach take? ==============================
+# The loop this whole phase exists to close: measure (M54), reteach
+# (M58), re-measure (here). Computed from the attempts log, which already
+# stamps period, case and correctness - a second source of truth about
+# who answered what is exactly the drift this project keeps refusing.
+
+def _prog_items(vital_app, role="effector"):
+    return vital_app.cases_with_role(role)
+
+
+def test_progress_counts_only_answers_since_the_assignment():
+    """The whole question is "after we talked about it" - an answer from
+    before the reteach is not evidence the reteach worked."""
+    report = _report_module()
+    items = [{"loop": "temp", "name": "case4", "n": 4},
+             {"loop": "glucose", "name": "case3", "n": 3}]
+    since = f"{REPORT_TODAY}T10:00:00"
+    log = [
+        # before the assignment: wrong, and irrelevant to the question
+        _ranswer(1, "Kestrel", "P3", REPORT_TODAY, name="case4",
+                 correct=False, at="09:00:00"),
+        # after it: right
+        _ranswer(2, "Kestrel", "P3", REPORT_TODAY, name="case4",
+                 correct=True, at="10:30:00"),
+        _ranswer(3, "Row 4", "P3", REPORT_TODAY, name="case4",
+                 correct=False, at="10:40:00"),
+    ]
+    prog = report.assignment_progress(log, "P3", items, since=since)
+    assert prog["answers"] == 2 and prog["correct"] == 1, (
+        "only the two answers since the assignment count, and one of "
+        "them was right")
+    case4 = next(c for c in prog["cases"] if c["name"] == "case4")
+    assert (case4["answers"], case4["correct"]) == (2, 1)
+    untouched = next(c for c in prog["cases"] if c["name"] == "case3")
+    assert untouched["answers"] == 0, (
+        "a case nobody has got to yet reports zero, not nothing")
+    assert prog["of"] == 2
+
+
+def test_progress_is_per_team_and_a_retry_is_not_a_second_team():
+    report = _report_module()
+    items = [{"loop": "temp", "name": "case4", "n": 4},
+             {"loop": "glucose", "name": "case3", "n": 3}]
+    since = f"{REPORT_TODAY}T10:00:00"
+    log = [
+        _ranswer(1, "Kestrel", "P3", REPORT_TODAY, name="case4",
+                 correct=False, at="10:05:00"),
+        _ranswer(2, "Kestrel", "P3", REPORT_TODAY, name="case4",
+                 correct=True, at="10:12:00"),      # a retry
+        _ranswer(3, "Kestrel", "P3", REPORT_TODAY, name="case3",
+                 correct=True, at="10:20:00", loop="glucose"),
+    ]
+    prog = report.assignment_progress(log, "P3", items, since=since)
+    kestrel = next(t for t in prog["teams"] if t["team"] == "Kestrel")
+    assert kestrel["done"] == 2 and kestrel["of"] == 2, (
+        "two of the two assigned cases attempted - the retry is not a "
+        "third")
+    assert kestrel["correct"] == 1, (
+        "the FIRST answer per case is what counts, as everywhere else: "
+        "case4 was wrong first, case3 right")
+
+
+def test_progress_ignores_other_periods_and_other_cases():
+    report = _report_module()
+    items = [{"loop": "temp", "name": "case4", "n": 4}]
+    log = [
+        _ranswer(1, "Mine", "P3", REPORT_TODAY, name="case4", correct=True),
+        _ranswer(2, "Theirs", "P5", REPORT_TODAY, name="case4",
+                 correct=True),
+        _ranswer(3, "Mine", "P3", REPORT_TODAY, name="case1",
+                 correct=True),
+    ]
+    prog = report.assignment_progress(log, "P3", items)
+    assert prog["answers"] == 1 and [t["team"] for t in prog["teams"]] == \
+        ["Mine"], "another class, and an unassigned case, both stay out"
+
+
+def test_the_sheet_shows_whether_the_reteach_took(monkeypatch):
+    vital_app = _assign_app()
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    entry = vital_app.set_assignment("P3", "effector")
+    first = entry["items"][0]
+    today = vital_app._today()
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        {"id": 1, "wall_time": f"{today}T23:59:00", "loop": first["loop"],
+         "mode": "diagnosis", "name": first["name"], "label": "Kestrel",
+         "points": 100, "medal": None, "met": True, "rows": [],
+         "correct": True, "period": "P3"},
+    ])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    body = teacher.get("/report/P3").data.decode("utf-8")
+    # Collapse whitespace: where Jinja wraps a line is not the promise.
+    flat = " ".join(body.split())
+    assert "Since you assigned it" in flat
+    assert "1 of 1 first answers right" in flat, (
+        "the sheet must answer the question the phase exists for")
+    assert "Kestrel" in flat
+
+
+def test_the_dashboard_shows_each_team_s_progress(fresh_registry,
+                                                  monkeypatch):
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    entry = vital_app.set_assignment("P3", "effector")
+    first = entry["items"][0]
+    today = vital_app._today()
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        {"id": 1, "wall_time": f"{today}T23:59:00", "loop": first["loop"],
+         "mode": "diagnosis", "name": first["name"], "label": "Kestrel",
+         "points": 100, "medal": None, "met": True, "rows": [],
+         "correct": True, "period": "P3"},
+    ])
+    kid = vital_app.app.test_client()
+    kid.set_cookie("vl_sid", "prog-kid")
+    kid.set_cookie("vl_period", "P3")
+    kid.set_cookie("vl_team", "Kestrel")
+    assert kid.get("/state?loop=temp").status_code == 200
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    rows = teacher.get("/teacher/room.json").get_json()["rows"]
+    mine = next(r for r in rows if r["team"] == "Kestrel")
+    assert mine["assigned"].startswith(f"set 1/{entry['count']}"), (
+        f"the row said {mine['assigned']!r} - the teacher needs to see "
+        "how far this team has got without walking over")
+    assert "1 right" in mine["assigned"]
+
+
+def test_progress_never_reaches_a_student(fresh_registry, monkeypatch):
+    """(gggg, still) Progress is teacher information. It must not become
+    a new way for the set's purpose to leak."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "student_assignment"):
+        pytest.skip("M58")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    vital_app.set_assignment("P3", "effector")
+    kid = vital_app.app.test_client()
+    kid.set_cookie("vl_sid", "quiet-kid")
+    kid.set_cookie("vl_period", "P3")
+    j = kid.get("/state?loop=temp").get_json()
+    assert set(j["assignment"]) == {"label", "count", "items"}, (
+        "the student block grew a key - every addition here is a chance "
+        "to leak the answer, so the shape is pinned")
+    assert all(set(i) == {"loop", "n"} for i in j["assignment"]["items"]), (
+        "case NAMES reached a student payload - M28's rule is that the "
+        "wire carries an index and nothing else")

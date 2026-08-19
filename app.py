@@ -560,10 +560,26 @@ def _room_rows():
             best = max(t["points"] or 0 for t in tries)
             doing += (f" · {len(tries)} run{'s' if len(tries) != 1 else ''}"
                       f", best {best}")
+        # M59: how far this team has got through its class's set.
+        assigned_note = ""
+        live = ASSIGNMENTS.get(entry["period"] or "")
+        if live is not None and entry["period"] is not None:
+            prog = report.assignment_progress(
+                ATTEMPTS, entry["period"] or "", live["items"],
+                since=live.get("created"))
+            team = (entry["team"] or "").strip() or report.TEAMLESS
+            mine = next((t for t in prog["teams"] if t["team"] == team),
+                        None)
+            done = mine["done"] if mine else 0
+            right = mine["correct"] if mine else 0
+            assigned_note = f"set {done}/{live['count']}"
+            if done:
+                assigned_note += f", {right} right"
         rows.append({
             "sid": entry["sid"][:8],
             "period": entry["period"] or "Unassigned",
             "team": entry["team"] or "(no team)",
+            "assigned": assigned_note,
             "loop": active.loop,
             "doing": doing,
             "idle": _fmt_idle(entry["idle_s"]),
@@ -624,14 +640,21 @@ def cases_with_role(role):
     for loop, entries in CASES.items():
         for n, (name, entry) in enumerate(entries.items(), start=1):
             if entry["answer"]["role"] == role:
-                items.append({"loop": loop, "n": n})
+                # `name` is SERVER-SIDE only: the log keys off it, and
+                # M28's rule is that a student sees an index, never a
+                # case name. student_assignment() drops it.
+                items.append({"loop": loop, "n": n, "name": name})
     return items
 
 
 def set_assignment(period, role):
     """Give one period the cases for one box of the loop."""
     items = cases_with_role(role)
-    entry = {"role": role, "items": items, "count": len(items)}
+    entry = {"role": role, "items": items, "count": len(items),
+             # When it was set, so "did they get it right AFTER the
+             # reteach" is answerable from the log's own timestamps.
+             "created": datetime.datetime.now().isoformat(
+                 timespec="seconds")}
     with _assign_lock:
         ASSIGNMENTS[period] = entry
     return entry
@@ -654,7 +677,10 @@ def student_assignment(period):
                       f"{entry['count']} case"
                       f"{'' if entry['count'] == 1 else 's'}"),
             "count": entry["count"],
-            "items": [dict(i) for i in entry["items"]],
+            # THE PROJECTION: coordinates only. Not the role, not the
+            # case name, not when it was set.
+            "items": [{"loop": i["loop"], "n": i["n"]}
+                      for i in entry["items"]],
         }
 
 
@@ -798,7 +824,11 @@ def class_report_page(period):
         # The TEACHER's view names the box; only this page ever does.
         assigned = {**live,
                     "role_label": _option_label(
-                        ANSWER_OPTIONS.get("temp"), "roles", live["role"])}
+                        ANSWER_OPTIONS.get("temp"), "roles", live["role"]),
+                    # M59: did the reteach take? Straight off the log.
+                    "progress": report.assignment_progress(
+                        ATTEMPTS, wanted, live["items"],
+                        since=live.get("created"), catalog=catalog)}
     return render_template(
         "report.html",
         rep=report.class_report(ATTEMPTS, wanted, date, catalog),
