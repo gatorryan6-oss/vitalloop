@@ -18,25 +18,41 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M55 — Phase 13 underway (spec:
-  `vital_loop_phase13_kickoff.md`, scoped 2026-08-19: clear the
-  physiology debt + role analysis + gradebook CSV). **The kidney is
-  repaired.** One law for every solute: urine flow is whatever ADH
-  allows OR whatever the solute load obligates, whichever is greater.
-  A salt bolus used to concentrate urine to 3900 mOsm/L (5x the human
-  maximum in the worst case); it is now pinned at 1200 and drags its
-  own water out, which is osmotic diuresis and the same lesson as
-  mellitus. Everyday runs are untouched. Both water hashes re-recorded
-  deliberately; the superseded values are preserved in the test file.
-  M53 closed the last leg of the M38 spiral (sugar dissolved in the
-  water that is actually left) and MEASURED it at +0.7 mg/dL, not the
-  +3 to +9 M38 estimated by naive arithmetic — the physiology debt is
-  now clear, and one of the two items turned out to be much smaller
-  than its own estimate. M54 made the paper sharper: the debrief now
-  groups missed cases by WHICH BOX of the loop they were in, so the
-  sheet can say "this class cannot spot a broken effector". M55 added
-  the gradebook CSV — `/report.csv?period=P3`, long format, a VIEW of
-  the same `class_report()` the sheet renders.
+- **Committed:** M56 — **PHASE 13 COMPLETE** (M0–M56). Spec:
+  `vital_loop_phase13_kickoff.md` (scoped 2026-08-19: clear the
+  physiology debt + role analysis + gradebook CSV).
+  **The physiology debt is empty.** One kidney, one law: urine flow is
+  whatever ADH allows OR whatever the solute load obligates, whichever
+  is greater, for EVERY solute. A salt bolus used to concentrate urine
+  to 3900 mOsm/L (6000 in the worst case, 5x the human maximum); it is
+  now pinned at 1200 and drags its own water out — osmotic diuresis,
+  the same lesson as mellitus. Everyday runs are untouched, provably.
+  Hemoconcentration closed the M38 spiral and, measured against a body
+  with the link switched off, is worth **+0.7 mg/dL, not the +3 to +9
+  M38 estimated by naive arithmetic** — glucose is regulated, and the
+  renal spill absorbs ~94% of it. The paper got sharper too: the
+  debrief names WHICH BOX of the loop a class cannot spot (aggregating
+  across all four loops), and `/report.csv?period=P3` exports the
+  gradebook in long format as a VIEW of the same `class_report()`.
+  241 invariants + verify + eight console demos.
+- **Regression hashes, current:** water Phase 6 subset
+  `10a2ec03…`, water Phase 9 full `43d97564…` (both re-recorded at
+  M52, deliberately, for the ceiling); glucose Phase 9
+  `58b550b4…` UNCHANGED — no glucose behavior moved this phase.
+  Superseded water values (`d884ef86…`, `edb2469f…`) are preserved in
+  `tests/test_invariants.py` as the evidence the change was intended.
+- **Next up:** STOPPED for confirmation before Phase 14. Candidates:
+  1. **A quiz/challenge layer for the report** — the role analysis now
+     knows which box a class cannot spot; the obvious next move is
+     letting a teacher assign the matching cases as a follow-up set.
+  2. **The wide (one row per team) gradebook**, offered at the M55
+     interview and not taken — worth revisiting only if the long
+     format proves annoying to paste in real use.
+  3. **Multi-day scenarios**, which is the only context where
+     hemoconcentration's +0.7 mg/dL would compound into something a
+     class could see.
+  4. **A second thermoregulation disease** — the temp loop has four
+     cases but the fewest presets of the four loops.
 - **Phase 12 (for reference):** M51 — **PHASE 12 COMPLETE** (M0–M51). Spec:
   `vital_loop_phase12_kickoff.md` (scoped 2026-08-19: the per-period
   paper — both halves on one page, today only, printable page only).
@@ -139,6 +155,36 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M56: The full pass, and Phase 13 closes
+- Shipped: the M56 contract (4 tests). **The repaired kidney holds
+  through the production routes**: both urine-making loops salted,
+  dried out, played through a challenge to the buzzer and then a blind
+  case, with `urine_osm` never once above 1200 — the law proved where
+  the class actually drives it, not only in engine tests.
+  **The paper pass**: two periods, a sheet and a spreadsheet each,
+  neither leaking the other's teams, the role line present on the class
+  that missed a case, and both artefacts refused without the PIN.
+  **Phases 11 and 12 untouched**: join overlay, period badge, the four
+  tabs and their presets, `board_period`, the cookieless payload, the
+  dashboard and its three swept thresholds, the exact case counts
+  (4/4/5), worksheets for all four loops. **The grammar survived two
+  engine edits** — every loop still carries preset, plain challenge,
+  crisis, cases, CSV and answer vocabulary. 241 invariants + verify +
+  all eight console demos.
+- Deferred: Phase 14 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. This phase changed engine code for the first time since Phase 10,
+     so the close leans harder on the regression half than M51's did:
+     the kidney check is new, and everything else is a re-assertion
+     that the room and the paper did not move underneath it.
+  2. The order the phase ran in — hashes from committed code, then
+     sweep, then edit, then sweep again — is what made both findings
+     legible: that only salt scenarios moved (M52), and that the
+     hemoconcentration estimate everyone had been quoting since M38 was
+     ten times too big (M53). Neither would have been visible from a
+     hash diff alone.
 
 ## 2026-08-19 — M55: The gradebook CSV
 - Shipped: `/report.csv?period=P3` behind the same teacher PIN as the

@@ -6041,3 +6041,130 @@ def test_an_empty_day_still_exports_a_usable_file(monkeypatch):
         "a period nobody played exports a header and no rows - a file "
         "that opens cleanly in Excel and says nothing happened")
     assert "attachment; filename=" in out.headers["Content-Disposition"]
+
+
+# ================= M56: the full pass, and Phase 13 closes =================
+# Two repairs and two features. The pass has to answer for both halves:
+# the kidney must obey its law everywhere the app can drive it, and the
+# room and the paper built in Phases 11-12 must be exactly as they were.
+
+def test_the_repaired_kidney_holds_through_the_production_routes(lab):
+    """(eeee) The law, driven the way a class drives it: sandbox, a
+    challenge, and a blind case, on both loops that make urine."""
+    vital_app, _ = lab
+    from engine.water import MAX_URINE_OSM
+    client = vital_app.app.test_client()
+    client.set_cookie("vl_sid", "m56-kidney")
+
+    peaks = {}
+    for loop in ("water", "body"):
+        # 1. sandbox: salt it, then run it dry
+        for action, payload in (("salty", {"value": 600}),
+                                ("effector", {"name": "access",
+                                              "value": False})):
+            r = client.post(f"/control?loop={loop}",
+                            json={"action": action, **payload})
+            assert r.status_code in (200, 400), r.status_code
+        runner = vital_app.registry.runners_for("m56-kidney")[loop]
+        with runner.lock:
+            runner.sim.step(3600)
+        # 2. a challenge, played to the buzzer
+        name = next(iter(vital_app.CHALLENGES[loop]))
+        assert client.post(f"/control?loop={loop}",
+                           json={"action": "challenge",
+                                 "value": name}).status_code == 200
+        with runner.lock:
+            runner._step(int(runner.challenge["t_end"]
+                             - runner.challenge["t_start"]) + 1)
+        # 3. a blind case
+        assert client.post(f"/control?loop={loop}",
+                           json={"action": "diagnose",
+                                 "value": 1}).status_code == 200
+        with runner.lock:
+            runner.sim.step(1800)
+            records = runner.sim.history()
+        peaks[loop] = max(r["urine_osm"] for r in records)
+
+    for loop, peak in peaks.items():
+        assert peak <= MAX_URINE_OSM + 1e-9, (
+            f"the {loop} loop reached {peak:.0f} mOsm/L through the "
+            f"routes - the ceiling must hold everywhere the class can "
+            "drive it, not only in the engine tests")
+
+
+def test_the_paper_pass_with_the_gradebook(lab, monkeypatch):
+    """(eeee) Two periods, a sheet and a spreadsheet each, and the
+    answer key still behind the PIN."""
+    vital_app, _ = lab
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    today = vital_app._today()
+    cid = list(vital_app.CASES["temp"])[2]
+    monkeypatch.setattr(vital_app, "ATTEMPTS", [
+        _rrun(1, "Third Shift", "P3", today, points=88, medal="gold"),
+        _ranswer(2, "Third Shift", "P3", today, name=cid, correct=False),
+        _rrun(3, "Fifth Gear", "P5", today, points=95, medal="gold"),
+    ])
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    for period, mine, theirs in (("P3", "Third Shift", "Fifth Gear"),
+                                 ("P5", "Fifth Gear", "Third Shift")):
+        page = teacher.get(f"/report/{period}").data.decode("utf-8")
+        sheet_csv = teacher.get(
+            f"/report.csv?period={period}").data.decode("utf-8")
+        assert mine in page and mine in sheet_csv
+        assert theirs not in page and theirs not in sheet_csv, (
+            f"{theirs} leaked onto {period}'s paperwork")
+    # The debrief's role line is on the sheet that has a missed case.
+    assert "one to reteach" in teacher.get("/report/P3").data.decode("utf-8")
+    # ...and neither artefact is readable without the PIN.
+    nosy = vital_app.app.test_client()
+    assert nosy.get("/report/P3").status_code == 403
+    assert nosy.get("/report.csv?period=P3").status_code == 403
+
+
+def test_phases_11_and_12_are_untouched(fresh_registry, monkeypatch):
+    """(eeee) Phase 13 repaired physiology and added paper. The room and
+    the sheet it inherited must be exactly as M51 left them."""
+    vital_app = fresh_registry
+    if not hasattr(vital_app, "gradebook_ready") and not hasattr(
+            vital_app, "_report_catalog"):
+        pytest.skip("M49-M55 aren't all here yet")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    for marker in ('id="joinOverlay"', 'data-period="P3"',
+                   'id="periodBadge"', 'data-loop="temp"',
+                   'data-loop="glucose"', 'data-loop="water"',
+                   'data-loop="body"', 'data-preset="fever"',
+                   'data-preset="type1"', 'data-preset="central_di"',
+                   'data-preset="siadh"'):
+        assert marker in page, f"{marker} vanished in Phase 13"
+    j = vital_app.app.test_client().get("/state?loop=temp").get_json()
+    assert j["board_period"] is None
+    assert not ({"period", "team", "stuck"} & set(j))
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/teacher/room.json").status_code == 200
+    assert (vital_app.STUCK_BLIND_S, vital_app.STUCK_QUIET_S,
+            vital_app.STUCK_ZEROES) == (300, 180, 2)
+    for loop in vital_app.runners:
+        assert loop in vital_app.PRESETS and loop in vital_app.CHALLENGES
+        assert vital_app.app.test_client().get(
+            f"/worksheet/{loop}").status_code == 200
+    assert len(vital_app.CASES["temp"]) == 4
+    assert len(vital_app.CASES["glucose"]) == 4
+    assert len(vital_app.CASES["water"]) == 5
+
+
+def test_the_four_loops_still_teach_every_verb(lab):
+    """(eeee) M30's grammar, checked once more with the engines edited."""
+    vital_app, _ = lab
+    for loop in vital_app.runners:
+        entries = vital_app.CHALLENGES[loop]
+        assert "healthy" in vital_app.PRESETS[loop]
+        assert any(not e.get("events") for e in entries.values())
+        assert any(e.get("events") for e in entries.values())
+        assert len(vital_app.CASES[loop]) >= 2
+        assert vital_app.CSV_FIELDS[loop] and vital_app.ANSWER_OPTIONS[loop]
+        assert loop in vital_app.WORKSHEETS
