@@ -2527,6 +2527,49 @@ CASES = {
                     "unawareness, and it is dangerous precisely because "
                     "nothing looks dramatic.",
         },
+        "case5": {
+            "brief": "Shaky, sweating and ravenous all afternoon, and it "
+                     "has been going on for weeks. Nothing has been eaten "
+                     "for hours.",
+            "setup": {**HEALTHY_GLUCOSE, "autonomous_insulin": 0.55},
+            "start_actions": [],
+            "speed": 16,
+            "warmup_s": 5400,
+            "answer": {"role": "control", "part": "beta",
+                       "mode": "stuck_on"},
+            "note": "An INSULINOMA — beta-cell tissue that has stopped "
+                    "listening to the sensor and secretes anyway. Look at "
+                    "the combination: insulin HIGH while glucose is LOW. "
+                    "A healthy loop can never do that — low sugar is "
+                    "exactly when insulin should be off. Glucagon is "
+                    "pinned at maximum the whole time: the opposing "
+                    "hormone is working perfectly and losing, because "
+                    "nothing it does reaches the tissue that will not "
+                    "stop secreting. Same box and same component as type "
+                    "1 diabetes, opposite direction — there the beta "
+                    "cells STOPPED, here they will not stop.",
+        },
+        "case6": {
+            "brief": "A big lunch a couple of hours ago, and now shaky "
+                     "and light-headed — which is when the bloods were "
+                     "taken.",
+            "setup": {**HEALTHY_GLUCOSE, "insulin_lag": 1800.0,
+                      "insulin_gain": 1.4},
+            "start_actions": [("eat", (75, 1.0))],
+            "speed": 16,
+            "warmup_s": 9000,
+            "answer": {"role": "control", "part": "beta", "mode": "slow"},
+            "note": "REACTIVE HYPOGLYCEMIA, and nothing here is broken. "
+                    "Every box of the loop is present and working; the "
+                    "insulin is simply LATE. Read the order of events: "
+                    "the peak runs high because the hormone had not "
+                    "arrived yet, and then it arrives while the sugar is "
+                    "already falling — so the loop keeps pushing after "
+                    "the job is done and drives straight past the set "
+                    "point into hypoglycemia. A controller acting on "
+                    "stale information overshoots. The fault is in the "
+                    "TIMING, not in any part.",
+        },
     },
     "water": {
         # 1 effector · 2 control center · 3 receptor · 4 intact
@@ -2688,6 +2731,31 @@ CASES = {
                     "on its own. Passing a lot of urine is a symptom, "
                     "not a diagnosis — and a loop working hard is not a "
                     "loop that has failed.",
+        },
+        "case4": {
+            "brief": "Diagnosed with diabetes years ago and on insulin "
+                     "every day since. Came in because of how often they "
+                     "are passing water. A big lunch two hours ago.",
+            "setup": {**HEALTHY_BODY, "basal": 0.5,
+                      "effectors": {"beta": False, "alpha": True,
+                                    "liver": True, "adh": True,
+                                    "kidney": True, "access": True}},
+            "start_actions": [("eat", (75, 1.0))],
+            "speed": 16,
+            "warmup_s": 7200,
+            "answer": {"role": "control", "part": "beta", "mode": "off"},
+            "note": "TREATED mellitus — and the treatment is the trap. "
+                    "The numbers look far better than an untreated day, "
+                    "so 'nothing is broken' is tempting. But look at what "
+                    "the BODY is making: the beta cells' own insulin is "
+                    "flat at zero while glucose sits well above the band. "
+                    "The insulin keeping these numbers down is arriving "
+                    "from a syringe, not from the loop. The broken part "
+                    "is exactly what it was before anyone treated it — "
+                    "treatment changed the curve, it did not repair the "
+                    "control center. That is why the sugar is still "
+                    "crossing the kidney's threshold and still dragging "
+                    "water out with it.",
         },
     },
 }

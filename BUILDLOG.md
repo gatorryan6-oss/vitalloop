@@ -18,13 +18,16 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M61 — Phase 15 underway (spec:
+- **Committed:** M62 — Phase 15 underway (spec:
   `vital_loop_phase15_kickoff.md`, scoped 2026-08-19: the direction
   dimension and the three cases it unlocks). A diagnosis now answers
   THREE questions — which box, which component, and **how it failed**
   (not working / stuck on / too slow). All 16 existing cases migrated
   to "not working" and still grade exactly as they did; right box +
-  right component + wrong direction is no longer correct.
+  right component + wrong direction is no longer correct. M62 spent the
+  new dimension: type 1, **insulinoma** and **reactive hypoglycemia**
+  are now three glucose cases sharing a box AND a component, told apart
+  only by how the part failed — plus **treated mellitus** on the body.
 - **Phase 14 (for reference):** M60 — **PHASE 14 COMPLETE** (M0–M60). Spec:
   `vital_loop_phase14_kickoff.md` (scoped 2026-08-19: assignment layer
   + three diseases).
@@ -190,6 +193,44 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M62: The three cases the dimension unlocks
+- Shipped: glucose case 5 **insulinoma** (control / beta cells / stuck
+  on), glucose case 6 **reactive hypoglycemia** (control / beta cells /
+  too slow), body case 4 **treated mellitus** (control / beta cells /
+  not working). Each played FIRST and calibrated from what it actually
+  showed, then pinned. Glucose 4 → 6 cases, body 3 → 4; the four
+  "Phase N untouched" count pins moved deliberately in this commit and
+  stayed EXACT rather than becoming ">=", so a later phase still cannot
+  quietly drop a case and replace it. 6 new invariants (279 pass) +
+  verify.
+- **The payoff, in one line:** three cases now share control/beta and
+  differ only in mode. Without Phase 15 they would have been three
+  identical answers.
+- **What each looks like when the class joins** (measured, not hoped):
+  type 1 — glucose 203.2, insulin 0.00; insulinoma — glucose 60.4 with
+  insulin 0.55 and glucagon pinned at 1.00 (a combination a healthy
+  loop can never produce); reactive hypoglycemia — glucose 85.1 and
+  near-normal AT THAT MOMENT, because its diagnosis lives in the shape
+  of the trace (peak 186 at 56 min, trough 66.6 at 112 min). Both of
+  those landmarks fall inside the window the chart draws, which is
+  pinned — evidence off the left edge would make the case unfair.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **Treated mellitus shares its answer with untreated mellitus** and
+     that is the case, not a flaw in it: the numbers flatter, the beta
+     cells' own insulin is still flat at zero, and the trap is
+     answering "nothing is broken". The brief says the patient is on
+     insulin so the class is not being tricked, only tested. I flagged
+     this as a doubt when scoping; the human chose it knowingly.
+  2. **Insulinoma's mode is applied after the beta-cell breaker** (M57),
+     so a class that "switches the beta cells off" to test their theory
+     finds the hypoglycemia unmoved — the case rewards experimenting.
+  3. VERIFIED LIVE: the glucose picker offers six cases and the body
+     four, all four loops ask the third question, and driving cases 1,
+     5 and 6 back to back through the routes leaks nothing (no
+     `*_enabled`, no `autonomous_insulin`, no `insulin_lag`).
 
 ## 2026-08-19 — M61: How it broke — the third question
 - Shipped: `ANSWER_MODES` (off / stuck_on / slow / none), wired into

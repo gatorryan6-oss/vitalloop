@@ -4340,7 +4340,11 @@ def test_phases_1_to_9_are_untouched():
             "ADD a loop, not edit the three that were already teaching")
     # The three original loops' challenges and cases are all still there.
     assert len(vital_app.CASES["temp"]) == 4
-    assert len(vital_app.CASES["glucose"]) == 4
+    # M62 added insulinoma and reactive hypoglycemia here, and treated
+    # mellitus to the body - the counts moved DELIBERATELY in that
+    # commit. Kept exact rather than ">=" so a later phase still cannot
+    # quietly drop a case and replace it with another.
+    assert len(vital_app.CASES["glucose"]) == 6
     assert len(vital_app.CASES["water"]) == 5
     for loop, names in (("temp", {"cold_store", "blast_freezer"}),
                         ("glucose", {"t1_shift", "crisis_shift"}),
@@ -5528,7 +5532,11 @@ def test_phase_11_is_untouched(fresh_registry, monkeypatch):
         assert vital_app.app.test_client().get(
             f"/worksheet/{loop}").status_code == 200
     assert len(vital_app.CASES["temp"]) == 4
-    assert len(vital_app.CASES["glucose"]) == 4
+    # M62 added insulinoma and reactive hypoglycemia here, and treated
+    # mellitus to the body - the counts moved DELIBERATELY in that
+    # commit. Kept exact rather than ">=" so a later phase still cannot
+    # quietly drop a case and replace it with another.
+    assert len(vital_app.CASES["glucose"]) == 6
     assert len(vital_app.CASES["water"]) == 5
 
 
@@ -6155,7 +6163,11 @@ def test_phases_11_and_12_are_untouched(fresh_registry, monkeypatch):
         assert vital_app.app.test_client().get(
             f"/worksheet/{loop}").status_code == 200
     assert len(vital_app.CASES["temp"]) == 4
-    assert len(vital_app.CASES["glucose"]) == 4
+    # M62 added insulinoma and reactive hypoglycemia here, and treated
+    # mellitus to the body - the counts moved DELIBERATELY in that
+    # commit. Kept exact rather than ">=" so a later phase still cannot
+    # quietly drop a case and replace it with another.
+    assert len(vital_app.CASES["glucose"]) == 6
     assert len(vital_app.CASES["water"]) == 5
 
 
@@ -6772,7 +6784,11 @@ def test_phases_11_to_13_are_untouched(fresh_registry, monkeypatch):
         assert vital_app.app.test_client().get(
             f"/worksheet/{loop}").status_code == 200
     assert len(vital_app.CASES["temp"]) == 4
-    assert len(vital_app.CASES["glucose"]) == 4
+    # M62 added insulinoma and reactive hypoglycemia here, and treated
+    # mellitus to the body - the counts moved DELIBERATELY in that
+    # commit. Kept exact rather than ">=" so a later phase still cannot
+    # quietly drop a case and replace it with another.
+    assert len(vital_app.CASES["glucose"]) == 6
     assert len(vital_app.CASES["water"]) == 5
 
 
@@ -6941,3 +6957,147 @@ def test_the_answer_route_takes_the_mode_and_refuses_nonsense(
     assert good.status_code == 200
     j = kid.get("/state?loop=temp").get_json()
     assert j["case"]["grade"]["verdict"] == "correct"
+
+
+# ================= M62: the three cases the dimension unlocks =============
+# The payoff. Type 1, insulinoma and reactive hypoglycemia are now three
+# cases with the SAME box and the SAME component, told apart only by how
+# the part failed. If a class can separate them they have understood that
+# a loop can break in more than one direction.
+
+def _case_records(vital_app, loop, case_id, extra_s=0):
+    """Play a case the way a class meets it: setup, opening actions,
+    warmup, then whatever else the test wants."""
+    from engine.body import Body
+    from engine.glucose import GlucoseSimulation
+    entry = vital_app.CASES[loop][case_id]
+    sim = Body() if loop == "body" else GlucoseSimulation()
+    vital_app._apply_preset(sim, entry["setup"])
+    for method, args in entry.get("start_actions", []):
+        getattr(sim, method)(*args)
+    sim.step(int(entry["warmup_s"]) + int(extra_s))
+    return sim.history()
+
+
+def test_three_glucose_cases_share_a_box_and_a_component():
+    """(jjjj) The phase's whole claim, as a check on the data: without
+    the third question these three would be indistinguishable answers."""
+    vital_app = _modes()
+    answers = {cid: e["answer"] for cid, e in
+               vital_app.CASES["glucose"].items()}
+    trio = {cid: a for cid, a in answers.items()
+            if a["role"] == "control" and a["part"] == "beta"}
+    assert len(trio) == 3, (
+        "expected type 1, insulinoma and reactive hypoglycemia to share "
+        f"control/beta - found {sorted(trio)}")
+    modes = sorted(a["mode"] for a in trio.values())
+    assert modes == ["off", "slow", "stuck_on"], (
+        f"the three share a box and component but must differ in HOW: "
+        f"got {modes}")
+
+
+def test_the_insulinoma_case_shows_the_impossible_combination():
+    """(jjjj) Insulin HIGH while glucose is LOW - a healthy loop can
+    never do that, and it is what makes the case readable."""
+    vital_app = _modes()
+    case_id = next(cid for cid, e in vital_app.CASES["glucose"].items()
+                   if e["answer"]["mode"] == "stuck_on")
+    records = _case_records(vital_app, "glucose", case_id)
+    joined = records[-1]
+    assert joined["glucose"] < 70.0, (
+        f"the class joins at {joined['glucose']:.0f} mg/dL - an "
+        "insulinoma case has to be visibly hypoglycemic")
+    assert joined["insulin"] > 0.4, (
+        "insulin must be HIGH at the same time - that combination is "
+        "the diagnosis")
+    assert joined["glucagon"] == pytest.approx(1.0), (
+        "glucagon pinned at maximum is the second half of the picture: "
+        "the opposing hormone working perfectly and losing")
+
+
+def test_the_reactive_case_peaks_high_then_digs_a_trough():
+    """(jjjj) The shape IS the diagnosis: an intact loop acting late."""
+    vital_app = _modes()
+    case_id = next(cid for cid, e in vital_app.CASES["glucose"].items()
+                   if e["answer"]["mode"] == "slow")
+    records = _case_records(vital_app, "glucose", case_id)
+    peak_i = max(range(len(records)),
+                 key=lambda i: records[i]["glucose"])
+    trough = min(records[peak_i:], key=lambda r: r["glucose"])
+    assert records[peak_i]["glucose"] > 170.0, (
+        "the peak must run high - the insulin had not arrived yet")
+    assert trough["glucose"] < 70.0, (
+        f"the overshoot only troughed at {trough['glucose']:.0f} mg/dL; "
+        "reactive hypoglycemia has to reach hypoglycemia")
+    assert trough["t"] > records[peak_i]["t"], "the dip follows the peak"
+    window = vital_app.CASES["glucose"][case_id]["warmup_s"]
+    assert trough["t"] <= window, (
+        "the trough must land inside the warmup the class is shown, or "
+        "the evidence is off the left of the chart")
+
+
+def test_the_treated_body_case_is_abnormal_but_flattering():
+    """(jjjj) The trap: better numbers, same broken part. It must be
+    clearly not-healthy, and clearly better than untreated, or the case
+    is either unfair or pointless."""
+    vital_app = _modes()
+    case_id = next(cid for cid, e in vital_app.CASES["body"].items()
+                   if "basal" in e["setup"] and e["setup"]["basal"])
+    records = _case_records(vital_app, "body", case_id)
+    joined = records[-1]
+    assert joined["glucose"] > 120.0, (
+        "the sugar must still be visibly above the band, or the class "
+        "is being asked to diagnose a healthy-looking body")
+    assert joined["insulin"] == pytest.approx(0.0, abs=1e-9), (
+        "the BODY's own insulin must read zero - that is the evidence "
+        "the control center is still broken, whatever the syringe is "
+        "doing")
+    peak = max(r["glucose"] for r in records)
+    untreated = _case_records(vital_app, "body",
+                              next(cid for cid, e
+                                   in vital_app.CASES["body"].items()
+                                   if e["answer"]["mode"] == "off"
+                                   and not e["setup"].get("basal")))
+    assert peak < max(r["glucose"] for r in untreated) + 1.0, (
+        "treated must not look WORSE than untreated - the whole point "
+        "is that the numbers flatter")
+
+
+def test_every_new_case_grades_correct_on_its_own_truth(fresh_registry):
+    """(jjjj) Through the production routes, the way a class answers."""
+    vital_app = fresh_registry
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("M61")
+    kid = _device(vital_app, "m62-kid")
+    for loop, n in (("glucose", 5), ("glucose", 6), ("body", 4)):
+        assert kid.post(f"/control?loop={loop}",
+                        json={"action": "diagnose",
+                              "value": n}).status_code == 200
+        truth = list(vital_app.CASES[loop].values())[n - 1]["answer"]
+        out = kid.post(f"/control?loop={loop}",
+                       json={"action": "answer", **truth})
+        assert out.status_code == 200
+        j = kid.get(f"/state?loop={loop}").get_json()
+        assert j["case"]["grade"]["verdict"] == "correct", (
+            f"{loop} case {n} does not grade correct on its own answer")
+        assert j["case"]["grade"]["note"], "every case teaches something"
+
+
+def test_calling_the_insulinoma_a_type_1_is_only_half_right(
+        fresh_registry):
+    """(jjjj) The error the phase exists to catch, end to end."""
+    vital_app = fresh_registry
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("M61")
+    kid = _device(vital_app, "m62-confuser")
+    assert kid.post("/control?loop=glucose",
+                    json={"action": "diagnose", "value": 5}).status_code == 200
+    out = kid.post("/control?loop=glucose",
+                   json={"action": "answer", "role": "control",
+                         "part": "beta", "mode": "off"})
+    assert out.status_code == 200
+    grade = kid.get("/state?loop=glucose").get_json()["case"]["grade"]
+    assert grade["verdict"] == "partial" and grade["points"] == 50, (
+        "answering type 1 to an insulinoma must not score 100 - same "
+        "box, same component, opposite direction")
+    assert "stuck on" in grade["truth"]["line"].lower()
