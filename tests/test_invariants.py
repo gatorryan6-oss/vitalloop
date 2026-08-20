@@ -7101,3 +7101,127 @@ def test_calling_the_insulinoma_a_type_1_is_only_half_right(
         "answering type 1 to an insulinoma must not score 100 - same "
         "box, same component, opposite direction")
     assert "stuck on" in grade["truth"]["line"].lower()
+
+
+# ================= M63: the full pass, and Phase 15 closes =================
+# The phase changed what a diagnosis IS - three questions now - so the
+# close drives every case in the app through the production routes and
+# re-checks the two gates that fail silently: the blind-case redaction
+# and the assignment layer's no-spoiler rule, both with the NEW mode
+# words in mind. Engine hashes ran green all phase (no engine file was
+# touched); the app-level regression half is here.
+
+def test_all_nineteen_cases_through_the_routes(lab):
+    """(kkkk) Every case in the app: started blind, leak-checked,
+    CSV refused, answered with its three-part truth, graded correct,
+    CSV released. The M42 pass, one dimension wider."""
+    vital_app, _ = lab
+    client = vital_app.app.test_client()
+    client.set_cookie("vl_sid", "m63-pass")
+    total = 0
+    for loop in vital_app.runners:
+        n_cases = len(vital_app.CASES[loop])
+        for n in range(1, n_cases + 1):
+            assert client.post(f"/control?loop={loop}",
+                               json={"action": "diagnose",
+                                     "value": n}).status_code == 200
+            j = client.get(f"/state?loop={loop}").get_json()
+            banned = sorted(k for k in j["now"]
+                            if k.endswith("_enabled")
+                            or k in ANSWER_KEY_FIELDS
+                            or k in ("autonomous_insulin", "insulin_gain",
+                                     "insulin_lag"))
+            assert not banned, f"{loop} case {n} leaked {banned}"
+            assert client.get(
+                f"/export.csv?loop={loop}").status_code == 409
+            truth = list(vital_app.CASES[loop].values())[n - 1]["answer"]
+            assert client.post(f"/control?loop={loop}",
+                               json={"action": "answer", **truth}
+                               ).status_code == 200
+            grade = client.get(
+                f"/state?loop={loop}").get_json()["case"]["grade"]
+            assert grade["verdict"] == "correct", (
+                f"{loop} case {n} does not grade correct on its truth")
+            total += 1
+        client.post(f"/control?loop={loop}", json={"action": "reset"})
+        assert client.get(f"/export.csv?loop={loop}").status_code == 200
+    assert total == 19, (
+        f"the app should hold 19 cases after M62 (4+6+5+4); drove {total}")
+
+
+def test_the_assignment_gate_holds_with_the_mode_words_too(
+        fresh_registry, monkeypatch):
+    """(kkkk) Phase 14's gate, re-sworn for Phase 15: the set still
+    names no box - and now also no DIRECTION, because 'these are the
+    stuck-on cases' would be the same leak in new clothes."""
+    vital_app = fresh_registry
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("M61")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    monkeypatch.setattr(vital_app, "ASSIGNMENTS", {})
+    # "control" now collects the new cases too - the set grew with M62.
+    entry = vital_app.set_assignment("P3", "control")
+    assert entry["count"] >= 6, (
+        "the control set should have grown at M62 - insulinoma, "
+        "reactive hypo and treated mellitus all answer control/beta")
+    kid = vital_app.app.test_client()
+    kid.set_cookie("vl_sid", "m63-kid")
+    kid.set_cookie("vl_period", "P3")
+    raw = kid.get("/state?loop=temp").data.decode("utf-8").lower()
+    for word in ROLE_WORDS + ("stuck", "too slow", "mode"):
+        assert word not in raw, (
+            f"{word!r} reached a student payload - the direction is as "
+            "much an answer as the box is")
+
+
+def test_the_role_analysis_still_groups_by_box_alone(monkeypatch):
+    """(kkkk) M54's number keeps meaning what it meant: mode is a
+    grading dimension, not a grouping - a missed insulinoma and a
+    missed type 1 are both misses on the control-center box."""
+    vital_app = _paper_app()
+    today = vital_app._today()
+    log = [_ranswer(1, "A", "P3", today, name="case1", correct=False,
+                    loop="glucose"),
+           _ranswer(2, "B", "P3", today, name="case5", correct=False,
+                    loop="glucose")]
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3"])
+    rep = vital_app.report.class_report(log, "P3", today,
+                                        vital_app._report_catalog())
+    roles = rep["aggregate"]["hard_roles"]
+    assert len(roles) == 1 and roles[0]["role"] == "control", (
+        "a type 1 miss and an insulinoma miss must land in ONE bucket - "
+        "the control-center box - or the reteach number fragments")
+    assert roles[0]["wrong"] == 2 and roles[0]["cases"] == 2
+
+
+def test_phases_11_to_14_are_untouched_by_the_third_question(
+        fresh_registry, monkeypatch):
+    """(kkkk) The standing umbrella, its widest yet."""
+    vital_app = fresh_registry
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("M61")
+    monkeypatch.setattr(vital_app, "PERIODS", ["P3", "P5"])
+    monkeypatch.setattr(vital_app, "TEACHER_PIN", "PIN-SENTINEL-XYZ")
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    for marker in ('id="joinOverlay"', 'id="periodBadge"',
+                   'id="assignmentBar"', 'data-preset="fever"',
+                   'data-preset="insulinoma"',
+                   'data-preset="treated_mellitus"'):
+        assert marker in page, f"{marker} vanished in Phase 15"
+    j = vital_app.app.test_client().get("/state?loop=temp").get_json()
+    assert j["board_period"] is None
+    assert not ({"period", "team", "stuck", "assignment"} & set(j))
+    teacher = vital_app.app.test_client()
+    teacher.set_cookie("vl_teacher", "PIN-SENTINEL-XYZ")
+    assert teacher.get("/teacher/room.json").status_code == 200
+    assert teacher.get("/report/P3").status_code == 200
+    assert teacher.get("/report.csv?period=P3").status_code == 200
+    assert (vital_app.STUCK_BLIND_S, vital_app.STUCK_QUIET_S,
+            vital_app.STUCK_ZEROES) == (300, 180, 2)
+    from engine.water import MAX_URINE_OSM
+    assert MAX_URINE_OSM == 1200.0
+    for loop in vital_app.runners:
+        assert vital_app.app.test_client().get(
+            f"/worksheet/{loop}").status_code == 200
+    assert len(vital_app.CASES["temp"]) == 4
+    assert len(vital_app.CASES["water"]) == 5

@@ -18,16 +18,33 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M62 — Phase 15 underway (spec:
-  `vital_loop_phase15_kickoff.md`, scoped 2026-08-19: the direction
-  dimension and the three cases it unlocks). A diagnosis now answers
-  THREE questions — which box, which component, and **how it failed**
-  (not working / stuck on / too slow). All 16 existing cases migrated
-  to "not working" and still grade exactly as they did; right box +
-  right component + wrong direction is no longer correct. M62 spent the
-  new dimension: type 1, **insulinoma** and **reactive hypoglycemia**
-  are now three glucose cases sharing a box AND a component, told apart
-  only by how the part failed — plus **treated mellitus** on the body.
+- **Committed:** M63 — **PHASE 15 COMPLETE** (M0–M63). Spec:
+  `vital_loop_phase15_kickoff.md` (scoped 2026-08-19: the direction
+  dimension and the three cases it unlocks).
+  **A diagnosis answers three questions now** — which box, which
+  component, and HOW it failed (not working / stuck on / too slow).
+  All 16 existing cases migrated to "not working" and still grade
+  exactly as they always did; right box + right component + wrong
+  direction is no longer correct. The dimension was spent immediately:
+  **type 1, insulinoma and reactive hypoglycemia are three glucose
+  cases sharing control/beta**, told apart only by how the part failed,
+  plus **treated mellitus** on the coupled body (same answer as
+  untreated — that IS the lesson: treatment changed the curve, not the
+  loop). 19 cases total (4/6/5/4). No engine file touched all phase;
+  every hash stood. 283 invariants + verify + nine console demos.
+- **Next up:** STOPPED for confirmation before Phase 16. Candidates:
+  1. **Finer credit for the near-miss** — right box + right component +
+     wrong direction currently scores the same 50 as any partial.
+     Deliberately not slipped into M61; whether it deserves more is a
+     scoring-vocabulary decision for the human.
+  2. **Multi-day scenarios** (deferred three times): chronic vs acute,
+     and the only place M53's hemoconcentration compounds.
+  3. **Assignments that survive a restart**, if end-of-period assigning
+     chafes in real use.
+  4. **Wide-format gradebook**, still waiting on real-class annoyance.
+- **User checkpoint outstanding (M34/M45, still):** a REAL phone on the
+  room's wifi — the student address AND `/teacher` with the console
+  PIN — and `periods.txt` still holds placeholder P1–P7.
 - **Phase 14 (for reference):** M60 — **PHASE 14 COMPLETE** (M0–M60). Spec:
   `vital_loop_phase14_kickoff.md` (scoped 2026-08-19: assignment layer
   + three diseases).
@@ -193,6 +210,38 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M63: The full pass, and Phase 15 closes
+- Shipped: the M63 contract (4 tests). **All nineteen cases through the
+  production routes** — started blind, leak-checked (no `*_enabled`, no
+  answer-key fields, and none of the M57 knob names), CSV refused at
+  409 while blind, answered with the three-part truth, graded correct,
+  CSV released. **The assignment gate re-sworn one dimension wider**:
+  a control-box set (which GREW at M62 — insulinoma, reactive hypo and
+  treated mellitus all answer control/beta) still reaches a student as
+  coordinates only, with the role words AND the mode words ("stuck",
+  "too slow") pinned absent — "these are the stuck-on cases" would be
+  the same leak in new clothes. **M54's role analysis still groups by
+  box alone**: a missed type 1 and a missed insulinoma land in ONE
+  control-center bucket, so the reteach number cannot fragment.
+  **Phases 11–14 untouched**: join overlay, badge, assignment bar,
+  every preset button old and new, the cookieless payload, both teacher
+  surfaces, the swept thresholds, the 1200 mOsm/L ceiling, worksheets,
+  and the unchanged loops' case counts. 283 invariants + verify + all
+  nine console demos.
+- Deferred: Phase 16 candidates under Current state.
+- Open bugs: none.
+- Decisions:
+  1. The close pins the SUBTLE regression risk of this phase by name:
+     mode is a grading dimension, not a grouping. If hard_roles ever
+     split by mode, "this class cannot spot an effector" would quietly
+     fragment into numbers too small to act on — M54's whole point
+     undone without a single test failing. Now one fails.
+  2. VERIFIED LIVE: all four tabs complete (SVG counts 4/5/5/6, the
+     M42 numbers), pickers offering 4/6/5/4 cases, the third question
+     on every diagnose card. The preview pane still cannot composite
+     (M39-standing note); DOM-read as before — a human should still
+     glance at a real screen before teaching from it.
 
 ## 2026-08-19 — M62: The three cases the dimension unlocks
 - Shipped: glucose case 5 **insulinoma** (control / beta cells / stuck
