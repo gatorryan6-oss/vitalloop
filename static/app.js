@@ -467,9 +467,23 @@ const caseWarmup = { temp: null, glucose: null, water: null, body: null };
 
 const CASE_HEADLINES = {
   correct: "RIGHT — that is exactly what failed",
-  partial: "HALF RIGHT — the right part of the loop, the wrong component",
+  partial: "HALF RIGHT — the right part of the loop",
   wrong: "NOT THIS TIME — read the reveal, then look again",
 };
+
+/* M61: a partial can now miss in two different ways, and telling a
+   class the wrong one is worse than telling them nothing. Read which
+   rows actually missed rather than assuming it was the component. */
+function caseHeadline(g) {
+  if (g.verdict !== "partial") return CASE_HEADLINES[g.verdict];
+  const missed = (g.rows || []).filter(r => r.met === false)
+                               .map(r => r.key);
+  if (missed.includes("part") && missed.includes("mode"))
+    return "HALF RIGHT — the right box, but not the component or how it failed";
+  if (missed.includes("mode"))
+    return "HALF RIGHT — the right component, the wrong KIND of failure";
+  return "HALF RIGHT — the right part of the loop, the wrong component";
+}
 const CASE_VERDICT_CLASS = {
   correct: "verdict-met", partial: "verdict-partial",
   wrong: "verdict-missed",
@@ -524,7 +538,7 @@ function drawCaseVerdict(out, c) {
   const head = document.createElement("div");
   head.className = "challenge-verdict " + CASE_VERDICT_CLASS[g.verdict];
   head.textContent = (c.label ? `${c.label} — ` : "") +
-    CASE_HEADLINES[g.verdict];
+    caseHeadline(g);
   out.appendChild(head);
   const score = document.createElement("div");
   score.className = "challenge-score";
@@ -1065,7 +1079,8 @@ document.querySelectorAll(".case-answer").forEach(b =>
     const card = b.closest(".diagnose-card");
     control({ action: "answer",
               role: card.querySelector(".case-role").value,
-              part: card.querySelector(".case-part").value });
+              part: card.querySelector(".case-part").value,
+              mode: card.querySelector(".case-mode").value });
   }));
 
 /* --- water disturbances (M21) --- */

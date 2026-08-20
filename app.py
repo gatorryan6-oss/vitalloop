@@ -2268,8 +2268,20 @@ ANSWER_ROLES = [
 # the ROLES, not three unrelated lists), each with that loop's own parts
 # in diagram order. Safe to render into the page: it is the menu, not the
 # answer.
+# M61: the THIRD question a diagnosis has to answer. Which box and which
+# component are not enough - beta cells that stopped and beta cells that
+# will not stop are the same box and the same component, and opposite
+# diseases. Loss of function, gain of function, mistiming: the curriculum
+# already makes this distinction, and now the app can ask about it.
+ANSWER_MODES = [
+    {"key": "off", "label": "Not working — it stopped"},
+    {"key": "stuck_on", "label": "Stuck ON — it acts regardless"},
+    {"key": "slow", "label": "Too slow — it acts late"},
+    {"key": "none", "label": "Nothing is broken"},
+]
+
 ANSWER_OPTIONS = {
-    "temp": {"roles": ANSWER_ROLES, "parts": [
+    "temp": {"roles": ANSWER_ROLES, "modes": ANSWER_MODES, "parts": [
         {"key": "none", "label": "Nothing is broken"},
         {"key": "sensor", "label": "Thermoreceptors"},
         {"key": "hypothalamus", "label": "Hypothalamus"},
@@ -2277,7 +2289,7 @@ ANSWER_OPTIONS = {
         {"key": "shiver", "label": "Skeletal muscles (shivering)"},
         {"key": "vaso", "label": "Skin blood vessels"},
     ]},
-    "glucose": {"roles": ANSWER_ROLES, "parts": [
+    "glucose": {"roles": ANSWER_ROLES, "modes": ANSWER_MODES, "parts": [
         {"key": "none", "label": "Nothing is broken"},
         {"key": "sensor", "label": "The islets' glucose sensors"},
         {"key": "beta", "label": "Beta cells (insulin)"},
@@ -2288,7 +2300,7 @@ ANSWER_OPTIONS = {
     # The coupled body (M41): both loops' parts on one menu, because the
     # question is no longer "which part" but "WHICH LOOP" — and the two
     # diseases that pass liters of urine live in different loops.
-    "body": {"roles": ANSWER_ROLES, "parts": [
+    "body": {"roles": ANSWER_ROLES, "modes": ANSWER_MODES, "parts": [
         {"key": "none", "label": "Nothing is broken"},
         {"key": "beta", "label": "Beta cells (insulin)"},
         {"key": "pituitary", "label": "ADH release (hypothalamus → "
@@ -2296,7 +2308,7 @@ ANSWER_OPTIONS = {
         {"key": "kidney", "label": "Kidneys (retain water)"},
         {"key": "thirst", "label": "Thirst → drinking"},
     ]},
-    "water": {"roles": ANSWER_ROLES, "parts": [
+    "water": {"roles": ANSWER_ROLES, "modes": ANSWER_MODES, "parts": [
         {"key": "none", "label": "Nothing is broken"},
         {"key": "sensor", "label": "Osmoreceptors"},
         {"key": "pituitary", "label": "ADH release (hypothalamus → "
@@ -2376,7 +2388,7 @@ CASES = {
             "setup": {**HEALTHY_TEMP, "env": -10.0},
             "speed": 4,
             "warmup_s": 1800,
-            "answer": {"role": "none", "part": "none"},
+            "answer": {"role": "none", "part": "none", "mode": "none"},
             "note": "Nothing was broken. The skin vessels clamped down "
                     "and shivering settled in at about half drive, and "
                     "between them they held the core within two tenths "
@@ -2391,7 +2403,7 @@ CASES = {
             "setup": {**HEALTHY_TEMP, "env": -10.0, "sensor": False},
             "speed": 4,
             "warmup_s": 1800,
-            "answer": {"role": "receptor", "part": "sensor"},
+            "answer": {"role": "receptor", "part": "sensor", "mode": "off"},
             "note": "The thermoreceptors were reporting 'all is well'. "
                     "Look at what DIDN'T happen: sweat, shivering and "
                     "vessel tone all sat at zero while the core fell "
@@ -2407,7 +2419,7 @@ CASES = {
             "setup": {**HEALTHY_TEMP, "fever": 2.0, "env": 22.0},
             "speed": 4,
             "warmup_s": 600,
-            "answer": {"role": "control", "part": "hypothalamus"},
+            "answer": {"role": "control", "part": "hypothalamus", "mode": "off"},
             "note": "Nothing is damaged — the hypothalamus is defending "
                     "39 °C instead of 37. Pyrogens moved the set point, "
                     "they didn't break the machinery, which is why this "
@@ -2425,7 +2437,7 @@ CASES = {
                                     "vaso": True}},
             "speed": 4,
             "warmup_s": 900,
-            "answer": {"role": "effector", "part": "sweat"},
+            "answer": {"role": "effector", "part": "sweat", "mode": "off"},
             "note": "The sweat glands never fired. Everything upstream "
                     "worked perfectly — the core rose, the receptors "
                     "read it, the control center called for cooling, the "
@@ -2447,7 +2459,7 @@ CASES = {
             "start_actions": [("eat", (60, 1.0))],
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "control", "part": "beta"},
+            "answer": {"role": "control", "part": "beta", "mode": "off"},
             "note": "No insulin was made at all, however high the "
                     "glucose climbed — the beta cells are gone. The "
                     "receptor was fine and the effectors were fine: "
@@ -2467,7 +2479,7 @@ CASES = {
             "start_actions": [("eat", (60, 1.0))],
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "none", "part": "none"},
+            "answer": {"role": "none", "part": "none", "mode": "none"},
             "note": "Nothing was broken. Glucose rose after the meal, "
                     "insulin rose to meet it, uptake climbed, the liver "
                     "was suppressed, and the whole excursion came back "
@@ -2483,7 +2495,7 @@ CASES = {
             "start_actions": [("eat", (60, 1.0))],
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "effector", "part": "muscle"},
+            "answer": {"role": "effector", "part": "muscle", "mode": "off"},
             "note": "Insulin was made — railed at maximum for hours, far "
                     "more than the healthy body ever needed — and the "
                     "glucose stayed high anyway. Both numbers high at "
@@ -2503,7 +2515,7 @@ CASES = {
             # variable, and the steep part of the slide has to be inside
             # the chart's 2-hour window when the class arrives.
             "warmup_s": 3600,
-            "answer": {"role": "receptor", "part": "sensor"},
+            "answer": {"role": "receptor", "part": "sensor", "mode": "off"},
             "note": "The islets' glucose sensors were stuck reading a "
                     "perfect 90 mg/dL. Insulin and glucagon are frozen "
                     "at exactly the values a body sitting on its set "
@@ -2526,7 +2538,7 @@ CASES = {
                                     "access": True}},
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "effector", "part": "kidney"},
+            "answer": {"role": "effector", "part": "kidney", "mode": "off"},
             "note": "ADH was released — the control center did "
                     "everything right — and the kidneys poured water out "
                     "anyway, litres of it, dilute. The hormone was in "
@@ -2545,7 +2557,7 @@ CASES = {
                                     "access": True}},
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "control", "part": "pituitary"},
+            "answer": {"role": "control", "part": "pituitary", "mode": "off"},
             "note": "No ADH was released at all. The osmoreceptors "
                     "sensed correctly and the kidneys were perfectly "
                     "able to hold water — they were simply never asked. "
@@ -2561,7 +2573,7 @@ CASES = {
             "setup": {**HEALTHY_WATER, "sensor": False, "exercise": True},
             "speed": 16,
             "warmup_s": 10800,
-            "answer": {"role": "receptor", "part": "sensor"},
+            "answer": {"role": "receptor", "part": "sensor", "mode": "off"},
             "note": "The osmoreceptors were dead. ADH sat frozen at a "
                     "middling value and thirst never spoke, while "
                     "sweating drove osmolarity up and up. Nobody in this "
@@ -2577,7 +2589,7 @@ CASES = {
             "setup": {**HEALTHY_WATER, "exercise": True},
             "speed": 16,
             "warmup_s": 10800,
-            "answer": {"role": "none", "part": "none"},
+            "answer": {"role": "none", "part": "none", "mode": "none"},
             "note": "Nothing was broken. Sweating pushed osmolarity up, "
                     "the osmoreceptors caught it, ADH rose, the kidneys "
                     "conserved — and then the loop reached out through "
@@ -2598,7 +2610,7 @@ CASES = {
             "start_actions": [("drink", [1500])],
             "speed": 16,
             "warmup_s": 7200,
-            "answer": {"role": "control", "part": "pituitary"},
+            "answer": {"role": "control", "part": "pituitary", "mode": "off"},
             "note": "Read the mismatch: osmolarity LOW — this body "
                     "brushed the overhydration line — while ADH sat at "
                     "MAXIMUM and the urine stayed scant and "
@@ -2629,7 +2641,7 @@ CASES = {
             "start_actions": [("eat", (100, 2.0))],
             "speed": 16,
             "warmup_s": 5400,
-            "answer": {"role": "control", "part": "beta"},
+            "answer": {"role": "control", "part": "beta", "mode": "off"},
             "note": "Diabetes MELLITUS. The urine is pouring out and it "
                     "is LOADED — up near the concentrating ceiling — "
                     "while ADH sits high and the kidneys do everything "
@@ -2648,7 +2660,7 @@ CASES = {
                                     "kidney": True, "access": True}},
             "speed": 16,
             "warmup_s": 5400,
-            "answer": {"role": "control", "part": "pituitary"},
+            "answer": {"role": "control", "part": "pituitary", "mode": "off"},
             "note": "Diabetes INSIPIDUS. The same flood, the opposite "
                     "urine: nearly pure water, dilute as it comes, "
                     "because no ADH is being released to tell the "
@@ -2666,7 +2678,7 @@ CASES = {
             "start_actions": [("drink", (2500,))],
             "speed": 16,
             "warmup_s": 3600,
-            "answer": {"role": "none", "part": "none"},
+            "answer": {"role": "none", "part": "none", "mode": "none"},
             "note": "Nothing was broken. This person drank two and a "
                     "half liters, and a working water loop did exactly "
                     "what it should: ADH switched off, the kidneys "
@@ -2708,8 +2720,13 @@ def _truth_line(truth, options=None):
     """
     role_label = _option_label(options, "roles", truth["role"])
     part_label = _option_label(options, "parts", truth["part"])
+    mode_label = _option_label(options, "modes", truth.get("mode", "off"))
+    # An intact loop reads "Nothing is broken - the loop is working" and
+    # nothing else; anything broken says which box, which component, and
+    # HOW (M61) - one sentence, quoted identically by the reveal and by
+    # the class report.
     line = (role_label if truth["role"] == "none"
-            else f"{role_label} — {part_label}")
+            else f"{role_label} — {part_label}, {mode_label.lower()}")
     return role_label, part_label, line
 
 
@@ -2726,9 +2743,24 @@ def grade_answer(case, answer, options=None):
     """
     truth = case["answer"]
     role = answer.get("role")
+    # Role "none" normalizes BOTH the other boxes (M61 keeps the M28
+    # rule): a class that answers "nothing is broken" is not marked down
+    # for whatever the other two dropdowns happened to be showing.
     part = "none" if role == "none" else answer.get("part")
-    role_ok, part_ok = role == truth["role"], part == truth["part"]
-    correct = role_ok and part_ok
+    mode = "none" if role == "none" else answer.get("mode", "off")
+    # The truth normalizes exactly as the answer does: an intact loop's
+    # mode IS "nothing is broken", whether or not the case table spells
+    # it out. Defaulting the two sides differently made "nothing is
+    # broken" ungradeable - caught by M28's own stale-select test.
+    truth_mode = ("none" if truth["role"] == "none"
+                  else truth.get("mode", "off"))
+    role_ok = role == truth["role"]
+    part_ok = part == truth["part"]
+    mode_ok = mode == truth_mode
+    # All THREE must match (Phase 15 interview): naming the right box
+    # and the right component while calling an insulinoma a type 1 is
+    # exactly the error this dimension exists to catch.
+    correct = role_ok and part_ok and mode_ok
     verdict = "correct" if correct else "partial" if role_ok else "wrong"
 
     # The labels have em-dashes of their own ("Nothing is broken — the
@@ -2744,7 +2776,7 @@ def grade_answer(case, answer, options=None):
         "verdict": verdict,
         "correct": correct,
         "points": DIAGNOSIS_POINTS[verdict],
-        "answer": {"role": role, "part": part},
+        "answer": {"role": role, "part": part, "mode": mode},
         # `line` is the one-sentence truth for the top of the reveal; an
         # intact case would otherwise read "Nothing is broken — the loop
         # is working, Nothing is broken".
@@ -2758,6 +2790,9 @@ def grade_answer(case, answer, options=None):
             {"key": "part", "label": "which component",
              "value": said("parts", part, truth["part"], part_ok),
              "met": part_ok, "n": None},
+            {"key": "mode", "label": "how it failed",
+             "value": said("modes", mode, truth_mode, mode_ok),
+             "met": mode_ok, "n": None},
             {"key": "note", "label": "why", "value": case["note"],
              "met": None, "n": None},
         ],
@@ -3078,8 +3113,13 @@ def control():
                                          "one"}), 400
             loop = runner.case["loop"]
             options = ANSWER_OPTIONS[loop]
-            submitted = {"role": cmd.get("role"), "part": cmd.get("part")}
-            for kind, field in (("roles", "role"), ("parts", "part")):
+            # M61: the third question. Absent means "off" - the value
+            # the dropdown itself defaults to - so a client that has not
+            # reloaded still submits the answer it appears to be making.
+            submitted = {"role": cmd.get("role"), "part": cmd.get("part"),
+                         "mode": cmd.get("mode", "off")}
+            for kind, field in (("roles", "role"), ("parts", "part"),
+                                ("modes", "mode")):
                 if submitted[field] not in {o["key"] for o in options[kind]}:
                     return jsonify({"error": f"{submitted[field]!r} is not "
                                              f"one of the {field} choices "

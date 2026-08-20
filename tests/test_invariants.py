@@ -2422,7 +2422,8 @@ def test_diagnosis_attempt_is_a_logged_data_product(diag_client):
     assert att["loop"] == loop and att["name"] == cid
     assert att["label"] == "Period 2 Red", "the team label is tidied here too"
     assert att["met"] is True and att["correct"] is True
-    assert att["answer"] == {"role": truth["role"], "part": truth["part"]}, (
+    assert att["answer"] == {"role": truth["role"], "part": truth["part"],
+                             "mode": truth["mode"]}, (
         "the submitted answer is part of the record (kickoff SS5) - a "
         "worksheets phase reads this file, not a screenshot")
 
@@ -3703,7 +3704,8 @@ def test_siadh_is_in_the_diagnosis_game():
                    if c["setup"].get("adh_override")]
     assert siadh_cases, "no blind water case uses the SIADH knob"
     case = siadh_cases[0]
-    assert case["answer"] == {"role": "control", "part": "pituitary"}, (
+    assert case["answer"] == {"role": "control", "part": "pituitary",
+                              "mode": "off"}, (
         "SIADH is a control-center failure - the machinery is intact "
         "and the signal is wrong, fever's pattern in a new loop")
 
@@ -6789,3 +6791,153 @@ def test_every_loop_still_teaches_every_verb(lab):
     # And the coupled body is no longer a one-disease loop.
     assert len(vital_app.PRESETS["body"]) >= 3
     assert len(vital_app.PRESETS["glucose"]) >= 5
+
+
+# ================= M61: how it broke ======================================
+# The third question. Which box and which component were never enough:
+# beta cells that stopped and beta cells that will not stop are the same
+# box, the same component, and opposite diseases. Loss of function, gain
+# of function, mistiming.
+
+def _modes():
+    vital_app = _diag()
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("the mode vocabulary doesn't exist yet - M61")
+    return vital_app
+
+
+def test_every_loop_offers_the_same_three_ways_to_fail():
+    vital_app = _modes()
+    for loop, options in vital_app.ANSWER_OPTIONS.items():
+        keys = [m["key"] for m in options["modes"]]
+        assert keys == ["off", "stuck_on", "slow", "none"], (
+            f"the {loop} loop's failure modes differ - a class should "
+            "meet ONE vocabulary for how a part can break, whichever "
+            "loop they are looking at")
+        assert all(m["label"] for m in options["modes"])
+
+
+def test_every_case_says_how_its_part_failed():
+    """Stated per case, never defaulted: a future case that forgets its
+    mode would inherit 'off' silently and grade a stuck-on fault as a
+    stopped one."""
+    vital_app = _modes()
+    valid = {m["key"] for m in vital_app.ANSWER_OPTIONS["temp"]["modes"]}
+    for loop, entries in vital_app.CASES.items():
+        for name, entry in entries.items():
+            answer = entry["answer"]
+            assert "mode" in answer, f"{loop}/{name} has no mode"
+            assert answer["mode"] in valid
+            if answer["role"] == "none":
+                assert answer["mode"] == "none", (
+                    "an intact loop's mode is 'nothing is broken'")
+            else:
+                assert answer["mode"] != "none"
+
+
+def test_the_sixteen_old_cases_still_grade_exactly_as_they_did():
+    """The migration's whole promise: a class answering an existing case
+    the way they always did still scores 100. Their mode is 'not
+    working', which is also what the dropdown shows by default."""
+    vital_app = _modes()
+    for loop, entries in vital_app.CASES.items():
+        for name, entry in entries.items():
+            truth = entry["answer"]
+            grade = vital_app.grade_answer(
+                entry, dict(truth), vital_app.ANSWER_OPTIONS[loop])
+            assert grade["verdict"] == "correct" and grade["points"] == 100, (
+                f"{loop}/{name} no longer grades correct when answered "
+                "with its own truth")
+
+
+def test_right_box_right_part_wrong_mode_is_no_longer_correct():
+    """(iiii) THE POINT OF THE PHASE. Calling an insulinoma a type 1 -
+    same box, same component, opposite direction - must not score 100."""
+    vital_app = _modes()
+    case = {"answer": {"role": "control", "part": "beta", "mode": "off"},
+            "note": "n"}
+    options = vital_app.ANSWER_OPTIONS["glucose"]
+    right = vital_app.grade_answer(
+        case, {"role": "control", "part": "beta", "mode": "off"}, options)
+    wrong_mode = vital_app.grade_answer(
+        case, {"role": "control", "part": "beta", "mode": "stuck_on"},
+        options)
+    assert right["correct"] is True
+    assert wrong_mode["correct"] is False, (
+        "the right part failing in the WRONG DIRECTION still scored "
+        "correct - then this phase bought nothing")
+    assert wrong_mode["verdict"] == "partial", (
+        "they did find the right box, so it is partial, not wrong - "
+        "three verdict tiers, as agreed")
+    mode_row = next(r for r in wrong_mode["rows"] if r["key"] == "mode")
+    assert mode_row["met"] is False and "it was" in mode_row["value"], (
+        "the report card must say what the mode actually was")
+
+
+def test_nothing_is_broken_still_ignores_both_other_dropdowns():
+    """M28's stale-select rule, now covering three boxes instead of two:
+    a class that says the loop is fine is not marked down for whatever
+    the component and mode selects happened to be showing."""
+    vital_app = _modes()
+    case = {"answer": {"role": "none", "part": "none", "mode": "none"},
+            "note": "n"}
+    grade = vital_app.grade_answer(
+        case, {"role": "none", "part": "sweat", "mode": "stuck_on"},
+        vital_app.ANSWER_OPTIONS["temp"])
+    assert grade["correct"] is True, (
+        "answering 'nothing is broken' with stale selects behind it is "
+        "still the right answer")
+    assert grade["answer"] == {"role": "none", "part": "none",
+                               "mode": "none"}, (
+        "the stored answer normalizes too, so the log does not record a "
+        "component the class did not mean")
+
+
+def test_the_truth_sentence_says_the_mode():
+    """One phrasing, still (M49): the reveal and the class report quote
+    the same sentence, and it now has to carry the direction."""
+    vital_app = _modes()
+    options = vital_app.ANSWER_OPTIONS["glucose"]
+    _, _, line = vital_app._truth_line(
+        {"role": "control", "part": "beta", "mode": "stuck_on"}, options)
+    assert "Control center" in line and "Beta cells" in line
+    assert "stuck on" in line.lower(), (
+        "the sentence must say HOW it failed, or the reveal cannot tell "
+        "an insulinoma from a type 1 either")
+    _, _, intact = vital_app._truth_line(
+        {"role": "none", "part": "none", "mode": "none"}, options)
+    assert intact.count("—") <= 1, (
+        "an intact loop reads as one clean phrase, not a pile-up")
+
+
+def test_the_page_asks_the_third_question(monkeypatch):
+    vital_app = _modes()
+    page = vital_app.app.test_client().get("/").data.decode("utf-8")
+    assert 'class="case-mode"' in page, "no third dropdown on the page"
+    assert "How did it failed" not in page
+    assert page.count('class="case-mode"') == len(vital_app.CASES), (
+        "every loop's diagnose card needs the question")
+    for label in ("Not working", "Stuck ON", "Too slow"):
+        assert label in page, (
+            f"the {label!r} option is missing - the vocabulary is safe "
+            "to render (M28), it is the ANSWER that is not")
+
+
+def test_the_answer_route_takes_the_mode_and_refuses_nonsense(
+        fresh_registry, monkeypatch):
+    vital_app = fresh_registry
+    if "modes" not in vital_app.ANSWER_OPTIONS["temp"]:
+        pytest.skip("M61")
+    kid = _device(vital_app, "mode-kid")
+    assert kid.post("/control?loop=temp",
+                    json={"action": "diagnose", "value": 4}).status_code == 200
+    bad = kid.post("/control?loop=temp",
+                   json={"action": "answer", "role": "effector",
+                         "part": "sweat", "mode": "exploded"})
+    assert bad.status_code == 400 and "mode" in bad.get_json()["error"]
+    truth = list(vital_app.CASES["temp"].values())[3]["answer"]
+    good = kid.post("/control?loop=temp",
+                    json={"action": "answer", **truth})
+    assert good.status_code == 200
+    j = kid.get("/state?loop=temp").get_json()
+    assert j["case"]["grade"]["verdict"] == "correct"

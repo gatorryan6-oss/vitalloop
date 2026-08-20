@@ -145,6 +145,13 @@
             {% endfor %}
           </select>
         </label>
+        <label class="case-q">How did it fail?
+          <select class="case-mode">
+            {% for m in answers[loop]["modes"] %}
+            <option value="{{ m['key'] }}">{{ m['label'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
         <button class="case-answer" type="button">Commit to the answer</button>
       </div>
     </div>

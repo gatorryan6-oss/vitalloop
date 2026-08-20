@@ -18,7 +18,14 @@ Entry format:
 
 ## Current state
 
-- **Committed:** M60 — **PHASE 14 COMPLETE** (M0–M60). Spec:
+- **Committed:** M61 — Phase 15 underway (spec:
+  `vital_loop_phase15_kickoff.md`, scoped 2026-08-19: the direction
+  dimension and the three cases it unlocks). A diagnosis now answers
+  THREE questions — which box, which component, and **how it failed**
+  (not working / stuck on / too slow). All 16 existing cases migrated
+  to "not working" and still grade exactly as they did; right box +
+  right component + wrong direction is no longer correct.
+- **Phase 14 (for reference):** M60 — **PHASE 14 COMPLETE** (M0–M60). Spec:
   `vital_loop_phase14_kickoff.md` (scoped 2026-08-19: assignment layer
   + three diseases).
   **The teaching loop closes.** The report says which box of the loop a
@@ -183,6 +190,45 @@ Entry format:
 ---
 
 ## Milestones
+
+## 2026-08-19 — M61: How it broke — the third question
+- Shipped: `ANSWER_MODES` (off / stuck_on / slow / none), wired into
+  all four loops' vocabularies; all 16 existing case answers migrated
+  (12 "off", 4 "none") EXPLICITLY rather than defaulted, so a future
+  case that forgets its mode fails a test instead of silently grading a
+  stuck-on fault as a stopped one; `grade_answer` compares all three
+  and `correct` needs all three; `_truth_line` carries the direction so
+  the reveal and the class report still quote ONE sentence; the
+  diagnose card grew a third dropdown defaulting to "not working"; the
+  `/control` answer route validates the mode against the vocabulary and
+  treats absent as "off" (what the dropdown itself shows). 9 new
+  invariants (273 pass) + verify. No engine file touched.
+- Deferred: nothing.
+- Open bugs: none.
+- Decisions:
+  1. **A real bug my own tests caught**: I normalized the ANSWER's mode
+     for "nothing is broken" but not the TRUTH's, so a hand-built case
+     with no mode key defaulted to "off" while the answer normalized to
+     "none" — which made "nothing is broken" ungradeable. M28's own
+     stale-select test failed and named it. Both sides normalize now.
+  2. **Two pins moved deliberately** (the M12 append rule): the stored
+     `answer` is `{role, part, mode}` now, so the diagnosis-attempt and
+     SIADH shape assertions grew the key with it.
+  3. **A wording defect found by playing it, not by testing it.** The
+     partial headline said "the right part of the loop, the wrong
+     component" — which is now sometimes FALSE: the component can be
+     right and the direction wrong. The headline reads the report
+     card's rows and names the actual miss ("the right component, the
+     wrong KIND of failure"). Telling a class the wrong thing about
+     their error is worse than saying nothing.
+  4. Verdict tiers stayed at three, as the spec required: right box
+     with anything else wrong is partial. A fourth tier for "box and
+     component right, direction wrong" was tempting and is logged as a
+     Phase 16 candidate rather than slipped in.
+  5. VERIFIED LIVE: three questions on the card, mode defaulting to
+     "Not working"; answering effector/sweat/STUCK ON scored 50/100
+     with the reveal "it was Effector — Sweat glands, not working — it
+     stopped" and the corrected headline.
 
 ## 2026-08-19 — M60: The full pass, and Phase 14 closes
 - Shipped: the M60 contract (4 tests). **The three diseases reach a
